@@ -1,6 +1,7 @@
 import traceback
 from stable_baselines3 import PPO,SAC
 import numpy as np
+import random
 import cv2
 import time
 import mediapipe as mp
@@ -20,6 +21,7 @@ distance_list = deque(maxlen=1000)
 from camera_calibration.camera_calibration import CameraCalibration
 from robot_control.ur_control import URControl  
 from cv.hand_detect import HandDetection
+from cv.hand_move import get_hand_move
 
 from ultralytics import YOLO
 cv_model = YOLO('runs/detect/train3/weights/best.onnx')
@@ -37,7 +39,7 @@ w_env, h_env = 15, 10  # 环境的宽度和高度
 # C:\Users\admin\Desktop\huifeng\RL\rlproject\src\model\model_500step.zip
 # C:\Users\admin\Desktop\huifeng\RL\src\logs\best_model_sac88\best_model.zip
 model = SAC.load(
-    r"C:\Users\admin\Desktop\huifeng\RL\rlproject\src\model\model_1500step.zip",
+    r"C:\Users\admin\Desktop\huifeng\RL\rlproject\src\model1\model_500step.zip",
     env=env,
     custom_objects={
         "observation_space": env.observation_space,
@@ -115,9 +117,13 @@ ax.set_ylabel("Frequency")
 plt.show(block=False)
 # ----------------------------------------------------------------
 step = 0
+terminated = False
+terminated_step = 0
+fixed_point = [10,10]
 try:
 
     while True:
+
         ret, frame = cap.read()
         if not ret:
             print("Error: Could not read frame from camera for demonstration.")
@@ -125,9 +131,12 @@ try:
         # 使用 cv2.undistort 对每一帧进行畸变矫正
         undistorted_frame = cali.undistort_frame(frame)
         undistorted_frame = get_workspace(undistorted_frame)
+        undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         img_gray = cv2.cvtColor(undistorted_frame, cv2.COLOR_BGR2GRAY)
 
         h , w = undistorted_frame.shape[:2]
+        # print(h,w)
+
 
         results = cv_model.predict(undistorted_frame, conf=0.7, save=False,imgsz=640,verbose=False)
 
@@ -148,24 +157,25 @@ try:
                 cv2.line(undistorted_frame, trajectory_robot[j - 1], trajectory_robot[j], (0, 255, 255), int(i//2))
                 i+=0.2
 
-        if hand_positions:
-            position_hand_env = hand_positions[0]/np.array([w/h_env,h/w_env])
-            position_hand_env = position_hand_env[1],h_env - position_hand_env[0]
-
+        # if hand_positions:
+        #     position_hand_env = hand_positions[0]/np.array([w/w_env,h/h_env])
         hsv = cv2.cvtColor(undistorted_frame, cv2.COLOR_BGR2HSV)
+        
 
         lower_skin = np.array([0, 30, 60], dtype=np.uint8)
         upper_skin = np.array([20, 150, 255], dtype=np.uint8)
         mask = cv2.inRange(hsv, lower_skin, upper_skin)
 
-        ys, xs = np.where(mask > 0)
-        try:
-            idx = np.argmin(xs)
-            tip = (xs[idx], ys[idx])
-            cv2.circle(undistorted_frame, tip, 10, (0, 0, 255), -1)
-            fixed_point = [tip[1]*15/h,10]
-        except:
-            fixed_point = [10,10]
+        # ys, xs = np.where(mask > 0)
+
+        # try:
+        #     idx = np.argmax(ys)
+        #     tip = (xs[idx].item(), ys[idx].item())
+        #     cv2.circle(frame,tip, 10, (0, 0, 255), -1)
+        #     fixed_point = [tip[0]*w_env/w,h_env]
+
+        # except:
+        #     fixed_point = [10,10]
 
         key = cv2.waitKey(1) 
         if key== ord('q'):
@@ -179,8 +189,20 @@ try:
             *position_robot_world,z,rx,ry,rz = robot_control.get_robot_pose()
 
             position_robot_pixel = cali.world_to_pixel(position_robot_world)
-            position_robot_env =  position_robot_pixel[1]*w_env / h, h_env - position_robot_pixel[0]*h_env /w 
+            # position_robot_env =  position_robot_pixel[1]*w_env / h, h_env - position_robot_pixel[0]*h_env /w 
+            position_robot_pixel = cx,cy
+            position_robot_env =  position_robot_pixel[0]*w_env/w, position_robot_pixel[1]*h_env/h
 
+            if not terminated:
+                position_hand_env = get_hand_move([np.array(position_hand_env,dtype=np.float32),np.array(position_robot_env,dtype=np.float32),env.stride_robot*0.5])
+            else:
+                terminated_step += 1
+                if terminated_step > 4:
+                    fixed_point = [random.randint(0,w_env),h_env]
+                    terminated = False
+                    terminated_step = 0
+            position_hand_pixel = position_hand_env[0]*w/w_env, position_hand_env[1]*h/h_env
+            
             robot = np.array([position_robot_env],dtype=np.float32)
             hand = np.array([position_hand_env],dtype=np.float32)
             stride_hand = np.linalg.norm(hand - last_hand)
@@ -197,16 +219,17 @@ try:
             action, _states = model.predict(obs, deterministic=True)
             last_action = action    
             print(f"obs:{obs}\n action:{action}")
-            action_pixel = action * np.array([h/w_env,w/h_env])*stride_robot
-            action_pixel = -action_pixel[1],action_pixel[0]
+            action_pixel = action * np.array([w/w_env,h/h_env])*stride_robot
 
-            cv2.circle(undistorted_frame, (int(position_robot_pixel[0]), int(position_robot_pixel[1])), 10, (0, 255, 0), -1)
+
+            # cv2.circle(undistorted_frame, (int(position_robot_pixel[0]), int(position_robot_pixel[1])), 10, (0, 255, 0), -1)
+            # cv2.circle(undistorted_frame, (int(position_hand_pixel[0]), int(position_hand_pixel[1])), 10, (255, 0, 0), -1)
 
             rx,ry,rz = 0.085,-0.027,4.637
 
             position_robot_pixel += np.array([action_pixel[0],action_pixel[1]])
             position_robot_world = cali.pixel_to_world(position_robot_pixel)
-            robot_control.move_robot([position_robot_world[0],position_robot_world[1],0.12,rx,ry,rz],1/freq)
+            robot_control.move_robot([position_robot_world[0],position_robot_world[1],0.125,rx,ry,rz],1/freq)
 
             step += 1
 
@@ -236,6 +259,8 @@ try:
 
             # ---------- 更新直方图：传入一个标量值 ----------
             # 把 obs6 添加到 deque 并更新直方图
+            if float(obs6) < 2:
+                terminated = True
             distance_list.append(float(obs6))
             # 重绘 hist（非阻塞）
             ax.clear()
@@ -251,7 +276,8 @@ try:
 
 
 
-
+        cv2.circle(undistorted_frame, (int(position_robot_pixel[0]), int(position_robot_pixel[1])), 10, (0, 255, 0), -1)
+        cv2.circle(undistorted_frame, (int(position_hand_pixel[0]), int(position_hand_pixel[1])), 10, (255, 0, 0), -1)
 
         cv2.setMouseCallback("Frame", mouse_callback)
         frame_count += 1
@@ -260,15 +286,15 @@ try:
             fps = frame_count / (time.time() - fps_ts)
             frame_count = 0
             fps_ts = time.time()
-        undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        # undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         cv2.putText(undistorted_frame, f"FPS: {int(fps):d}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
         cv2.imshow('Frame', undistorted_frame)
         cv2.imshow('edges', mask)
 
-        if step>=100:
+        if step>=1000:
             plt.ioff()  # 关闭交互模式（防止窗口继续刷新）
-            plt.savefig("distance_distribution_2.png", dpi=300, bbox_inches='tight')
+            # plt.savefig("distance_distribution_2.png", dpi=300, bbox_inches='tight')
             plt.show()  # 重新显示最终静态图
             break
     
