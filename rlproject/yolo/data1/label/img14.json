@@ -1,0 +1,28 @@
+{
+  "version": "5.5.0",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "magnet",
+      "points": [
+        [
+          152.68817204301075,
+          692.4623655913978
+        ],
+        [
+          225.8064516129032,
+          762.8924731182796
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "rectangle",
+      "flags": {},
+      "mask": null
+    }
+  ],
+  "imagePath": "..\\img\\img14.jpg",
+  "imageData": null,
+  "imageHeight": 1536,
+  "imageWidth": 1228
+}

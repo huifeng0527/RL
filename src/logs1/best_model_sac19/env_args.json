@@ -1,0 +1,5 @@
+{
+    "grid_size": 10,
+    "max_steps": 50,
+    "arm_blocking_ratio": 0.7
+}

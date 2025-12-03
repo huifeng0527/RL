@@ -1,0 +1,28 @@
+{
+  "version": "5.5.0",
+  "flags": {},
+  "shapes": [
+    {
+      "label": "robot",
+      "points": [
+        [
+          583.6078431372549,
+          289.54248366013076
+        ],
+        [
+          618.2483660130719,
+          350.3267973856209
+        ]
+      ],
+      "group_id": null,
+      "description": "",
+      "shape_type": "rectangle",
+      "flags": {},
+      "mask": null
+    }
+  ],
+  "imagePath": "..\\img\\img3.jpg",
+  "imageData": null,
+  "imageHeight": 1536,
+  "imageWidth": 1228
+}
