@@ -24,7 +24,7 @@ from cv.hand_detect import HandDetection
 from cv.hand_move import get_hand_move
 
 from ultralytics import YOLO
-cv_model = YOLO('runs/detect/train3/weights/best.onnx')
+cv_model = YOLO(r'C:\Users\admin\Desktop\huifeng\RL\rlproject\src\runs\detect\train3\weights\best.onnx')
 hand_detector = HandDetection()
 cali = CameraCalibration()
 robot_ip = "192.168.1.2"

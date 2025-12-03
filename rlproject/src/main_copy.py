@@ -586,8 +586,8 @@ try:
                 cv2.line(undistorted_frame, trajectory_robot[j - 1], trajectory_robot[j], (0, 255, 255), int(i//2))
                 i+=0.2
 
-        if hand_positions:
-            position_hand_env = hand_positions[0]/np.array([w/w_env,h/h_env])
+        # if hand_positions:
+        #     position_hand_env = hand_positions[0]/np.array([w/w_env,h/h_env])
         hsv = cv2.cvtColor(undistorted_frame, cv2.COLOR_BGR2HSV)
         
 
@@ -620,24 +620,25 @@ try:
             *position_robot_world,z,rx,ry,rz = robot_control.get_robot_pose()
 
             position_robot_pixel = cali.world_to_pixel(position_robot_world)
-            # position_robot_env =  position_robot_pixel[1]*w_env / h, h_env - position_robot_pixel[0]*h_env /w 
-            position_robot_pixel = cx,cy
+
+            # position_robot_pixel = cx,cy
             position_robot_env =  position_robot_pixel[0]*w_env/w, position_robot_pixel[1]*h_env/h
 
-            # if not terminated:
-            #     position_hand_env = get_hand_move([np.array(position_hand_env,dtype=np.float32),np.array(position_robot_env,dtype=np.float32),env.stride_robot*0.5])
-            # else:
-            #     terminated_step += 1
-            #     if terminated_step > 4:
-            #         fixed_point = [random.randint(0,w_env),h_env]
-            #         terminated = False
-            #         terminated_step = 0
+            if not terminated:
+                position_hand_env = get_hand_move([np.array(position_hand_env,dtype=np.float32),np.array(position_robot_env,dtype=np.float32),env.stride_robot*0.5])
+                
+            else:
+                terminated_step += 1
+                if terminated_step > 4:
+                    fixed_point = [random.randint(0,w_env),h_env]
+                    terminated = False
+                    terminated_step = 0
             position_hand_pixel = position_hand_env[0]*w/w_env, position_hand_env[1]*h/h_env
             
             robot = np.array([position_robot_env],dtype=np.float32).flatten()
             print(robot.shape)
             hand = np.array([position_hand_env],dtype=np.float32)
-            hand_move = hand - robot
+            hand_move = hand - last_hand
             stride_hand = np.linalg.norm(hand_move)
             print("stride_hand:",stride_hand)
             distance_to_object = np.linalg.norm(robot - hand)
@@ -652,7 +653,7 @@ try:
             vec_arm = fixed_point - hand
             dist_arm = np.linalg.norm(vec_arm)
             to_shoulder = env.safe_normalize(vec_arm)
-            blocking_point = hand + to_shoulder * min(3, dist_arm)
+            blocking_point = hand + to_shoulder * min(5, dist_arm)
 
             flat_history = np.array(env.hand_history_buffer).flatten()
             if len(flat_history) < env.history_length * 2:
@@ -674,6 +675,8 @@ try:
             rx,ry,rz = 0.085,-0.027,4.637
 
             position_robot_pixel += np.array([action_pixel[0],action_pixel[1]])
+
+            position_robot_pixel = np.clip(position_robot_pixel, 0, [w,h]).astype(int)
             position_robot_world = cali.pixel_to_world(position_robot_pixel)
             robot_control.move_robot([position_robot_world[0],position_robot_world[1],0.125,rx,ry,rz],1/freq)
 
@@ -686,14 +689,14 @@ try:
             # --- 更新 env stride（你原来的逻辑） ---
             # 注意 obs[6] 可能是 numpy array 或标量，强制转 float
             # 但要防止除 0
-            obs6 = float(obs[6]) if np.ndim(obs[6]) == 0 or np.ndim(obs[6])==1 else float(np.array(obs[6]).flatten()[0])
+            dist = float(obs[20]) if np.ndim(obs[20]) == 0 or np.ndim(obs[20])==1 else float(np.array(obs[20]).flatten()[0])
 
             # 避免除零
-            obs6 = max(obs6, 1e-6)
+            dist = max(dist, 1e-6)
 
             # 指数调整
             base_stride = 2.5
-            coef = np.exp(5-obs6)  # 观察值越大，coef 越小
+            coef = np.exp(5-dist)  # 观察值越大，coef 越小
             # env.stride_robot = base_stride * coef
 
             # 可加上最大值限制
@@ -701,13 +704,13 @@ try:
 
 
             # render 你的环境画面（保持）
-            render.render(obs[:2], obs[2:4], fixed_point, trajectory)
+            render.render(obs[:2], obs[2:4], fixed_point, trajectory,blocking_point.flatten())
 
             # ---------- 更新直方图：传入一个标量值 ----------
-            # 把 obs6 添加到 deque 并更新直方图
-            if float(obs6) < 2:
+            # 把 dist 添加到 deque 并更新直方图
+            if float(dist) < 2:
                 terminated = True
-            distance_list.append(float(obs6))
+            distance_list.append(float(dist))
             # 重绘 hist（非阻塞）
             ax.clear()
             ax.hist(list(distance_list), bins=bins, color='skyblue', alpha=0.7,density=True)
@@ -724,6 +727,7 @@ try:
 
         cv2.circle(undistorted_frame, (int(position_robot_pixel[0]), int(position_robot_pixel[1])), 10, (0, 255, 0), -1)
         cv2.circle(undistorted_frame, (int(position_hand_pixel[0]), int(position_hand_pixel[1])), 10, (255, 0, 0), -1)
+        
 
         cv2.setMouseCallback("Frame", mouse_callback)
         frame_count += 1

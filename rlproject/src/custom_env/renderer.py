@@ -15,19 +15,21 @@ class EnvironmentRenderer:
         self.virus_image = pygame.image.load("hand.png").convert_alpha()  # 这可以用来绘制手
         self.font = pygame.font.Font(None, 24)
 
-    def render(self, robot_position, hand_position,fixed_point, trajectory_points):
+    def render(self, robot_position, hand_position,fixed_point, trajectory_points,blocking_point):
 
 
         """ 绘制当前状态到窗口 """
 
 
-
+        print(blocking_point,robot_position)
         self.canvas.fill((255, 255, 255))  # 清空画布
         self.draw_trajectory(trajectory_points)
         self.draw_robot(robot_position)
         self.draw_hand(hand_position)
-        self.draw_line_from_hand_to_center(hand_position,fixed_point)
+        # self.draw_line_from_hand_to_center(hand_position,fixed_point)
         # self.draw_text(hand_position)
+        pygame.draw.circle(self.canvas, (255, 255, 0), (int(blocking_point[0] * self.cell_size), int(blocking_point[1] * self.cell_size)), int(self.cell_size * 0.2),5)
+
         self.window.blit(self.canvas, (0, 0))
         pygame.display.flip()  # 更新屏幕
 
