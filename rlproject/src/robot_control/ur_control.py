@@ -20,7 +20,7 @@ class URControl:
 
 
         # 计算速度（线性）
-        speed = 1.5
+        speed = 2
         # 可设置一个固定加速度（平滑）
         acceleration =  1
         # print(f"Distance: {distance}, Speed: {speed}, Acceleration: {acceleration}")

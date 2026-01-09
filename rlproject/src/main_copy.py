@@ -466,7 +466,7 @@ w_env, h_env = 15, 10  # 环境的宽度和高度
 # C:\Users\admin\Desktop\huifeng\RL\rlproject\src\model\model_500step.zip
 # C:\Users\admin\Desktop\huifeng\RL\src\logs\best_model_sac88\best_model.zip
 model = SAC.load(
-    r"C:\Users\admin\Desktop\huifeng\RL\src\logs1\best_model_sac21\best_model.zip",
+    r"C:\Users\admin\Desktop\huifeng\RL\src\logs\robot_stage2\1\best_model.zip",
     env=env,
     custom_objects={
         "observation_space": env.observation_space,
@@ -474,7 +474,7 @@ model = SAC.load(
     }
 )
 
-env.stride_robot=2
+env.stride_robot=2.2
 
 
 mp_hands = mp.solutions.hands
@@ -525,7 +525,7 @@ fps_interval = 1.0
 fps_ts = time.time()
 
 last_trigger_time = time.time()
-freq = 2
+freq = 2.2
 
 last_action = [0,0]
 
@@ -549,6 +549,11 @@ terminated_step = 0
 fixed_point = [10,10]
 cx,cy = 0,0
 
+from cv.metric import PatientTrajectoryAnalyzer
+
+analyzer = PatientTrajectoryAnalyzer()
+
+start_time = time.perf_counter()
 try:
 
     while True:
@@ -558,7 +563,9 @@ try:
             print("Error: Could not read frame from camera for demonstration.")
             break
         # 使用 cv2.undistort 对每一帧进行畸变矫正
+        t = time.time()
         undistorted_frame = cali.undistort_frame(frame)
+        # print("相机畸变矫正时间:",(time.time() - t)*1000)
         undistorted_frame = get_workspace(undistorted_frame)
         undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         img_gray = cv2.cvtColor(undistorted_frame, cv2.COLOR_BGR2GRAY)
@@ -566,10 +573,14 @@ try:
         h , w = undistorted_frame.shape[:2]
         # print(h,w)
 
-
+        t1 = time.time()
+        # print("预处理一帧时间:",(t1 - t)*1000)
         results = cv_model.predict(undistorted_frame, conf=0.7, save=False,imgsz=640,verbose=False)
-
+        t2 =time.time()
         undistorted_frame, hand_positions = hand_detector.process_frame(undistorted_frame)
+        t3 = time.time()
+
+        # print(f"YOLO推理时间: {(t2 - t1)*1000:.2f} ms, 手部检测时间: {(t3 - t2)*1000:.2f} ms")
         for i, r in enumerate(results):
             boxes = r.boxes
             for box in boxes:
@@ -579,32 +590,40 @@ try:
                 cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
                 trajectory_robot.append([int(cx), int(cy)])
                 cv2.rectangle(undistorted_frame, (x1, y1), (x2, y2), (255, 0, 255), 6)
-
+                L = (x2+y2-x1-y1)/2
+        pixel_per_cm = L/2
+        # print("cm_per_pixel:",cm_per_pixel)
         if len(trajectory_robot) >= 2:
             i = 2
             for j in range(1, len(trajectory_robot)):
                 cv2.line(undistorted_frame, trajectory_robot[j - 1], trajectory_robot[j], (0, 255, 255), int(i//2))
                 i+=0.2
 
-        # if hand_positions:
-        #     position_hand_env = hand_positions[0]/np.array([w/w_env,h/h_env])
+        if hand_positions:
+
+            position_hand_env = hand_positions[0]/np.array([w/w_env,h/h_env])
+            t = time.perf_counter() - start_time
+            hand_positions_cm = [hand_positions[0][0]/pixel_per_cm,hand_positions[0][1]/pixel_per_cm]
+            analyzer.add_point(t,*hand_positions_cm)
+
+
+
         hsv = cv2.cvtColor(undistorted_frame, cv2.COLOR_BGR2HSV)
-        
 
         lower_skin = np.array([0, 30, 60], dtype=np.uint8)
         upper_skin = np.array([20, 150, 255], dtype=np.uint8)
         mask = cv2.inRange(hsv, lower_skin, upper_skin)
 
-        # ys, xs = np.where(mask > 0)
+        ys, xs = np.where(mask > 0)
 
-        # try:
-        #     idx = np.argmax(ys)
-        #     tip = (xs[idx].item(), ys[idx].item())
-        #     cv2.circle(frame,tip, 10, (0, 0, 255), -1)
-        #     fixed_point = [tip[0]*w_env/w,h_env]
+        try:
+            idx = np.argmax(ys)
+            tip = (xs[idx].item(), ys[idx].item())
+            cv2.circle(frame,tip, 10, (0, 0, 255), -1)
+            fixed_point = [tip[0]*w_env/w,h_env]
 
-        # except:
-        #     fixed_point = [10,10]
+        except:
+            fixed_point = [10,10]
 
         key = cv2.waitKey(1) 
         if key== ord('q'):
@@ -612,7 +631,7 @@ try:
 
         now = time.time()
 
-        print(cx,cy)
+
 
         if now - last_trigger_time > 1/freq:
 
@@ -624,19 +643,20 @@ try:
             # position_robot_pixel = cx,cy
             position_robot_env =  position_robot_pixel[0]*w_env/w, position_robot_pixel[1]*h_env/h
 
-            if not terminated:
-                position_hand_env = get_hand_move([np.array(position_hand_env,dtype=np.float32),np.array(position_robot_env,dtype=np.float32),env.stride_robot*0.5])
+            # if not terminated:
+
+            #     position_hand_env = get_hand_move([np.array(position_hand_env,dtype=np.float32),np.array(position_robot_env,dtype=np.float32),env.stride_robot*0.5])
                 
-            else:
-                terminated_step += 1
-                if terminated_step > 4:
-                    fixed_point = [random.randint(0,w_env),h_env]
-                    terminated = False
-                    terminated_step = 0
+            # else:
+            #     terminated_step += 1
+            #     if terminated_step > 4:
+            #         fixed_point = [random.randint(0,w_env),h_env]
+            #         terminated = False
+            #         terminated_step = 0
             position_hand_pixel = position_hand_env[0]*w/w_env, position_hand_env[1]*h/h_env
-            
+
             robot = np.array([position_robot_env],dtype=np.float32).flatten()
-            print(robot.shape)
+
             hand = np.array([position_hand_env],dtype=np.float32)
             hand_move = hand - last_hand
             stride_hand = np.linalg.norm(hand_move)
@@ -653,16 +673,19 @@ try:
             vec_arm = fixed_point - hand
             dist_arm = np.linalg.norm(vec_arm)
             to_shoulder = env.safe_normalize(vec_arm)
-            blocking_point = hand + to_shoulder * min(5, dist_arm)
+            blocking_point = hand + to_shoulder * min(3.5, dist_arm)
+            blocking_point = blocking_point.flatten()
 
             flat_history = np.array(env.hand_history_buffer).flatten()
             if len(flat_history) < env.history_length * 2:
                 flat_history = np.zeros(env.history_length * 2)
 
             stride_robot = env.stride_robot
-            obs = np.concatenate((robot.flatten(),hand.flatten(),flat_history,distance.flatten(),boundary.flatten(),np.array([stride_robot]),np.array(fixed_point,dtype=np.float32),blocking_point.flatten()))
+            obs = np.concatenate((robot.flatten(),hand.flatten(),distance.flatten(),boundary.flatten(),np.array([stride_robot]),np.array(fixed_point,dtype=np.float32),blocking_point.flatten(),flat_history))
 
+            # t1 = time.time()
             action, _states = model.predict(obs, deterministic=True)
+            # print(f"agent模型推理时间: {(time.time() - t1)*1000:.2f} ms")
             env.hand_history_buffer.append(hand_move)
             last_action = action    
             print(f"obs:{obs}\n action:{action}")
@@ -676,9 +699,9 @@ try:
 
             position_robot_pixel += np.array([action_pixel[0],action_pixel[1]])
 
-            position_robot_pixel = np.clip(position_robot_pixel, 0, [w,h]).astype(int)
+            position_robot_pixel = np.clip(position_robot_pixel, [50,50], [w-100,h-100]).astype(int)
             position_robot_world = cali.pixel_to_world(position_robot_pixel)
-            robot_control.move_robot([position_robot_world[0],position_robot_world[1],0.125,rx,ry,rz],1/freq)
+            robot_control.move_robot([position_robot_world[0],position_robot_world[1],0.128,rx,ry,rz],1/freq)
 
             step += 1
 
@@ -687,9 +710,8 @@ try:
             trajectory.append(position_robot_env)
 
             # --- 更新 env stride（你原来的逻辑） ---
-            # 注意 obs[6] 可能是 numpy array 或标量，强制转 float
             # 但要防止除 0
-            dist = float(obs[20]) if np.ndim(obs[20]) == 0 or np.ndim(obs[20])==1 else float(np.array(obs[20]).flatten()[0])
+            dist = float(obs[4]) if np.ndim(obs[4]) == 0 or np.ndim(obs[4])==1 else float(np.array(obs[4]).flatten()[0])
 
             # 避免除零
             dist = max(dist, 1e-6)
@@ -723,10 +745,14 @@ try:
             plt.draw()
             plt.pause(0.001)
 
+        blocking_point_pixel = blocking_point[0]*w/w_env, blocking_point[1]*h/h_env
 
 
-        cv2.circle(undistorted_frame, (int(position_robot_pixel[0]), int(position_robot_pixel[1])), 10, (0, 255, 0), -1)
-        cv2.circle(undistorted_frame, (int(position_hand_pixel[0]), int(position_hand_pixel[1])), 10, (255, 0, 0), -1)
+        mean_hand_vel,max_hand_vel = analyzer.get_vel()
+        cv2.putText(undistorted_frame, f"Mean Hand Vel: {mean_hand_vel:.2f} cm/s", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
+        cv2.putText(undistorted_frame, f"Peak Hand Vel: {max_hand_vel:.2f} cm/s", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
+        cv2.circle(undistorted_frame, (int(blocking_point_pixel[0]), int(blocking_point_pixel[1])), 10, (0, 255, 0), -1)
+        # cv2.circle(undistorted_frame, (int(position_hand_pixel[0]), int(position_hand_pixel[1])), 10, (255, 0, 0), -1)
         
 
         cv2.setMouseCallback("Frame", mouse_callback)
@@ -737,7 +763,8 @@ try:
             frame_count = 0
             fps_ts = time.time()
         # undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        cv2.putText(undistorted_frame, f"FPS: {int(fps):d}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+        cv2.putText(undistorted_frame, f"FPS: {int(fps):d}", (1400, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+
 
         cv2.imshow('Frame', undistorted_frame)
         cv2.imshow('edges', mask)
@@ -747,7 +774,7 @@ try:
             # plt.savefig("distance_distribution_2.png", dpi=300, bbox_inches='tight')
             plt.show()  # 重新显示最终静态图
             break
-    
+
     print(sum(distance_list)/len(distance_list))
     robot_control.disconnect()
     hand_detector.release()
@@ -759,6 +786,11 @@ try:
 except Exception as e:
     print(f"Error occurred: {e}")
     traceback.print_exc()
+    metrics = analyzer.compute_clinical_metrics()
+    print("指标概览:", metrics)
+
+    # 4. 画图 (直接给路径就行，不需要传 data 了)
+    analyzer.plot_report("my_report.png")
 
 finally:
     robot_control.disconnect()
