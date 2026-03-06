@@ -1,0 +1,36 @@
+# 环境配置文件
+# 用于配置仿真环境的参数
+
+# 基础参数
+grid_size: 10
+cell_size: 50
+domain_randomization: false
+random: true
+
+# 距离阈值
+distance_threshold_penalty: 5      # 惩罚区域阈值（较大值）
+distance_threshold_collision: 1.5  # 碰撞阈值（较小值）
+distance_threshold_arm: 3          # 手臂阈值
+
+# 奖励参数
+penalty_factor: 5                  # 惩罚缩放因子
+distance_reward_factor: 2          # 距离奖励因子
+smooth_action_penalty: 2           # 动作平滑性惩罚
+reward_arm: -100                   # 手臂碰撞奖励
+reward_hand: -100                  # 手部碰撞奖励
+reward_bound: -200                 # 边界惩罚
+reward_max_step: 200               # 达到最大步数奖励
+reward_step: 10                    # 每步奖励
+
+# 步长范围
+stride_robot_range: [1, 3]         # 机器人步长范围
+stride_hand_range: [0.6, 1]        # 手部步长范围
+hand_move_epsilon: 0.1             # 手部随机移动概率
+
+# 环境参数
+margin: 0.3                        # 边界边距
+max_steps: 50                      # 最大步数
+
+# 资源路径
+hand_image_path: null              # 手部图像路径（可选）
+

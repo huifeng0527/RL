@@ -1,0 +1,20 @@
+# 部署环境依赖
+# 包含通用依赖
+-r common.txt
+
+# 强化学习模型加载
+stable-baselines3>=2.0.0
+torch>=1.12.0
+
+# 机器人控制
+rtde>=1.3.0
+
+# 计算机视觉
+opencv-python>=4.6.0
+mediapipe>=0.10.0
+ultralytics>=8.0.0
+
+# 可视化
+pygame>=2.1.0
+matplotlib>=3.5.0
+

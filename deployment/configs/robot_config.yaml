@@ -1,0 +1,7 @@
+# 机器人配置
+robot_ip: "192.168.1.2"            # UR机器人IP地址
+robot_speed: 2                      # 机器人运动速度
+robot_acceleration: 1               # 机器人加速度
+robot_z_height: 0.125               # 机器人Z轴高度
+robot_orientation: [0.085, -0.027, 4.637]  # 机器人姿态 [rx, ry, rz]
+
