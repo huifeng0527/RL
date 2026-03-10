@@ -36,12 +36,12 @@ env/
 .ipynb_checkpoints
 
 # 模型文件
-*.zip
-*.pt
-*.pth
-*.onnx
-*.h5
-*.ckpt
+# *.zip
+# *.pt
+# *.pth
+# *.onnx
+# *.h5
+# *.ckpt
 
 # 日志文件
 logs/
