@@ -20,7 +20,7 @@ from custom_env import RehabilitationEnv
 # 1. 定义三个特征提取器 (Feature Extractors)
 # 假设你的 observation 是 32 维: 前 16 维是标量，后 16 维是历史轨迹 (8帧*2)
 # =====================================================================
-SCALAR_DIM = 16
+SCALAR_DIM = 10
 HISTORY_LEN = 16
 HISTORY_CHANNELS = 2
 
@@ -41,93 +41,80 @@ class MLPOnlyExtractor(BaseFeaturesExtractor):
         scalar_part = observations[:, :SCALAR_DIM]
         return self.net(scalar_part)
     
-class FiLMFeatureExtractor(BaseFeaturesExtractor):
+class BiResidualGatedExtractor(BaseFeaturesExtractor):
     """
-    基于 FiLM (特征级线性调制) 的双流状态提取网络。
-    利用空间位置信息 (Scalars) 动态调制时序病理特征 (LSTM)。
+    双向残差门控特征提取器 (Bi-directional Residual Gated Fusion)
+    解决多模态 RL 中的“捷径学习”与“模态坍塌”问题。
     """
     def __init__(self, observation_space: gym.spaces.Box):
-        # 最终输出维度
         super().__init__(observation_space, features_dim=64)
         
-        self.history_channels = 2  # dx, dy
-        self.history_len = 16      # 序列长度
-        self.scalar_dim = 16       # 标量特征的维度 (请根据实际情况确认)
+        self.history_channels = 2
+        self.history_len = 16
+        self.scalar_dim = 16  # 请核对你的真实标量维度
+        self.hidden_dim = 32
         
-        self.lstm_hidden_dim = 32
-        
-        # ----------------------------------------------------
-        # 1. 空间流 (Spatial Stream)
-        # ----------------------------------------------------
+        # 1. 空间流 (Spatial)
         self.spatial_net = nn.Sequential(
-            nn.Linear(self.scalar_dim, 32),
-            nn.ReLU(),
-            nn.Linear(32, 32),
+            nn.Linear(self.scalar_dim, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim), # [修复] 统一量纲
             nn.ReLU()
         )
         
-        # ----------------------------------------------------
-        # 2. 调制发生器 (FiLM Generator) 🌟 核心创新
-        # 根据空间特征，生成用于缩放(gamma)和平移(beta)的系数
-        # 输出维度是 LSTM 隐藏层维度的 2 倍
-        # ----------------------------------------------------
-        self.film_generator = nn.Sequential(
-            nn.Linear(32, 64),
-            nn.ReLU(),
-            nn.Linear(64, self.lstm_hidden_dim * 2) 
-        )
-        nn.init.zeros_(self.film_generator[-1].weight)
-        nn.init.zeros_(self.film_generator[-1].bias)
-        
-        # ----------------------------------------------------
-        # 3. 时序流 (Temporal Stream - LSTM)
-        # ----------------------------------------------------
+        # 2. 时序流 (Temporal)
         self.lstm_net = nn.LSTM(
             input_size=self.history_channels, 
-            hidden_size=self.lstm_hidden_dim, 
+            hidden_size=self.hidden_dim, 
             batch_first=True
         )
+        self.temporal_ln = nn.LayerNorm(self.hidden_dim) # [修复] 防止 LSTM 输出方差过大
         
-        # ----------------------------------------------------
-        # 4. 最终融合输出 (Final Fusion)
-        # ----------------------------------------------------
-        # 将"空间特征"和"被调制后的时序特征"拼接，再过一层线性层
+        # ==========================================
+        # 🌟 核心进化：双向门控生成器 (Bi-directional Gates)
+        # ==========================================
+        # 空间控制时间：基于当前位置，决定是否放大病理动作
+        self.gate_s2t = nn.Sequential(
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.Sigmoid()
+        )
+        
+        # 时间控制空间：基于病理发作情况，决定是否增强对墙壁的敏感度
+        self.gate_t2s = nn.Sequential(
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.Sigmoid()
+        )
+        
+        # 3. 融合与输出
         self.fusion_net = nn.Sequential(
-            nn.Linear(32 + self.lstm_hidden_dim, 64),
+            nn.Linear(self.hidden_dim * 2, 64),
             nn.ReLU()
         )
 
     def forward(self, observations: th.Tensor) -> th.Tensor:
-        # --- 1. 数据切片 ---
         scalar_part = observations[:, :self.scalar_dim]       
         history_part = observations[:, self.scalar_dim:]      
         
-        # --- 2. 提取空间特征 ---
-        spatial_features = self.spatial_net(scalar_part) # Shape: (Batch, 32)
+        # --- 提取基础特征 ---
+        spatial_feats = self.spatial_net(scalar_part) 
         
-        # --- 3. 提取基础的时序特征 (LSTM) ---
         history_reshaped = history_part.view(-1, self.history_channels, self.history_len).permute(0, 2, 1)
         lstm_out, _ = self.lstm_net(history_reshaped)
-        temporal_features = lstm_out[:, -1, :] # 取最后一步 (Batch, 32)
+        temporal_feats = self.temporal_ln(lstm_out[:, -1, :]) 
         
-        # ========================================================
-        # 🌟 4. 上下文特征调制 (Context-Aware Modulation via FiLM)
-        # ========================================================
-        # 利用空间特征生成调制参数
-        film_params = self.film_generator(spatial_features) # Shape: (Batch, 64)
+        # ==========================================
+        # 🌟 核心进化：残差门控调制 (Residual Modulation)
+        # ==========================================
+        gate_temporal = self.gate_s2t(spatial_feats) # 取值 (0, 1)
+        gate_spatial = self.gate_t2s(temporal_feats) # 取值 (0, 1)
         
-        # 切分为 gamma (缩放) 和 beta (平移)
-        gamma, beta = th.chunk(film_params, 2, dim=1) # Shape: (Batch, 32), (Batch, 32)
+        #[精髓] 使用 1.0 + gate 进行调制！
+        # 即使 gate 退化为 0，特征依然能 100% 保留并传导梯度，彻底杜绝分支“脑死亡”
+        modulated_temporal = temporal_feats * (1.0 + gate_temporal) 
+        modulated_spatial = spatial_feats * (1.0 + gate_spatial)
         
-        # 对时间特征进行仿射变换！
-        # 这里使得网络具备了：“在墙边放大病人动作，在空旷处缩小病人动作”的能力
-        modulated_temporal = (1.0 + gamma) * temporal_features + beta 
-        # (注：用 1.0+gamma 是一种常见的残差技巧，使网络初始状态倾向于恒等映射)
-        
-        # --- 5. 融合与输出 ---
-        combined = th.cat([spatial_features, modulated_temporal], dim=1) # (Batch, 64)
+        # --- 融合输出 ---
+        combined = th.cat([modulated_spatial, modulated_temporal], dim=1) 
         return self.fusion_net(combined)
-
 # 结构 B：MLP + LSTM (带历史记忆)
 class LSTMExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: gym.spaces.Box):
@@ -228,74 +215,133 @@ class AuxTrainingCallback(BaseCallback):
             self.logger.record("auxiliary/prediction_loss", loss.item())
         return True
     
+# class PPOAuxTrainingCallback(BaseCallback):
+#     def __init__(self, train_freq=1000, batch_size=512, buffer_size=10000, verbose=0):
+#         super().__init__(verbose)
+#         self.train_freq = train_freq
+#         self.batch_size = batch_size
+#         self.optimizer = None
+        
+#         # [核心修改 1]：PPO 没有合适的离线经验池，我们自己在内存里建一个简单的滑动窗口
+#         self.obs_buffer = deque(maxlen=buffer_size)
+#         self.next_obs_buffer = deque(maxlen=buffer_size)
+
+#     def _on_training_start(self) -> None:
+#         # [核心修改 2]：PPO 的特征提取器路径更简单，因为它是全局共享的
+#         self.extractor = self.model.policy.features_extractor
+        
+#         # 同样为提取器单独创建一个优化器
+#         self.optimizer = th.optim.Adam(self.extractor.parameters(), lr=1e-5)
+
+#     def _on_step(self) -> bool:
+#         # ==========================================
+#         # 1. 收集实时数据存入自定义 Buffer
+#         # ==========================================
+#         # self.model._last_obs 是模型在执行这一步之前的观测值
+#         # self.locals["new_obs"] 是环境刚返回的新的观测值
+#         obs_array = self.model._last_obs
+#         next_obs_array = self.locals["new_obs"]
+        
+#         # 因为你用了 SubprocVecEnv(n_envs=8)，这里拿到的是 [8, obs_dim] 的矩阵
+#         # 把并行的 8 个环境的数据拆开，一个个存入我们的 buffer
+#         for i in range(obs_array.shape[0]):
+#             self.obs_buffer.append(obs_array[i])
+#             self.next_obs_buffer.append(next_obs_array[i])
+
+#         # ==========================================
+#         # 2. 判断是否满足训练条件
+#         # ==========================================
+#         if self.num_timesteps % self.train_freq == 0 and len(self.obs_buffer) >= self.batch_size:
+            
+#             # 从自定义 buffer 中随机抽取 batch_size 个索引
+#             indices = np.random.choice(len(self.obs_buffer), self.batch_size, replace=False)
+            
+#             batch_obs = np.array([self.obs_buffer[idx] for idx in indices])
+#             batch_next_obs = np.array([self.next_obs_buffer[idx] for idx in indices])
+            
+#             # 转为 PyTorch Tensor，并放入 PPO 模型所在的设备 (GPU/CPU)
+#             device = self.model.device
+#             batch_obs_tensor = th.tensor(batch_obs, dtype=th.float32).to(device)
+#             batch_next_obs_tensor = th.tensor(batch_next_obs, dtype=th.float32).to(device)
+            
+#             # Ground Truth: 真正的下一帧手的位移 (取决于你的 _get_obs 拼接顺序)
+#             # 这里假设拼在最后两个数字
+#             true_next_move = batch_next_obs_tensor[:, -2:] 
+            
+#             # 预测下一帧动作
+#             pred_next_move = self.extractor.forward_aux(batch_obs_tensor)
+            
+#             # 算 Loss 并反向传播
+#             loss = F.l1_loss(pred_next_move, true_next_move)
+#             self.optimizer.zero_grad()
+#             loss.backward()
+#             self.optimizer.step()
+            
+#             # 记录 Loss
+#             self.logger.record("auxiliary/prediction_loss", loss.item())
+
+#         return True
+
 class PPOAuxTrainingCallback(BaseCallback):
-    def __init__(self, train_freq=1000, batch_size=512, buffer_size=10000, verbose=0):
+    def __init__(self, batch_size=256, buffer_size=10000, aux_epochs=3, verbose=0):
         super().__init__(verbose)
-        self.train_freq = train_freq
         self.batch_size = batch_size
+        self.aux_epochs = aux_epochs # 每次 rollout 结束，辅助任务复习几次
         self.optimizer = None
         
-        # [核心修改 1]：PPO 没有合适的离线经验池，我们自己在内存里建一个简单的滑动窗口
         self.obs_buffer = deque(maxlen=buffer_size)
         self.next_obs_buffer = deque(maxlen=buffer_size)
 
     def _on_training_start(self) -> None:
-        # [核心修改 2]：PPO 的特征提取器路径更简单，因为它是全局共享的
         self.extractor = self.model.policy.features_extractor
-        
-        # 同样为提取器单独创建一个优化器
-        self.optimizer = th.optim.Adam(self.extractor.parameters(), lr=1e-5)
+        # 保持较低的学习率，防止辅助梯度淹没 RL 梯度
+        self.optimizer = th.optim.Adam(self.extractor.parameters(), lr=5e-5)
 
     def _on_step(self) -> bool:
-        # ==========================================
-        # 1. 收集实时数据存入自定义 Buffer
-        # ==========================================
-        # self.model._last_obs 是模型在执行这一步之前的观测值
-        # self.locals["new_obs"] 是环境刚返回的新的观测值
+        # 在 _on_step 中 【只收集数据，绝对不训练网络！】
         obs_array = self.model._last_obs
         next_obs_array = self.locals["new_obs"]
         
-        # 因为你用了 SubprocVecEnv(n_envs=8)，这里拿到的是 [8, obs_dim] 的矩阵
-        # 把并行的 8 个环境的数据拆开，一个个存入我们的 buffer
         for i in range(obs_array.shape[0]):
             self.obs_buffer.append(obs_array[i])
             self.next_obs_buffer.append(next_obs_array[i])
-
-        # ==========================================
-        # 2. 判断是否满足训练条件
-        # ==========================================
-        if self.num_timesteps % self.train_freq == 0 and len(self.obs_buffer) >= self.batch_size:
-            
-            # 从自定义 buffer 中随机抽取 batch_size 个索引
-            indices = np.random.choice(len(self.obs_buffer), self.batch_size, replace=False)
-            
-            batch_obs = np.array([self.obs_buffer[idx] for idx in indices])
-            batch_next_obs = np.array([self.next_obs_buffer[idx] for idx in indices])
-            
-            # 转为 PyTorch Tensor，并放入 PPO 模型所在的设备 (GPU/CPU)
-            device = self.model.device
-            batch_obs_tensor = th.tensor(batch_obs, dtype=th.float32).to(device)
-            batch_next_obs_tensor = th.tensor(batch_next_obs, dtype=th.float32).to(device)
-            
-            # Ground Truth: 真正的下一帧手的位移 (取决于你的 _get_obs 拼接顺序)
-            # 这里假设拼在最后两个数字
-            true_next_move = batch_next_obs_tensor[:, -2:] 
-            
-            # 预测下一帧动作
-            pred_next_move = self.extractor.forward_aux(batch_obs_tensor)
-            
-            # 算 Loss 并反向传播
-            loss = F.l1_loss(pred_next_move, true_next_move)
-            self.optimizer.zero_grad()
-            loss.backward()
-            self.optimizer.step()
-            
-            # 记录 Loss
-            self.logger.record("auxiliary/prediction_loss", loss.item())
-
         return True
 
-
+    def _on_rollout_end(self) -> None:
+        # =========================================================
+        # 🌟 核心修复：只在 PPO 收集完数据、准备更新网络的时刻，同步进行辅助任务更新
+        # 这保证了 PPO 在收集数据的 512 步期间，底层特征提取器是绝对冻结且稳定的！
+        # =========================================================
+        if len(self.obs_buffer) >= self.batch_size:
+            epoch_losses =[]
+            
+            # 在这里做几个 epoch 的辅助任务更新
+            for _ in range(self.aux_epochs):
+                indices = np.random.choice(len(self.obs_buffer), self.batch_size, replace=False)
+                batch_obs = np.array([self.obs_buffer[idx] for idx in indices])
+                batch_next_obs = np.array([self.next_obs_buffer[idx] for idx in indices])
+                
+                device = self.model.device
+                batch_obs_tensor = th.tensor(batch_obs, dtype=th.float32).to(device)
+                batch_next_obs_tensor = th.tensor(batch_next_obs, dtype=th.float32).to(device)
+                
+                # Ground Truth
+                true_next_move = batch_next_obs_tensor[:, -2:] 
+                
+                # 预测与 Loss (乘以 100 放大数值)
+                pred_next_move = self.extractor.forward_aux(batch_obs_tensor)
+                loss = F.mse_loss(pred_next_move * 100.0, true_next_move * 100.0)
+                
+                self.optimizer.zero_grad()
+                loss.backward()
+                # 裁剪梯度，防止破坏 PPO 刚更新完的特征
+                th.nn.utils.clip_grad_norm_(self.extractor.parameters(), max_norm=0.5)
+                self.optimizer.step()
+                
+                epoch_losses.append(loss.item())
+            
+            # 记录平均 Loss 到 Tensorboard
+            self.logger.record("auxiliary/prediction_loss", np.mean(epoch_losses))
 
 class SaveMetricsCallback(BaseCallback):
     def __init__(self, save_path, verbose=0):
@@ -345,9 +391,9 @@ def run_ablation_study():
     
     # 定义你要跑的 3 个实验
     experiments =[
-        # {"name": "1_MLP_Only", "extractor": MLPOnlyExtractor, "use_aux": False},
+        {"name": "1_MLP_Only", "extractor": MLPOnlyExtractor, "use_aux": False},
         {"name": "2_MLP_LSTM", "extractor": LSTMExtractor, "use_aux": False},
-        # {"name": "3_MLP_LSTM_AUX", "extractor": AuxLSTMExtractor, "use_aux": True},
+        {"name": "3_MLP_LSTM_AUX", "extractor": AuxLSTMExtractor, "use_aux": True},
         {"name": "4_MLP_LSTM_FiLM", "extractor": FiLMFeatureExtractor, "use_aux": False},
     ]
     

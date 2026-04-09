@@ -88,8 +88,8 @@ class RehabilitationEnv(gym.Env):
         self.w_effort = 2.0
         
         # --- Movement Params ---
-        self.stride_robot_random = [0.2, 1]
-        self.stride_hand_random = [0.1, 1]
+        self.stride_robot_random = [0.5, 0.7]
+        self.stride_hand_random = [0.25, 1]
         self.hand_move_epsilon = 0.2
         
         self.max_steps = 100
@@ -102,8 +102,8 @@ class RehabilitationEnv(gym.Env):
         # Observation space definition
         self.history_length = 16
         # obs dim calculation: 
-        # robot(2) + hand(2) + history(16) + dist(1) + bounds(4) + stride(1) + fix(2) + block(2) = 32
-        self.obs_dim = 16+self.history_length*2
+        # robot(2) + hand(2)  + dist(1) + bounds(4) + stride(1) + fix(2) + block(2)+apf(2)+ history(16) = 32
+        self.obs_dim = 10+self.history_length*2
         self.observation_space = Box(low=-np.inf, high=np.inf, shape=(self.obs_dim,), dtype=np.float32)
 
         # --- Internals ---
@@ -216,9 +216,9 @@ class RehabilitationEnv(gym.Env):
             [self.current_distance],
             dist_bounds,            
             [self.stride_robot],    
-            self.fixed_point,       
-            self.blocking_point,
-            apf_force,              
+            # self.fixed_point,       
+            # self.blocking_point,
+            # apf_force,              
             flat_hand_history,      # Robot 看 Hand 的历史
         )).astype(np.float32)
         return obs
@@ -251,9 +251,9 @@ class RehabilitationEnv(gym.Env):
             [self.current_distance],
             dist_bounds,            
             [self.stride_hand],     # 自己的步长
-            self.fixed_point,       
-            self.blocking_point,
-            rel_vel,                # 替代 APF 的位置 (2维)
+            # self.fixed_point,       
+            # self.blocking_point,
+            # rel_vel,                # 替代 APF 的位置 (2维)
             flat_robot_history,     # Hand 看 Robot 的历史
         )).astype(np.float32)
         return obs
@@ -500,16 +500,16 @@ class RehabilitationEnv(gym.Env):
             # reward -= bio_cost
 
         # Penalize action
-        reward -= 0.2 * np.linalg.norm(action)
+        # reward -= 0.2 * np.linalg.norm(action)
 
         self.pre_distance = self.current_distance
 
         if self.steps >= self.max_steps:
             truncated = True
-            if self.training_mode == 'robot': 
-                reward += self.reward_survival
-            else:
-                reward -= self.reward_survival
+            # if self.training_mode == 'robot': 
+            #     reward += self.reward_survival
+            # else:
+            #     reward -= self.reward_survival
 
         obs = self._get_obs()
         if self.random_noise:
