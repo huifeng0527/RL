@@ -1,39 +1,40 @@
 import gymnasium as gym
-from gymnasium.spaces import Box,Dict
+from gymnasium.spaces import Box
 import numpy as np
 import pygame
-import pygame.gfxdraw
-import math
 import random
-import os
-import json
-import time
 from collections import deque
-from APF import Advanced_APF
+
+from .renderer import render_aesthetic
+
+OBS_SCALAR_DIM = 10
+HISTORY_LENGTH = 16
+HISTORY_CHANNELS = 2
+
+COLORS = {
+    "bg": (245, 247, 250),
+    "trajectory": (67, 97, 238),
+    "arm_safe": (44, 160, 44),
+    "arm_block": (230, 57, 70),
+    "hand": (46, 196, 182),
+    "robot": (255, 159, 28),
+}
 
 
 # --- Main Environment Class ---
 class RehabilitationEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 60}
 
-    def __init__(self, 
+    def __init__(self,
                  training_mode='robot', # 'robot' or 'hand'
                  robot_model=None,      # 训练 Hand 时需要的 Robot 对手
-                 hand_model_paths=None,       # [新增] 训练 Robot 时需要的 Hand 对手
-                 hand_type='healthy',   # 'healthy', 'parkinson', 'stroke'
+                 hand_model_paths=None, # 训练 Robot 时需要的 Hand 对手路径列表
                  render_mode=None):
         
         super().__init__()
         self.training_mode = training_mode
         self.robot_model = robot_model
-        # self.hand_model_record = hand_model    # [新增] 保存手掌模型
-        self.hand_type = hand_type
         self.render_mode = render_mode
-        self.patient = None
-        self.patient_locked = False
-
-        self.apf_controller = Advanced_APF()
-        self.residual_scale = 1
       # ========================================================
         # [核心修改 1]：构建 Hand 对手池 (Opponent Pool)
         # 永远把 None (代表基于规则的 Script Hand) 放在池子的第一个位置
@@ -68,9 +69,6 @@ class RehabilitationEnv(gym.Env):
         self.fixed_point = np.array([self.env_width / 2, self.env_height])
         self.arm_blocking_length = 5
         
-        # --- Filters ---
-        # self.bio_filter = BiomechanicalFilter(self.hand_type)
-        
         # --- Thresholds ---
         self.distance_threshold_collision = 2.5
         self.distance_threshold_penalty = 3.0
@@ -100,10 +98,10 @@ class RehabilitationEnv(gym.Env):
         self.action_space = Box(low=-1, high=1, shape=(2,), dtype=np.float32)
 
         # Observation space definition
-        self.history_length = 16
-        # obs dim calculation: 
-        # robot(2) + hand(2)  + dist(1) + bounds(4) + stride(1) + fix(2) + block(2)+apf(2)+ history(16) = 32
-        self.obs_dim = 10+self.history_length*2
+        self.history_length = HISTORY_LENGTH
+        # obs dim calculation:
+        # actor position(2) + opponent position(2) + dist(1) + bounds(4) + stride(1) + history(16 * 2)
+        self.obs_dim = OBS_SCALAR_DIM + self.history_length * HISTORY_CHANNELS
         self.observation_space = Box(low=-np.inf, high=np.inf, shape=(self.obs_dim,), dtype=np.float32)
 
         # --- Internals ---
@@ -118,6 +116,46 @@ class RehabilitationEnv(gym.Env):
         self.clock = None
         self.random_noise = True
         self.noise_sigma = 0.05
+
+    def _seed_history_buffer(self, buffer):
+        buffer.clear()
+        for _ in range(self.history_length):
+            buffer.append(np.zeros(2, dtype=np.float32))
+
+    def _sample_episode_parameters(self):
+        self.hand_model = random.choice(self.hand_model_pool)
+        self.stride_robot = np.random.uniform(*self.stride_robot_random)
+        self.stride_hand = np.random.uniform(*self.stride_hand_random)
+        self.arm_blocking_length = np.random.uniform(0, 1)
+
+    def _sample_initial_positions(self):
+        bounds = [self.env_width - self.margin, self.env_height - self.margin]
+        self.robot_position = np.random.uniform(self.margin, bounds)
+        self.hand_position = np.random.uniform(self.margin, bounds)
+        self.fixed_point = np.array([self.env_width * random.gauss(0.5, 0.15), self.env_height])
+
+    def _apply_obs_noise(self, obs):
+        if not self.random_noise:
+            return obs
+        return obs + np.random.normal(0, self.noise_sigma, size=obs.shape)
+
+    def _get_rehab_reward(self):
+        z_min = 4
+        z_max = 6
+        if self.current_distance < z_min:
+            reward = -0.1 * np.exp(1.5 * (z_min - self.current_distance) * 2)
+        elif self.current_distance < z_max:
+            reward = 0.5
+        else:
+            reward = -0.3 * (self.current_distance - z_max)
+        return float(np.clip(reward, -10, 10))
+
+    def _robot_out_of_bounds(self):
+        return bool(
+            np.any(self.robot_position <= self.margin)
+            or self.robot_position[0] >= self.env_width - self.margin
+            or self.robot_position[1] >= self.env_height - self.margin
+        )
 
     def safe_normalize(self, v):
         norm = np.linalg.norm(v)
@@ -157,39 +195,6 @@ class RehabilitationEnv(gym.Env):
         p_sweep = self.w_sweep * (s_tan**2) * (1 + 2.0 * (arm_len / self.max_length_arm)**2)
         p_effort = self.w_effort * (s_rad**2)
         return p_sweep + p_effort
-
-    # def _get_obs(self):
-    #     dist_bounds = np.array([
-    #         self.robot_position[0],
-    #         self.env_width - self.robot_position[0],
-    #         self.robot_position[1],
-    #         self.env_height - self.robot_position[1]
-    #     ])
-        
-    #     flat_history = np.array(self.hand_history_buffer).flatten()
-    #     if len(flat_history) < self.history_length * 2:
-    #         flat_history = np.zeros(self.history_length * 2)
-
-
-    #     apf_force = self.apf_controller.compute_force(
-    #         self.robot_position, 
-    #         self.hand_position, 
-    #         self.hand_dir
-    #     )
-
-    #     obs = np.concatenate((
-    #         self.robot_position,    
-    #         self.hand_position,     
-    #         [self.current_distance],
-    #         dist_bounds,            
-    #         [self.stride_robot],    
-    #         self.fixed_point,       
-    #         self.blocking_point ,
-    #         apf_force,
-    #         flat_history,           
-
-    #     )).astype(np.float32)
-    #     return obs
 
     def _get_robot_obs(self):
         """Robot 的视角：关注 Hand 的历史"""
@@ -283,38 +288,10 @@ class RehabilitationEnv(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        # if not self.patient_locked:
-        #     self.reset_patient()
-
-        
-        # self.bio_filter.mode = random.choice(['healthy', 'parkinson']) 
-        self.hand_model =  random.choice(self.hand_model_pool) 
-        # self.hand_model =  self.hand_model_record
-
-        self.stride_robot = np.random.uniform(*self.stride_robot_random)
-        self.stride_hand = np.random.uniform(*self.stride_hand_random)
-        self.arm_blocking_length = np.random.uniform(0, 1)
-        # self.arm_blocking_length = 3
-
-
-
-        # self.current_patient_param = self.patient.reset_randomly()
-
-
-        
-        self.robot_position = np.random.uniform(self.margin, [self.env_width-self.margin, self.env_height-self.margin])
-        self.hand_position = np.random.uniform(self.margin, [self.env_width-self.margin, self.env_height-self.margin])
-
-        self.fixed_point = np.array([self.env_width*random.gauss(0.5,0.15), self.env_height])
-        
-        self.hand_history_buffer.clear()
-        for _ in range(self.history_length):
-            self.hand_history_buffer.append(np.zeros(2))
-        
-        self.robot_history_buffer.clear()
-        for _ in range(self.history_length):
-            self.robot_history_buffer.append(np.zeros(2))
-            
+        self._sample_episode_parameters()
+        self._sample_initial_positions()
+        self._seed_history_buffer(self.hand_history_buffer)
+        self._seed_history_buffer(self.robot_history_buffer)
         self.trajectory_points = [self.robot_position.copy()]
         self.current_distance = np.linalg.norm(self.robot_position - self.hand_position)
         self.pre_distance = self.current_distance
@@ -337,78 +314,83 @@ class RehabilitationEnv(gym.Env):
             move = self.safe_normalize(vec) * self.stride_hand
         return move
     
-    # 保持方向限幅函数
-    def _clip(self, vec,max=1):
-        if np.linalg.norm(vec) > max:
-            return vec * max / np.linalg.norm(vec)
+    def _resolve_robot_move(self, action):
+        if self.training_mode == 'hand':
+            if self.robot_model is None:
+                return np.zeros(2)
+            obs_for_robot = self._get_robot_obs()
+            robot_action, _ = self.robot_model.predict(obs_for_robot, deterministic=True)
+            return robot_action * self.stride_robot
+
+        # Robot mode: use RL action directly
+        return action * self.stride_robot
+
+    def _resolve_hand_move(self, action):
+        if self.training_mode == 'hand':
+            return action * self.stride_hand
+
+        if self.hand_model is None:
+            return self._get_scripted_hand_move()
+
+        obs_for_hand = self._get_hand_obs()
+        hand_action, _ = self.hand_model.predict(obs_for_hand, deterministic=True)
+        return hand_action * self.stride_hand
+
+    def _compute_reward_and_done(self, old_robot_pos):
+        reward = 0.0
+        terminated = False
+        truncated = False
+        done_reason = None
+
+        self.current_distance = np.linalg.norm(self.robot_position - self.hand_position)
+
+        if self.training_mode == 'robot':
+            reward += self._get_rehab_reward()
+
+        if self._robot_out_of_bounds():
+            if self.training_mode == 'robot':
+                reward += self.reward_bound
+            terminated = True
+            done_reason = "Robot Out"
+
+        if self.current_distance < self.distance_threshold_collision:
+            reward += self.reward_robot_caught if self.training_mode == 'robot' else self.reward_hand_catch
+            terminated = True
+            done_reason = "Robot Caught"
+
+        if self._check_line_intersection(old_robot_pos, self.robot_position, self.hand_position, self.blocking_point):
+            if self.training_mode == 'robot':
+                reward += self.reward_arm_hit
+            terminated = True
+            done_reason = "Hit Arm"
+
+        dist_improvement = self.pre_distance - self.current_distance
+        if self.training_mode == 'robot':
+            reward += self.reward_step
         else:
-            return vec
+            reward += dist_improvement * 0.5 + self.reward_step
+
+        self.pre_distance = self.current_distance
+
+        if self.steps >= self.max_steps:
+            truncated = True
+
+        return reward, terminated, truncated, done_reason
 
     def step(self, action):
-        # 1. 预处理
-        robot_move = np.zeros(2)
-        hand_move_raw = np.zeros(2)
+        action = np.asarray(action, dtype=np.float32)
         bio_cost = 0.0
-        
+
         if self.random_noise:
             action += np.random.normal(0, self.noise_sigma, size=action.shape)
 
-        # 2. 决策逻辑 (关键修改部分)
-        if self.training_mode == 'robot':
-            # --- 训练 Robot: Robot 使用 Action, Hand 使用 Model 或 Script ---
+        robot_move = self._resolve_robot_move(action)
+        hand_move_raw = self._resolve_hand_move(action)
 
-            action_rl = action 
-            
-            # 2. APF 输出的是基准 (Base)
-            action_base = self.apf_controller.compute_force(
-                self.robot_position, 
-                self.hand_position, 
-                self.hand_dir
-            )
-
-            action_total = action_base + self.residual_scale * action_rl
-
-            action_total = self._clip(action_total)
-
-            # robot_move = action_total * self.stride_robot
-
-            robot_move = action_rl * self.stride_robot
-            
-            # [修改点] 检查是否有预训练的手掌模型
-            if self.hand_model is not None:
-                # 获取观测 (Hand Agent 也是用同样的 Env Observation)
-                obs_for_hand = self._get_hand_obs()
-                # 预测动作
-                hand_action, _ = self.hand_model.predict(obs_for_hand, deterministic=True) 
-                hand_move_raw = hand_action * self.stride_hand
-            else:
-                # 如果没有模型，回退到脚本
-                hand_move_raw = self._get_scripted_hand_move()
-                # hand_move_raw = self.patient.get_velocity(self.hand_position,self.robot_position)* self.stride_hand
-                
-        else:
-            # --- 训练 Hand: Hand 使用 Action, Robot 使用 Model ---
-            hand_move_raw = action * self.stride_hand
-            
-            if self.robot_model is not None:
-                obs_for_robot = self._get_robot_obs() 
-                robot_action, _ = self.robot_model.predict(obs_for_robot, deterministic=True)
-                robot_move = robot_action * self.stride_robot
-            else:
-                robot_move = np.zeros(2) 
-
-        # 3. 动作后处理 (Apply Filter)
-        # 无论手是脚本控制还是模型控制，都要经过生物力学滤波器（模拟病理身体）
         if self.training_mode == 'hand':
             bio_cost = self._calculate_biomechanical_cost(self.hand_position, hand_move_raw)
-            
-        # hand_move_final = self.bio_filter.apply(hand_move_raw, self.hand_position)
         hand_move_final = hand_move_raw
 
-
-        # 4. 物理更新
-
-        
         old_robot_pos = self.robot_position.copy()
         self.robot_position += robot_move
         self.trajectory_points.append(self.robot_position.copy())
@@ -429,139 +411,39 @@ class RehabilitationEnv(gym.Env):
         self.hand_dir  = -to_shoulder
 
         self.steps += 1
-        
-        # 5. 奖励计算
-        reward = 0
-        terminated = False
-        truncated = False
-        done_reason = None
 
-        self.current_distance = np.linalg.norm(self.robot_position - self.hand_position)
+        reward, terminated, truncated, done_reason = self._compute_reward_and_done(old_robot_pos)
 
-
-        # 新增 Rehabilitation reward
-        
-        if self.training_mode == 'robot':
-            z_min = 4
-            z_max = 6
-            # scenario 1: 患者的抓取速度很慢，robot要和hand的距离保持在3米以内
-            if self.current_distance < z_min:
-                rehab_reward = -0.1*np.exp(1.5*(z_min-self.current_distance)*2)
-
-            elif self.current_distance < z_max:
-                rehab_reward = 0.5
-
-            else:
-                rehab_reward= -0.3*(self.current_distance-z_max)
-
-
-            rehab_reward = np.clip(rehab_reward,-10,10)
-            reward += rehab_reward
-
-
-
-
-
-        
-        
-        # Robot Out of Bounds
-        if np.any(self.robot_position <= self.margin) or \
-           self.robot_position[0] >= self.env_width - self.margin or \
-           self.robot_position[1] >= self.env_height - self.margin:
-            if self.training_mode == 'robot': reward += self.reward_bound
-            terminated = True
-            done_reason = "Robot Out"
-
-        # Caught
-        if self.current_distance < self.distance_threshold_collision:
-            if self.training_mode == 'robot': 
-                reward += self.reward_robot_caught
-            else: 
-                reward += self.reward_hand_catch
-            terminated = True
-            done_reason = "Robot Caught"
-            
-        # Hit Arm
-        if self._check_line_intersection(old_robot_pos, self.robot_position, self.hand_position, self.blocking_point):
-            if self.training_mode == 'robot':
-                reward += self.reward_arm_hit
-            terminated = True
-            done_reason = "Hit Arm"
-
-        # Shaping
-        dist_improvement = self.pre_distance - self.current_distance
-
-        if self.training_mode == 'robot':
-            reward += self.reward_step
-            # reward -= dist_improvement * 2
-        else:
-            reward += dist_improvement * 0.5
-            reward += self.reward_step
-            # reward -= bio_cost
-
-        # Penalize action
-        # reward -= 0.2 * np.linalg.norm(action)
-
-        self.pre_distance = self.current_distance
-
-        if self.steps >= self.max_steps:
-            truncated = True
-            # if self.training_mode == 'robot': 
-            #     reward += self.reward_survival
-            # else:
-            #     reward -= self.reward_survival
-
-        obs = self._get_obs()
-        if self.random_noise:
-            obs += np.random.normal(0, self.noise_sigma, size=obs.shape)
-            
+        obs = self._apply_obs_noise(self._get_obs())
         info = self._get_info()
         info['bio_cost'] = bio_cost
         info['done_reason'] = done_reason
         
         return obs, reward, terminated, truncated, info
 
-    # --- Render (保持不变或微调) ---
     def render(self, mode="human"):
         if self.window is None:
             pygame.init()
             self.window = pygame.display.set_mode(
                 (int(self.env_width * self.cell_size), int(self.env_height * self.cell_size))
             )
-            pygame.display.set_caption(f"Mode: {self.training_mode.upper()} | Hand: {self.hand_type}")
+            pygame.display.set_caption(f"Mode: {self.training_mode.upper()} | RehabilitationEnv")
             self.clock = pygame.time.Clock()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.close()
 
-        canvas = pygame.Surface((self.window.get_width(), self.window.get_height()))
-        canvas.fill(COLORS['bg'])
-        
-        to_px = lambda p: (int(p[0]*self.cell_size), int(p[1]*self.cell_size))
+        render_aesthetic(
+            self.robot_position,
+            self.hand_position,
+            self.fixed_point,
+            self.trajectory_points,
+            grid_size=self.grid_size,
+            cell_size=self.cell_size,
+            window=self.window
+        )
 
-        hand_px = to_px(self.hand_position)
-        robot_px = to_px(self.robot_position)
-        fix_px = to_px(self.fixed_point)
-        block_px = to_px(self.blocking_point)
-
-        # Draw trajectory
-        if len(self.trajectory_points) > 1:
-            pts = [to_px(p) for p in self.trajectory_points[-50:]]
-            if len(pts) > 1:
-                pygame.draw.lines(canvas, COLORS['trajectory'], False, pts, 2)
-
-        # Draw Arm
-        pygame.draw.line(canvas, COLORS['arm_safe'], fix_px, block_px, 5)
-        pygame.draw.line(canvas, COLORS['arm_block'], block_px, hand_px, 15)
-        
-        # Draw Entities
-        pygame.draw.circle(canvas, (50,50,50), fix_px, 8) # Shoulder
-        pygame.draw.circle(canvas, COLORS['hand'], hand_px, int(self.cell_size*0.3)) # Hand
-        pygame.draw.circle(canvas, COLORS['robot'], robot_px, int(self.cell_size*0.25)) # Robot
-
-        self.window.blit(canvas, (0,0))
-        pygame.display.flip()
         self.clock.tick(self.metadata["render_fps"])
 
     def close(self):
