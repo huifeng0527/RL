@@ -76,10 +76,10 @@ class RehabilitationEnv(gym.Env):
         self.distance_threshold_penalty = 3.0
         
         # --- Rewards Config ---
-        self.reward_hand_catch = 20
-        self.reward_robot_caught = -20
+        self.reward_hand_catch = 40
+        self.reward_robot_caught = -40
         self.reward_arm_hit = -20
-        self.reward_bound = -40
+        self.reward_bound = -50
         self.reward_step = -0.2 if training_mode == 'hand' else 0.2
         self.reward_survival = 10
         
@@ -88,8 +88,8 @@ class RehabilitationEnv(gym.Env):
         self.w_effort = 2.0
         
         # --- Movement Params ---
-        self.stride_robot_random = [0.5, 0.7]
-        self.stride_hand_random = [0.25, 1]
+        self.stride_robot_random = [0.6, 0.8]
+        self.stride_hand_random = [0.3, 1]
         self.hand_move_epsilon = 0.2
         
         self.max_steps = 100
@@ -292,7 +292,7 @@ class RehabilitationEnv(gym.Env):
         # self.hand_model =  self.hand_model_record
 
         self.stride_robot = np.random.uniform(*self.stride_robot_random)
-        self.stride_hand = np.random.uniform(*self.stride_hand_random)
+        # self.stride_hand = np.random.uniform(*self.stride_hand_random)
         self.arm_blocking_length = np.random.uniform(0, 1)
         # self.arm_blocking_length = 3
 
@@ -305,6 +305,20 @@ class RehabilitationEnv(gym.Env):
         self.robot_position = np.random.uniform(self.margin, [self.env_width-self.margin, self.env_height-self.margin])
         self.hand_position = np.random.uniform(self.margin, [self.env_width-self.margin, self.env_height-self.margin])
 
+        patient_profile = np.random.choice(['mild', 'severe', 'healthy'], p=[0.2, 0.8, 0])
+        
+        if patient_profile == 'mild':
+            # 主流康复人群：速度中等，加上轻微的高斯扰动
+            # np.clip 防止越界
+            self.stride_hand = np.clip(np.random.normal(loc=0.5, scale=0.1), 0.2, 0.6)
+            
+        elif patient_profile == 'severe':
+            # 重度冻结/软瘫人群：速度极慢
+            self.stride_hand = np.random.uniform(0.2, 0.4)
+            
+        elif patient_profile == 'healthy':
+            # 健康运动员（OOD压力测试）：速度比机器人还快！逼迫机器人走位
+            self.stride_hand = np.random.uniform(0.6, 1.0)
         self.fixed_point = np.array([self.env_width*random.gauss(0.5,0.15), self.env_height])
         
         self.hand_history_buffer.clear()
@@ -455,7 +469,7 @@ class RehabilitationEnv(gym.Env):
                 rehab_reward= -0.3*(self.current_distance-z_max)
 
 
-            rehab_reward = np.clip(rehab_reward,-10,10)
+            rehab_reward = np.clip(rehab_reward,-1,1)
             reward += rehab_reward
 
 

@@ -51,7 +51,7 @@ class BiResidualGatedExtractor(BaseFeaturesExtractor):
         
         self.history_channels = 2
         self.history_len = 16
-        self.scalar_dim = 16  # 请核对你的真实标量维度
+        self.scalar_dim = 10  # 请核对你的真实标量维度
         self.hidden_dim = 32
         
         # 1. 空间流 (Spatial)
@@ -65,6 +65,7 @@ class BiResidualGatedExtractor(BaseFeaturesExtractor):
         self.lstm_net = nn.LSTM(
             input_size=self.history_channels, 
             hidden_size=self.hidden_dim, 
+            num_layers=2,
             batch_first=True
         )
         self.temporal_ln = nn.LayerNorm(self.hidden_dim) # [修复] 防止 LSTM 输出方差过大
@@ -83,9 +84,11 @@ class BiResidualGatedExtractor(BaseFeaturesExtractor):
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.Sigmoid()
         )
-        
+        nn.init.constant_(self.gate_s2t[0].bias, -3.0)
+        nn.init.constant_(self.gate_t2s[0].bias, -3.0)
         # 3. 融合与输出
         self.fusion_net = nn.Sequential(
+            nn.LayerNorm(self.hidden_dim * 2),
             nn.Linear(self.hidden_dim * 2, 64),
             nn.ReLU()
         )
@@ -109,12 +112,86 @@ class BiResidualGatedExtractor(BaseFeaturesExtractor):
         
         #[精髓] 使用 1.0 + gate 进行调制！
         # 即使 gate 退化为 0，特征依然能 100% 保留并传导梯度，彻底杜绝分支“脑死亡”
-        modulated_temporal = temporal_feats * (1.0 + gate_temporal) 
-        modulated_spatial = spatial_feats * (1.0 + gate_spatial)
+        modulated_temporal = temporal_feats * (1+gate_temporal) 
+        modulated_spatial = spatial_feats * (1+gate_spatial)
         
         # --- 融合输出 ---
         combined = th.cat([modulated_spatial, modulated_temporal], dim=1) 
         return self.fusion_net(combined)
+
+import torch as th
+import torch.nn as nn
+import gym
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+
+
+class GatedExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space: gym.spaces.Box):
+        super().__init__(observation_space, features_dim=64)
+
+        self.history_channels = 2
+        self.history_len = 16
+        self.scalar_dim = 10
+        self.hidden_dim = 32
+
+        # --- 1. 空间流 ---
+        self.spatial_net = nn.Sequential(
+            nn.Linear(self.scalar_dim, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim),
+            nn.ReLU()
+        )
+
+        # --- 2. 时序流 ---
+        self.lstm_net = nn.LSTM(
+            input_size=self.history_channels,
+            hidden_size=self.hidden_dim,
+            num_layers=2,
+            batch_first=True
+        )
+
+        self.temporal_ln = nn.LayerNorm(self.hidden_dim)
+
+        # --- 3. 门控 ---
+        self.gate_net = nn.Sequential(
+            nn.Linear(self.hidden_dim * 2, self.hidden_dim),
+            nn.Sigmoid()
+        )
+
+        # --- 4. 输出层 ---
+        self.output_net = nn.Sequential(
+            nn.LayerNorm(self.hidden_dim),
+            nn.Linear(self.hidden_dim, 64),
+            nn.ReLU()
+        )
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        # --- 拆分 ---
+        scalar_part = observations[:, :self.scalar_dim]
+        history_part = observations[:, self.scalar_dim:]
+
+        # --- 空间特征 ---
+        spatial_feats = self.spatial_net(scalar_part)  # (B, 32)
+
+        # --- 时序特征 ---
+        history_reshaped = history_part.view(
+            -1, self.history_channels, self.history_len
+        ).permute(0, 2, 1)  # (B, T, C)
+
+        lstm_out, _ = self.lstm_net(history_reshaped)
+        temporal_feats = self.temporal_ln(lstm_out[:, -1, :])  # (B, 32)
+
+        # --- 门控融合 ---
+        fusion_input = th.cat([spatial_feats, temporal_feats], dim=-1)
+
+        gate = self.gate_net(fusion_input)  # (B, 32)
+
+        fused = gate * spatial_feats + (1 - gate) * temporal_feats  # (B, 32)
+
+        # --- 输出 ---
+        output = self.output_net(fused)  # (B, 64)
+
+        return output
+        
 # 结构 B：MLP + LSTM (带历史记忆)
 class LSTMExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: gym.spaces.Box):
@@ -160,7 +237,7 @@ class AuxLSTMExtractor(LSTMExtractor):
         
         # 新增：辅助预测头 (只看 LSTM 特征，预测下一帧手部位移 dx, dy)
         self.aux_head = nn.Sequential(
-            nn.Linear(32, 16),
+            nn.Linear(64, 16),
             nn.ReLU(),
             nn.Linear(16, 2) 
         )
@@ -168,15 +245,39 @@ class AuxLSTMExtractor(LSTMExtractor):
     # forward 函数继承自 LSTMExtractor，用于给 SAC 输出 64 维特征
     
     def forward_aux(self, observations: th.Tensor) -> th.Tensor:
-        """ 专供辅助任务使用的前向传播 """
-        history_part = observations[:, SCALAR_DIM:]
-        history_input = history_part.view(-1, HISTORY_CHANNELS, HISTORY_LEN).permute(0, 2, 1)
+        # ==========================================
+        # 🌟 绝杀修改：复用 forward 拿到时空融合特征，直接预测！
+        # ==========================================
+        # 直接调用自身的 forward 方法，拿到融合了时空的 64 维特征
+        fused_features = self.forward(observations)
         
-        lstm_out, _ = self.lstm_net(history_input)
-        lstm_features = lstm_out[:, -1, :]
+        # 辅以空间信息，精准预测下一帧
+        predicted_move = self.aux_head(fused_features)
         
-        return self.aux_head(lstm_features)
+        return predicted_move
+    
+class AuxGatedExtractor(GatedExtractor):
+    def __init__(self, observation_space: gym.spaces.Box):
+        super().__init__(observation_space) # 继承结构 B 的所有网络
+        
+        # 新增：辅助预测头 (只看 LSTM 特征，预测下一帧手部位移 dx, dy)
+        self.aux_head = nn.Sequential(
+            nn.Linear(64, 16),
+            nn.ReLU(),
+            nn.Linear(16, 2) 
+        )
 
+    # forward 函数继承自 LSTMExtractor，用于给 SAC 输出 64 维特征
+    
+    def forward_aux(self, observations: th.Tensor) -> th.Tensor:
+
+        # 直接调用自身的 forward 方法，拿到融合了时空的 64 维特征
+        fused_features = self.forward(observations)
+        
+        # 辅以空间信息，精准预测下一帧
+        predicted_move = self.aux_head(fused_features)
+        
+        return predicted_move
 
 # =====================================================================
 # 2. 定义辅助任务的 Callback
@@ -330,7 +431,7 @@ class PPOAuxTrainingCallback(BaseCallback):
                 
                 # 预测与 Loss (乘以 100 放大数值)
                 pred_next_move = self.extractor.forward_aux(batch_obs_tensor)
-                loss = F.mse_loss(pred_next_move * 100.0, true_next_move * 100.0)
+                loss = F.mse_loss(pred_next_move, true_next_move)
                 
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -382,7 +483,7 @@ class SaveMetricsCallback(BaseCallback):
 # =====================================================================
 def run_ablation_study():
     # 实验配置
-    TOTAL_STEPS = 5_000_000
+    TOTAL_STEPS = 8_000_000
     N_ENVS = 8
     
     now = datetime.datetime.now().strftime("%m%d_%H%M")
@@ -394,7 +495,8 @@ def run_ablation_study():
         {"name": "1_MLP_Only", "extractor": MLPOnlyExtractor, "use_aux": False},
         {"name": "2_MLP_LSTM", "extractor": LSTMExtractor, "use_aux": False},
         {"name": "3_MLP_LSTM_AUX", "extractor": AuxLSTMExtractor, "use_aux": True},
-        {"name": "4_MLP_LSTM_FiLM", "extractor": FiLMFeatureExtractor, "use_aux": False},
+        {"name": "4_MLP_LSTM_gate", "extractor": GatedExtractor, "use_aux": False},
+        {"name": "5_MLP_LSTM_gate_AUX", "extractor": AuxGatedExtractor, "use_aux": True},
     ]
     
     for exp in experiments:
@@ -431,7 +533,7 @@ def run_ablation_study():
             "MlpPolicy", 
             vec_env, 
             verbose=0, 
-            learning_rate=3e-4,
+            learning_rate=1e-4,
             batch_size=512,
             # ent_coef='auto', 
             policy_kwargs=policy_kwargs,
@@ -446,7 +548,7 @@ def run_ablation_study():
         )
         metrics_cb = SaveMetricsCallback(save_path)
         if exp["use_aux"]:
-            aux_cb = PPOAuxTrainingCallback(train_freq=1000, batch_size=512)
+            aux_cb = PPOAuxTrainingCallback(batch_size=512)
             callbacks = CallbackList([eval_cb, aux_cb,metrics_cb])
         else:
             callbacks = CallbackList([eval_cb, metrics_cb])
