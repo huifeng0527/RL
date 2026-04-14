@@ -3,11 +3,11 @@
 from .callbacks import DebugCallback
 from .feature_extractors import (
     MLPOnlyExtractor,
-    BiResidualGatedExtractor,
-    FiLMFeatureExtractor,
     LSTMExtractor,
     AuxLSTMExtractor,
-    EXTRACTOR_REGISTRY,
+    GatedExtractor,
+    AuxGatedExtractor,
+
 )
 from .ablation_callbacks import (
     AuxTrainingCallback,
@@ -18,11 +18,12 @@ from .ablation_callbacks import (
 __all__ = [
     'DebugCallback',
     'MLPOnlyExtractor',
-    'BiResidualGatedExtractor',
-    'FiLMFeatureExtractor',
+
     'LSTMExtractor',
     'AuxLSTMExtractor',
-    'EXTRACTOR_REGISTRY',
+    'GatedExtractor',
+    'AuxGatedExtractor',
+
     'AuxTrainingCallback',
     'PPOAuxTrainingCallback',
     'SaveMetricsCallback',

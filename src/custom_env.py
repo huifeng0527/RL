@@ -1,11 +1,97 @@
 import gymnasium as gym
 from gymnasium.spaces import Box
 import numpy as np
+import math
 import pygame
 import random
 from collections import deque
 
 from .renderer import render_aesthetic
+
+
+class BiomechanicalFilter:
+    """
+    极简版生物力学滤波器 (Sim2Real 专用)
+    仅保留核心病理特征：视运动延迟 (Latency) + 轻微震颤 (Micro-Tremor)
+    物理基准：8 FPS (dt=0.125s), 1 env_unit = 5 cm
+    """
+
+    def __init__(self, mode='healthy'):
+        self.mode = mode
+        self.step_count = 0
+        self.dt = 0.125  # 8 FPS 下的物理时间步长 (秒)
+
+        # ==========================================
+        # 1. 延迟参数 (模拟认知与神经传导迟缓)
+        # ==========================================
+        # 3帧延迟 = 3 * 125ms = 375ms (符合中风患者真实的反应滞后时间)
+        self.delay_frames = 3
+        self.delay_buffer = deque([np.zeros(2) for _ in range(self.delay_frames)], maxlen=self.delay_frames)
+
+        # ==========================================
+        # 2. 震颤参数 (模拟帕金森/原发性震颤)
+        # ==========================================
+        # 频率: 设定为 3.0 Hz (防 8FPS 采样混叠的理论安全上限)
+        self.tremor_freq = 3.0 
+        
+        # 振幅: 0.15 units * 5 cm/unit = 0.75 cm (临床真实的轻微震颤幅度)
+        self.tremor_amp = 0.05  
+
+    def reset(self):
+        """回合开始时清空时间与延迟队列"""
+        self.delay_frames = random.randint(1, 3)
+        self.delay_buffer = deque([np.zeros(2) for _ in range(self.delay_frames)], maxlen=self.delay_frames)
+        self.step_count = 0
+
+
+
+    def apply(self, ideal_action):
+        """
+        传入理想动作 (dx, dy)，返回叠加病理后的真实执行动作
+        """
+        self.step_count += 1
+        self.delay_buffer = deque([np.zeros(2) for _ in range(self.delay_frames)], maxlen=self.delay_frames)
+        self.step_count = 0
+        self.delay_buffer.clear()
+        for _ in range(self.delay_frames):
+            self.delay_buffer.append(np.zeros(2))
+
+    def apply(self, ideal_action):
+        """
+        传入理想动作 (dx, dy)，返回叠加病理后的真实执行动作
+        """
+        self.step_count += 1
+        action = np.array(ideal_action, dtype=float)
+
+        # 健康模式：瞬间响应，完全贴合
+        if self.mode == 'healthy':
+            return action
+
+        # ------------------------------------------------
+        # 核心逻辑 1：应用神经传导延迟
+        # ------------------------------------------------
+        self.delay_buffer.append(action)
+        delayed_action = self.delay_buffer.popleft()
+
+        # ------------------------------------------------
+        # 核心逻辑 2：应用周期性震颤与肌肉电噪声
+        # ------------------------------------------------
+        if self.mode in ['parkinson', 'impaired']:
+            t_sec = self.step_count * self.dt
+            
+            # X和Y使用相差 pi/2 的正弦波，在物理空间上生成一个椭圆形的颤动轨迹
+            tremor_x = self.tremor_amp * math.sin(2 * math.pi * self.tremor_freq * t_sec)
+            tremor_y = self.tremor_amp * math.cos(2 * math.pi * self.tremor_freq * t_sec)
+            
+            # 叠加极微小的独立高斯白噪声，模拟肌肉肌电噪声 (0.02 units = 1mm)
+            noise = np.random.normal(0, 0.02, 2)
+            
+            final_action = delayed_action + np.array([tremor_x, tremor_y]) + noise
+            return final_action
+
+        # 如果 mode 是 'stroke' 或其他，只返回延迟
+        return delayed_action
+
 
 OBS_SCALAR_DIM = 10
 HISTORY_LENGTH = 16
@@ -29,12 +115,17 @@ class RehabilitationEnv(gym.Env):
                  training_mode='robot', # 'robot' or 'hand'
                  robot_model=None,      # 训练 Hand 时需要的 Robot 对手
                  hand_model_paths=None, # 训练 Robot 时需要的 Hand 对手路径列表
+                 pathology_mode='healthy', # 'healthy', 'parkinson', 'stroke', 'ataxia'
                  render_mode=None):
-        
+
         super().__init__()
         self.training_mode = training_mode
         self.robot_model = robot_model
         self.render_mode = render_mode
+        self.pathology_mode = pathology_mode
+
+        # Biomechanical filter for simulating pathology
+        self.biomech_filter = BiomechanicalFilter(mode=pathology_mode)
       # ========================================================
         # [核心修改 1]：构建 Hand 对手池 (Opponent Pool)
         # 永远把 None (代表基于规则的 Script Hand) 放在池子的第一个位置
@@ -67,15 +158,14 @@ class RehabilitationEnv(gym.Env):
         # --- Physics & Arm ---
         self.max_length_arm = self.grid_size * 0.9
         self.fixed_point = np.array([self.env_width / 2, self.env_height])
-        self.arm_blocking_length = 5
-        
+
         # --- Thresholds ---
         self.distance_threshold_collision = 2.5
         self.distance_threshold_penalty = 3.0
         
         # --- Rewards Config ---
-        self.reward_hand_catch = 20
-        self.reward_robot_caught = -20
+        self.reward_hand_catch = 30
+        self.reward_robot_caught = -30
         self.reward_arm_hit = -20
         self.reward_bound = -40
         self.reward_step = -0.2 if training_mode == 'hand' else 0.2
@@ -296,7 +386,10 @@ class RehabilitationEnv(gym.Env):
         self.current_distance = np.linalg.norm(self.robot_position - self.hand_position)
         self.pre_distance = self.current_distance
         self.steps = 0
-        
+
+        # Reset biomechanical filter for new episode
+        self.biomech_filter.reset()
+
         self._calculate_fix_point()
         # 归一化
         self.hand_dir = (self.hand_position - self.fixed_point) / np.linalg.norm(self.hand_position - self.fixed_point)
@@ -358,11 +451,11 @@ class RehabilitationEnv(gym.Env):
             terminated = True
             done_reason = "Robot Caught"
 
-        if self._check_line_intersection(old_robot_pos, self.robot_position, self.hand_position, self.blocking_point):
-            if self.training_mode == 'robot':
-                reward += self.reward_arm_hit
-            terminated = True
-            done_reason = "Hit Arm"
+        # if self._check_line_intersection(old_robot_pos, self.robot_position, self.hand_position, self.blocking_point):
+        #     if self.training_mode == 'robot':
+        #         reward += self.reward_arm_hit
+        #     terminated = True
+        #     done_reason = "Hit Arm"
 
         dist_improvement = self.pre_distance - self.current_distance
         if self.training_mode == 'robot':
@@ -387,9 +480,11 @@ class RehabilitationEnv(gym.Env):
         robot_move = self._resolve_robot_move(action)
         hand_move_raw = self._resolve_hand_move(action)
 
+        # Apply biomechanical filter to simulate pathology
+        hand_move_final = self.biomech_filter.apply(hand_move_raw)
+
         if self.training_mode == 'hand':
-            bio_cost = self._calculate_biomechanical_cost(self.hand_position, hand_move_raw)
-        hand_move_final = hand_move_raw
+            bio_cost = self._calculate_biomechanical_cost(self.hand_position, hand_move_final)
 
         old_robot_pos = self.robot_position.copy()
         self.robot_position += robot_move
