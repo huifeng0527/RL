@@ -264,7 +264,8 @@ class AuxGatedExtractor(GatedExtractor):
         self.aux_head = nn.Sequential(
             nn.Linear(64, 16),
             nn.ReLU(),
-            nn.Linear(16, 2) 
+            nn.Linear(16, 2),
+
         )
 
     # forward 函数继承自 LSTMExtractor，用于给 SAC 输出 64 维特征
