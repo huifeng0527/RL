@@ -1,6 +1,6 @@
-"""Mouse-controlled hand test script.
+"""Mouse-controlled robot test script.
 
-Use mouse to control the hand while a trained robot agent tries to catch it.
+Use mouse to control the robot while a trained hand agent tries to avoid it.
 Press 'R' to reset episode, 'Q' to quit.
 """
 
@@ -20,10 +20,10 @@ from stable_baselines3 import PPO
 
 
 def test_with_mouse(model_path=None, render_mode="human", max_steps=10000):
-    """Test trained robot agent with mouse-controlled hand.
+    """Test trained hand agent with mouse-controlled robot.
 
     Args:
-        model_path: Path to trained robot model. If None, uses scripted hand.
+        model_path: Path to trained hand model. If None, uses scripted hand.
         render_mode: Pygame render mode
         max_steps: Maximum steps per episode
     """
@@ -35,20 +35,24 @@ def test_with_mouse(model_path=None, render_mode="human", max_steps=10000):
     height_px = int(grid_size * cell_size)
 
     screen = pygame.display.set_mode((width_px, height_px))
-    pygame.display.set_caption("Mouse-Controlled Hand Test - Press Q to quit, R to reset")
+    pygame.display.set_caption("Mouse-Controlled Robot Test - Press Q to quit, R to reset")
 
     # Load model if provided
-    robot_model = None
+    hand_model = None
     if model_path:
-        robot_model = PPO.load(model_path)
-        print(f"Loaded robot model from {model_path}")
+        hand_model = PPO.load(model_path)
+        print(f"Loaded hand model from {model_path}")
 
-    # Create environment with robot training mode
+    # Create environment with hand training mode (hand is the RL agent)
     env = RehabilitationEnv(
-        training_mode='robot',
-        robot_model=robot_model,
+        training_mode='hand',
+        robot_model=None,
         hand_model_paths=None
     )
+
+    # Override hand_model to use the loaded one
+    if hand_model is not None:
+        env.hand_model = hand_model
 
     env.grid_size = grid_size
     env.cell_size = cell_size
@@ -81,22 +85,21 @@ def test_with_mouse(model_path=None, render_mode="human", max_steps=10000):
                         episode_done = True
 
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    # Update hand position to mouse location
+                    # Update robot position to mouse location
                     mouse_x, mouse_y = event.pos
-                    env.hand_position = np.array([
+                    env.robot_position = np.array([
                         mouse_x / cell_size,
                         mouse_y / cell_size
                     ])
-                    env.hand_position = np.clip(
-                        env.hand_position,
+                    env.robot_position = np.clip(
+                        env.robot_position,
                         env.margin,
                         [env.env_width - env.margin, env.env_height - env.margin]
                     )
 
-            # Get robot action
-            action, _ = robot_model.predict(obs, deterministic=True)
-
-            # Step environment
+            # In hand training mode, step with zero action
+            # (robot is mouse-controlled, hand uses its policy)
+            action = np.zeros(2)  # robot action doesn't matter when mouse-controlled
             obs, reward, terminated, truncated, info = env.step(action)
             total_reward += reward
             steps += 1
@@ -127,9 +130,9 @@ def test_with_mouse(model_path=None, render_mode="human", max_steps=10000):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Test robot with mouse-controlled hand')
+    parser = argparse.ArgumentParser(description='Test hand with mouse-controlled robot')
     parser.add_argument('--model', type=str, default=None,
-                        help='Path to trained robot model (PPO/SAC)')
+                        help='Path to trained hand model (PPO/SAC)')
     parser.add_argument('--steps', type=int, default=10000,
                         help='Max steps per episode')
 

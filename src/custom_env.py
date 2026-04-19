@@ -39,22 +39,12 @@ class BiomechanicalFilter:
 
     def reset(self):
         """回合开始时清空时间与延迟队列"""
-        self.delay_frames = random.randint(1, 3)
+        self.delay_frames = random.randint(0, 3)
         self.delay_buffer = deque([np.zeros(2) for _ in range(self.delay_frames)], maxlen=self.delay_frames)
         self.step_count = 0
 
 
 
-    def apply(self, ideal_action):
-        """
-        传入理想动作 (dx, dy)，返回叠加病理后的真实执行动作
-        """
-        self.step_count += 1
-        self.delay_buffer = deque([np.zeros(2) for _ in range(self.delay_frames)], maxlen=self.delay_frames)
-        self.step_count = 0
-        self.delay_buffer.clear()
-        for _ in range(self.delay_frames):
-            self.delay_buffer.append(np.zeros(2))
 
     def apply(self, ideal_action):
         """
@@ -160,7 +150,7 @@ class RehabilitationEnv(gym.Env):
         self.fixed_point = np.array([self.env_width / 2, self.env_height])
 
         # --- Thresholds ---
-        self.distance_threshold_collision = 2.5
+        self.distance_threshold_collision = 2
         self.distance_threshold_penalty = 3.0
         
         # --- Rewards Config ---
@@ -176,8 +166,8 @@ class RehabilitationEnv(gym.Env):
         self.w_effort = 2.0
         
         # --- Movement Params ---
-        self.stride_robot_random = [0.5, 0.7]
-        self.stride_hand_random = [0.25, 1]
+        self.stride_robot_random = [0.6, 0.8]
+        self.stride_hand_random = [0.3, 1.1]
         self.hand_move_epsilon = 0.2
         
         self.max_steps = 100

@@ -89,7 +89,7 @@ class PPOAuxTrainingCallback(BaseCallback):
 
                 true_next_move = batch_next_obs_tensor[:, -2:]
                 pred_next_move = self.extractor.forward_aux(batch_obs_tensor)
-                loss = F.mse_loss(pred_next_move * 100.0, true_next_move * 100.0)
+                loss = F.mse_loss(pred_next_move, true_next_move)
 
                 self.optimizer.zero_grad()
                 loss.backward()

@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rehab-rl"
+version = "0.1.0"
+description = "Rehabilitation training RL environment"
+requires-python = ">=3.8"
+dependencies = [
+    "gymnasium",
+    "stable-baselines3",
+    "torch",
+    "pygame",
+    "numpy",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
