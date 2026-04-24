@@ -8,11 +8,15 @@ This module provides a clean interface for running the 4 evaluation tasks:
 """
 import sys
 import os
+import base64
+
 _backend_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_backend_dir)
-_src_path = os.path.join(_project_root, 'src')
-if _src_path not in sys.path:
-    sys.path.insert(0, _src_path)
+_rl_root = os.path.dirname(_project_root)
+_hw_src = os.path.join(_project_root, 'src')
+for _p in [_hw_src, _rl_root]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from cv.get_workspace import get_workspace
 
@@ -149,21 +153,8 @@ class EvalEngine:
 
     def connect(self) -> bool:
         """Connect to hardware (robot, camera, models) or run in simulate mode."""
-        
-                    # Add paths for dependencies
-        import sys
-        _backend_dir = os.path.dirname(os.path.abspath(__file__))
-        _project_root = os.path.dirname(_backend_dir)          # rlproject/
-        _rl_root = os.path.dirname(_project_root)              # RL/
-        _hw_src = os.path.join(_project_root, 'src')           # rlproject/src (hardware deps)
-
-        for p in [_hw_src, _rl_root]:
-            if p not in sys.path:
-                sys.path.insert(0, p)
-        
         if self.simulate:
             print("[EvalEngine] Running in SIMULATE mode (no hardware)")
-            # Initialize simulation state
             self._sim_hand_pos = np.array([self.w_env / 2, self.h_env / 2])
             self._sim_robot_pos = np.array([self.w_env / 2, self.h_env / 2])
             self._sim_time = 0
@@ -235,8 +226,6 @@ class EvalEngine:
 
     def _generate_sim_frame(self) -> np.ndarray:
         """Generate a simulated camera frame for testing."""
-        import cv2
-        # Create a dark frame
         frame = np.zeros((self._sim_frame_h, self._sim_frame_w, 3), dtype=np.uint8)
 
         # Draw grid
@@ -267,18 +256,11 @@ class EvalEngine:
     def _get_frame_and_positions(self) -> tuple:
         """Capture frame and compute hand/robot positions."""
         if self.simulate:
-            # Generate simulated frame and broadcast
             frame = self._generate_sim_frame()
-            # Encode frame as JPEG base64 for WebSocket transmission
-            import cv2
             _, buffer = cv2.imencode('.jpg', frame)
-            frame_base64 = buffer.tobytes()
             if self._frame_broadcast_callback:
-                import base64
-                self._frame_broadcast_callback(base64.b64encode(frame_base64).decode('utf-8'))
+                self._frame_broadcast_callback(base64.b64encode(buffer.tobytes()).decode('utf-8'))
             return None, self._sim_hand_pos.copy(), self._sim_robot_pos.copy()
-
-        from cv.get_workspace import get_workspace
 
         ret, frame = self.cap.read()
         if not ret:
@@ -365,16 +347,15 @@ class EvalEngine:
 
         results = {'catch_times': [], 'peak_vels': []}
 
-        if not self.cap:
-            return results
-
-        ret, frame = self.cap.read()
-        if not ret:
-            return results
-
-        undistorted_frame = get_workspace(self.cali.undistort_frame(frame))
-        undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        h_px, w_px = undistorted_frame.shape[:2]
+        if not self.simulate:
+            if not self.cap:
+                return results
+            ret, frame = self.cap.read()
+            if not ret:
+                return results
+            undistorted_frame = get_workspace(self.cali.undistort_frame(frame))
+            undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            h_px, w_px = undistorted_frame.shape[:2]
 
         self._countdown()
 
@@ -384,10 +365,9 @@ class EvalEngine:
 
             self._update_progress("Sprint", 1, catch_num / 5, f"第 {catch_num + 1}/5 次")
 
-            # Generate new target
-            hand_pixel, _, _ = self._get_frame_and_positions()
-            if hand_pixel is not None:
-                current_pos = self._pixel_to_env(hand_pixel, w_px, h_px)
+            _, hand_world, _ = self._get_frame_and_positions()
+            if hand_world is not None:
+                current_pos = hand_world[:2] if len(hand_world) >= 2 else hand_world
             else:
                 current_pos = np.array([self.w_env / 2, self.h_env / 2])
 
@@ -446,16 +426,15 @@ class EvalEngine:
 
         results = {'rmse_list': [], 'jerk_list': []}
 
-        if not self.cap:
-            return results
-
-        ret, frame = self.cap.read()
-        if not ret:
-            return results
-
-        undistorted_frame = get_workspace(self.cali.undistort_frame(frame))
-        undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        h_px, w_px = undistorted_frame.shape[:2]
+        if not self.simulate:
+            if not self.cap:
+                return results
+            ret, frame = self.cap.read()
+            if not ret:
+                return results
+            undistorted_frame = get_workspace(self.cali.undistort_frame(frame))
+            undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            h_px, w_px = undistorted_frame.shape[:2]
 
         self._countdown()
 
@@ -521,16 +500,15 @@ class EvalEngine:
 
         results = {'is_caught': False, 'survival_time': 0.0, 'dist_list': []}
 
-        if not self.cap or not self.rl_model:
-            return results
-
-        ret, frame = self.cap.read()
-        if not ret:
-            return results
-
-        undistorted_frame = get_workspace(self.cali.undistort_frame(frame))
-        undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        h_px, w_px = undistorted_frame.shape[:2]
+        if not self.simulate:
+            if not self.cap or not self.rl_model:
+                return results
+            ret, frame = self.cap.read()
+            if not ret:
+                return results
+            undistorted_frame = get_workspace(self.cali.undistort_frame(frame))
+            undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            h_px, w_px = undistorted_frame.shape[:2]
 
         self._countdown()
 
@@ -585,16 +563,15 @@ class EvalEngine:
 
         results = {'min_x': 999, 'max_x': 0, 'min_y': 999, 'max_y': 0, 'vel_list': []}
 
-        if not self.cap:
-            return results
-
-        ret, frame = self.cap.read()
-        if not ret:
-            return results
-
-        undistorted_frame = get_workspace(self.cali.undistort_frame(frame))
-        undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        h_px, w_px = undistorted_frame.shape[:2]
+        if not self.simulate:
+            if not self.cap:
+                return results
+            ret, frame = self.cap.read()
+            if not ret:
+                return results
+            undistorted_frame = get_workspace(self.cali.undistort_frame(frame))
+            undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            h_px, w_px = undistorted_frame.shape[:2]
 
         self._countdown()
 

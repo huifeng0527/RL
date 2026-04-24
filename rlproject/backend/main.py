@@ -20,7 +20,16 @@ from eval_engine import EvalEngine, TaskProgress, EvalResult
 # Initialize database
 init_db()
 
+# Main event loop reference (set on startup, used by threads to schedule async work)
+_main_loop: asyncio.AbstractEventLoop = None
+
 app = FastAPI(title="Rehab Evaluation System", version="1.0.0")
+
+
+@app.on_event("startup")
+async def _capture_loop():
+    global _main_loop
+    _main_loop = asyncio.get_running_loop()
 
 # CORS for React frontend
 app.add_middleware(
@@ -232,99 +241,103 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
 
     def run_evaluation():
         global eval_engine
+
+        def _broadcast(msg: dict):
+            if _main_loop and _main_loop.is_running():
+                asyncio.run_coroutine_threadsafe(manager.broadcast(msg), _main_loop)
+
         try:
-            # Use simulate=True for testing without hardware
             eval_engine = EvalEngine(simulate=False)
             if not eval_engine.connect():
-                asyncio.run(manager.broadcast({"type": "error", "message": "Failed to connect to hardware"}))
+                _broadcast({"type": "error", "message": "Failed to connect to hardware"})
                 return
 
             def progress_callback(progress: TaskProgress):
-                asyncio.run(manager.broadcast({
+                _broadcast({
                     "type": "progress",
                     "task": progress.current_task,
                     "task_index": progress.task_index,
                     "progress": progress.task_progress,
                     "message": progress.message
-                }))
+                })
 
             def frame_broadcast_callback(frame_base64: str):
-                asyncio.run(manager.broadcast({
+                _broadcast({
                     "type": "frame",
                     "data": frame_base64
-                }))
+                })
 
             eval_engine.set_progress_callback(progress_callback)
             eval_engine.set_frame_broadcast_callback(frame_broadcast_callback)
 
             result = eval_engine.run_all()
 
-            # Save results to database
-            db_gen = next(get_db())
-            db_session = db_gen.query(EvalSession).filter(EvalSession.id == session_id).first()
+            db_local = next(get_db())
+            try:
+                db_session = db_local.query(EvalSession).filter(EvalSession.id == session_id).first()
 
-            if result.sprint:
-                sprint = EvalSprint(
-                    session_id=session_id,
-                    catch_times=result.sprint['catch_times'],
-                    peak_vels=result.sprint['peak_vels']
-                )
-                db_gen.add(sprint)
+                if result.sprint:
+                    sprint = EvalSprint(
+                        session_id=session_id,
+                        catch_times=result.sprint['catch_times'],
+                        peak_vels=result.sprint['peak_vels']
+                    )
+                    db_local.add(sprint)
 
-            if result.tracking:
-                tracking = EvalTracking(
-                    session_id=session_id,
-                    rmse_list=result.tracking['rmse_list'],
-                    jerk_list=result.tracking['jerk_list']
-                )
-                db_gen.add(tracking)
+                if result.tracking:
+                    tracking = EvalTracking(
+                        session_id=session_id,
+                        rmse_list=result.tracking['rmse_list'],
+                        jerk_list=result.tracking['jerk_list']
+                    )
+                    db_local.add(tracking)
 
-            if result.league:
-                league = EvalLeague(
-                    session_id=session_id,
-                    is_caught=result.league['is_caught'],
-                    survival_time=result.league['survival_time'],
-                    dist_list=result.league['dist_list']
-                )
-                db_gen.add(league)
+                if result.league:
+                    league = EvalLeague(
+                        session_id=session_id,
+                        is_caught=result.league['is_caught'],
+                        survival_time=result.league['survival_time'],
+                        dist_list=result.league['dist_list']
+                    )
+                    db_local.add(league)
 
-            if result.boundary:
-                boundary = EvalBoundary(
-                    session_id=session_id,
-                    min_x=result.boundary['min_x'],
-                    max_x=result.boundary['max_x'],
-                    min_y=result.boundary['min_y'],
-                    max_y=result.boundary['max_y'],
-                    vel_list=result.boundary['vel_list']
-                )
-                db_gen.add(boundary)
+                if result.boundary:
+                    boundary = EvalBoundary(
+                        session_id=session_id,
+                        min_x=result.boundary['min_x'],
+                        max_x=result.boundary['max_x'],
+                        min_y=result.boundary['min_y'],
+                        max_y=result.boundary['max_y'],
+                        vel_list=result.boundary['vel_list']
+                    )
+                    db_local.add(boundary)
 
-            # Calculate total score (simplified)
-            total_score = 0
-            if result.sprint:
-                avg_catch_time = sum(result.sprint['catch_times']) / len(result.sprint['catch_times'])
-                total_score += max(0, 25 - avg_catch_time * 2)  # Sprint: faster = better
-            if result.tracking:
-                avg_rmse = sum(result.tracking['rmse_list']) / len(result.tracking['rmse_list'])
-                total_score += max(0, 30 - avg_rmse * 5)  # Tracking: lower RMSE = better
-            if result.league:
-                if not result.league['is_caught']:
-                    total_score += 30  # Survived full time
-                else:
-                    total_score += result.league['survival_time']  # Partial credit
-            if result.boundary:
-                range_x = result.boundary['max_x'] - result.boundary['min_x']
-                range_y = result.boundary['max_y'] - result.boundary['min_y']
-                total_score += (range_x + range_y) * 2  # Range = better
+                total_score = 0
+                if result.sprint and result.sprint['catch_times']:
+                    avg_catch_time = sum(result.sprint['catch_times']) / len(result.sprint['catch_times'])
+                    total_score += max(0, 25 - avg_catch_time * 2)
+                if result.tracking and result.tracking['rmse_list']:
+                    avg_rmse = sum(result.tracking['rmse_list']) / len(result.tracking['rmse_list'])
+                    total_score += max(0, 30 - avg_rmse * 5)
+                if result.league:
+                    if not result.league['is_caught']:
+                        total_score += 30
+                    else:
+                        total_score += result.league['survival_time']
+                if result.boundary:
+                    range_x = result.boundary['max_x'] - result.boundary['min_x']
+                    range_y = result.boundary['max_y'] - result.boundary['min_y']
+                    total_score += (range_x + range_y) * 2
 
-            db_session.total_score = total_score
-            db_gen.commit()
-            db_gen.close()
+                db_session.total_score = total_score
+                db_local.commit()
+            finally:
+                db_local.close()
 
-            asyncio.run(manager.broadcast({"type": "complete", "total_score": total_score}))
+            _broadcast({"type": "complete", "total_score": total_score})
 
         except Exception as e:
-            asyncio.run(manager.broadcast({"type": "error", "message": str(e)}))
+            _broadcast({"type": "error", "message": str(e)})
         finally:
             if eval_engine:
                 eval_engine.disconnect()
