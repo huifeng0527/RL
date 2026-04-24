@@ -272,7 +272,7 @@ class EvalEngine:
         h_px, w_px = undistorted_frame.shape[:2]
 
         # Detect hand position
-        hand_pixel = self.hand_detector.detect(undistorted_frame)
+        hand_pixel = self.hand_detector.process_frame(undistorted_frame)
         if hand_pixel is not None:
             hand_world = self.cali.pixel_to_world(hand_pixel.astype(int))
         else:
