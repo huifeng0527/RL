@@ -6,6 +6,16 @@ This module provides a clean interface for running the 4 evaluation tasks:
 - LeagueGame: Competition & cognitive interception
 - Boundary: Range of motion & stability
 """
+import sys
+import os
+_backend_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_backend_dir)
+_src_path = os.path.join(_project_root, 'src')
+if _src_path not in sys.path:
+    sys.path.insert(0, _src_path)
+
+from cv.get_workspace import get_workspace
+
 import numpy as np
 import cv2
 import time
@@ -14,7 +24,6 @@ from collections import deque
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass, field
 import json
-import os
 
 
 @dataclass
