@@ -95,11 +95,17 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
+        """Broadcast message to all active WebSocket connections."""
+        disconnected = []
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except:
-                pass
+            except Exception:
+                disconnected.append(connection)
+        # Clean up disconnected
+        for conn in disconnected:
+            if conn in self.active_connections:
+                self.active_connections.remove(conn)
 
 
 manager = ConnectionManager()
@@ -349,7 +355,7 @@ async def get_eval_status():
 
 
 # WebSocket for real-time updates
-@app.websocket("/api/ws/eval")
+@app.websocket("/ws/eval")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:

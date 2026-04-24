@@ -26,7 +26,7 @@ export const getEvalStatus = () => api.get('/eval/status');
 
 // WebSocket for real-time updates
 export const createEvalSocket = (onMessage) => {
-  const ws = new WebSocket('ws://localhost:8000/api/ws/eval');
+  const ws = new WebSocket('ws://localhost:8000/ws/eval');
   ws.onmessage = (event) => {
     const data = JSON.parse(event.data);
     onMessage(data);
