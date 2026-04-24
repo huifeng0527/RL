@@ -14,17 +14,7 @@ from collections import deque
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass, field
 import json
-
-# Import from existing rlproject (lazy load to allow simulate mode without hardware)
-import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-# These will be lazy loaded only when not in simulate mode
-_hand_detector = None
-_camera_calibration = None
-_robot_control = None
-_rl_model = None
 
 
 @dataclass
@@ -150,6 +140,13 @@ class EvalEngine:
 
     def connect(self) -> bool:
         """Connect to hardware (robot, camera, models) or run in simulate mode."""
+        
+                    # Add src path for hardware dependencies
+        _src_path = os.path.join(os.path.dirname(__file__), '..', 'src')
+        import sys
+        if _src_path not in sys.path:
+            sys.path.insert(0, _src_path)
+        
         if self.simulate:
             print("[EvalEngine] Running in SIMULATE mode (no hardware)")
             # Initialize simulation state
@@ -160,6 +157,8 @@ class EvalEngine:
 
         try:
             print("[EvalEngine] Connecting to robot...")
+
+
 
             # Lazy imports for hardware dependencies
             from robot_control.ur_control import URControl
