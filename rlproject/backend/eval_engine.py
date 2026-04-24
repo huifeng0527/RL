@@ -86,15 +86,22 @@ class EvalEngine:
         self.w_env, self.h_env = 15, 10
         self.grid_size = 10
 
-        # Paths
+        # Paths - use absolute paths based on known locations
+        # rlproject/backend/eval_engine.py -> rlproject/ -> RL/
+        _backend_dir = os.path.dirname(os.path.abspath(__file__))  # C:\...\rlproject\backend
+        _project_root = os.path.dirname(_backend_dir)  # C:\...\rlproject
+        _rl_root = os.path.dirname(_project_root)  # C:\...\RL
+
         self.yolo_model_path = yolo_model_path or os.path.join(
-            os.path.dirname(__file__), '..', 'src', 'runs', 'detect', 'train3', 'weights', 'best.onnx'
+            _project_root, 'src', 'runs', 'detect', 'train3', 'weights', 'best.onnx'
         )
         self.rl_model_path = rl_model_path or os.path.join(
-            os.path.dirname(__file__), '..', '..', 'src', 'logs', 'ablation_study_0409_0922',
+            _rl_root, 'logs', 'ablation_study_0409_0922',
             '2_MLP_LSTM', 'best_model.zip'
         )
-        self.calibration_path = calibration_path
+        self.calibration_path = calibration_path or os.path.join(
+            _project_root, 'src', 'calibration_data.npz'
+        )
 
         # Hardware interfaces (initialized on connect)
         self.robot_control = None
