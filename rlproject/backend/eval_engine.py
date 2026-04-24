@@ -272,18 +272,18 @@ class EvalEngine:
         h_px, w_px = undistorted_frame.shape[:2]
 
         # Detect hand position
-        hand_pixel = self.hand_detector.process_frame(undistorted_frame)
-        if hand_pixel is not None:
+        annotated_frame, hand_positions = self.hand_detector.process_frame(undistorted_frame)
+        if hand_positions:
+            hand_pixel = np.array(hand_positions[0], dtype=np.float64)
             hand_world = self.cali.pixel_to_world(hand_pixel.astype(int))
         else:
+            hand_pixel = None
             hand_world = None
 
-        # Robot position (from calibration, assuming center for now)
-        # In real deployment, use YOLO to detect robot marker
+        # Robot position
         center_pixel = np.array([w_px / 2, h_px / 2])
         robot_world = self.cali.pixel_to_world(center_pixel.astype(int))
 
-        # Notify frame callback for visualization
         if self._frame_callback:
             self._frame_callback(undistorted_frame, {
                 'hand': hand_pixel,

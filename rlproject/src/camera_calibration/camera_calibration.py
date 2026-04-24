@@ -18,13 +18,15 @@ class CameraCalibration:
 
     def pixel_to_world(self, pixel_coords):
         """ 将像素坐标转换为世界坐标系坐标 """
-        p_world = np.linalg.inv(self.H) @ np.array([pixel_coords[0], pixel_coords[1], 1], dtype=np.float32)
+        px = np.asarray(pixel_coords).flatten()
+        p_world = np.linalg.inv(self.H) @ np.array([px[0], px[1], 1], dtype=np.float32)
         p_world /= p_world[2]  # 归一化
         return p_world[:2]
 
     def world_to_pixel(self, world_coords):
         """ 将世界坐标系坐标转换为像素坐标 """
-        p_pixel = self.H @ np.array([world_coords[0], world_coords[1], 1], dtype=np.float32)
+        wc = np.asarray(world_coords).flatten()
+        p_pixel = self.H @ np.array([wc[0], wc[1], 1], dtype=np.float32)
         p_pixel /= p_pixel[2]  # 归一化
         return p_pixel[:2]
 
