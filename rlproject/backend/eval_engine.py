@@ -86,7 +86,7 @@ class EvalEngine:
             _project_root, 'src', 'runs', 'detect', 'train3', 'weights', 'best.onnx'
         )
         self.rl_model_path = rl_model_path or os.path.join(
-            _rl_root, 'logs', 'ablation_study_0409_0922',
+            _rl_root, 'logs', 'ablation_study_0416_1050',
             '2_MLP_LSTM', 'best_model.zip'
         )
         self.calibration_path = calibration_path or os.path.join(
@@ -177,7 +177,10 @@ class EvalEngine:
             self.hand_detector = HandDetection()
 
             print("[EvalEngine] Loading camera calibration...")
-            self.cali = CameraCalibration()
+            self.cali = CameraCalibration(
+                calibration_matrix_path=os.path.join(_project_root, 'src', 'camera_calibration', 'calibration_data.npz'),
+                homography_matrix_path=os.path.join(_project_root, 'src', 'camera_calibration', 'Homography_matrix.npy')
+            )
 
             print("[EvalEngine] Loading RL model for LeagueGame...")
             self.rl_model = PPO.load(

@@ -234,25 +234,25 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
         global eval_engine
         try:
             # Use simulate=True for testing without hardware
-            eval_engine = EvalEngine(simulate=True)
+            eval_engine = EvalEngine(simulate=False)
             if not eval_engine.connect():
-                manager.broadcast({"type": "error", "message": "Failed to connect to hardware"})
+                asyncio.run(manager.broadcast({"type": "error", "message": "Failed to connect to hardware"}))
                 return
 
             def progress_callback(progress: TaskProgress):
-                manager.broadcast({
+                asyncio.run(manager.broadcast({
                     "type": "progress",
                     "task": progress.current_task,
                     "task_index": progress.task_index,
                     "progress": progress.task_progress,
                     "message": progress.message
-                })
+                }))
 
             def frame_broadcast_callback(frame_base64: str):
-                manager.broadcast({
+                asyncio.run(manager.broadcast({
                     "type": "frame",
                     "data": frame_base64
-                })
+                }))
 
             eval_engine.set_progress_callback(progress_callback)
             eval_engine.set_frame_broadcast_callback(frame_broadcast_callback)
@@ -321,10 +321,10 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
             db_gen.commit()
             db_gen.close()
 
-            manager.broadcast({"type": "complete", "total_score": total_score})
+            asyncio.run(manager.broadcast({"type": "complete", "total_score": total_score}))
 
         except Exception as e:
-            manager.broadcast({"type": "error", "message": str(e)})
+            asyncio.run(manager.broadcast({"type": "error", "message": str(e)}))
         finally:
             if eval_engine:
                 eval_engine.disconnect()
