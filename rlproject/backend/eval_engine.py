@@ -141,11 +141,16 @@ class EvalEngine:
     def connect(self) -> bool:
         """Connect to hardware (robot, camera, models) or run in simulate mode."""
         
-                    # Add src path for hardware dependencies
-        _src_path = os.path.join(os.path.dirname(__file__), '..', 'src')
+                    # Add paths for dependencies
         import sys
-        if _src_path not in sys.path:
-            sys.path.insert(0, _src_path)
+        _backend_dir = os.path.dirname(os.path.abspath(__file__))
+        _project_root = os.path.dirname(_backend_dir)          # rlproject/
+        _rl_root = os.path.dirname(_project_root)              # RL/
+        _hw_src = os.path.join(_project_root, 'src')           # rlproject/src (hardware deps)
+
+        for p in [_hw_src, _rl_root]:
+            if p not in sys.path:
+                sys.path.insert(0, p)
         
         if self.simulate:
             print("[EvalEngine] Running in SIMULATE mode (no hardware)")

@@ -109,11 +109,6 @@ class BiResidualGatedExtractor(BaseFeaturesExtractor):
         combined = th.cat([modulated_spatial, modulated_temporal], dim=1) 
         return self.fusion_net(combined)
 
-import torch as th
-import torch.nn as nn
-import gym
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-
 
 class GatedExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: gym.spaces.Box):

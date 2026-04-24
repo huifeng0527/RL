@@ -3,12 +3,18 @@ import numpy as np
 import cv2
 import time
 import os
+import sys
 from collections import deque
 from matplotlib import pyplot as plt
 import pygame
 import mediapipe as mp
 import gymnasium as gym
 from gymnasium.spaces import Box
+
+# Add RL root to sys.path so PPO can unpickle src.utils.feature_extractors
+_rl_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _rl_root not in sys.path:
+    sys.path.insert(0, _rl_root)
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv  

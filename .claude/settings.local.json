@@ -7,7 +7,8 @@
       "Bash(\"/g/anaconda/envs/RL/python.exe\" -m py_compile \"/c/Users/admin/Desktop/科研/RL/src/scripts/train_dual_iterative.py\")",
       "Bash(\"/g/anaconda/envs/RL/python.exe\" -m src.scripts.train_dual_iterative --iterations 1 --steps 1000 --n_envs 2 --extractor lstm)",
       "Bash(\"/g/anaconda/envs/RL/python.exe\" -m src.scripts.train_dual_iterative --iterations 1 --steps 500 --n_envs 2 --extractor gate)",
-      "Bash(/g/anaconda/envs/RL/python.exe:*)"
+      "Bash(/g/anaconda/envs/RL/python.exe:*)",
+      "Bash(python3 *)"
     ]
   }
 }
