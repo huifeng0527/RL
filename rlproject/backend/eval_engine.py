@@ -108,9 +108,14 @@ class EvalEngine:
         self._current_task = None
         self._progress_callback: Optional[Callable] = None
         self._frame_callback: Optional[Callable] = None
+        self._frame_broadcast_callback: Optional[Callable] = None  # For WebSocket frame broadcast
 
         # Robot pose constants
         self.RX_C, self.RY_C, self.RZ_C = 0.193, 0.067, 5.3
+
+        # Camera dimensions for simulate mode
+        self._sim_frame_w = 640
+        self._sim_frame_h = 480
 
     def set_progress_callback(self, callback: Callable[[TaskProgress], None]):
         """Set callback for progress updates."""
@@ -119,6 +124,10 @@ class EvalEngine:
     def set_frame_callback(self, callback: Callable[[np.ndarray, Dict], None]):
         """Set callback for receiving frames for visualization."""
         self._frame_callback = callback
+
+    def set_frame_broadcast_callback(self, callback: Callable[[str], None]):
+        """Set callback for broadcasting frames via WebSocket."""
+        self._frame_broadcast_callback = callback
 
     def _update_progress(self, task: str, index: int, progress: float, message: str = ""):
         """Update progress and notify callback."""
@@ -201,10 +210,50 @@ class EvalEngine:
 
         return self._sim_hand_pos.copy(), self._sim_robot_pos.copy()
 
+    def _generate_sim_frame(self) -> np.ndarray:
+        """Generate a simulated camera frame for testing."""
+        import cv2
+        # Create a dark frame
+        frame = np.zeros((self._sim_frame_h, self._sim_frame_w, 3), dtype=np.uint8)
+
+        # Draw grid
+        grid_color = (40, 40, 40)
+        for i in range(0, self._sim_frame_w, 50):
+            cv2.line(frame, (i, 0), (i, self._sim_frame_h), grid_color, 1)
+        for i in range(0, self._sim_frame_h, 50):
+            cv2.line(frame, (0, i), (self._sim_frame_w, i), grid_color, 1)
+
+        # Draw robot position (blue circle)
+        robot_px = int(self._sim_robot_pos[0] / self.w_env * self._sim_frame_w)
+        robot_py = int(self._sim_robot_pos[1] / self.h_env * self._sim_frame_h)
+        cv2.circle(frame, (robot_px, robot_py), 15, (255, 0, 0), -1)
+        cv2.putText(frame, "Robot", (robot_px - 25, robot_py - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+
+        # Draw hand position (green circle)
+        hand_px = int(self._sim_hand_pos[0] / self.w_env * self._sim_frame_w)
+        hand_py = int(self._sim_hand_pos[1] / self.h_env * self._sim_frame_h)
+        cv2.circle(frame, (hand_px, hand_py), 12, (0, 255, 0), -1)
+        cv2.putText(frame, "Hand", (hand_px - 20, hand_py - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+        # Draw task info
+        cv2.putText(frame, f"Task: {self._current_task or 'Ready'}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+        return frame
+
     def _get_frame_and_positions(self) -> tuple:
         """Capture frame and compute hand/robot positions."""
         if self.simulate:
-            return self._get_sim_positions()
+            # Generate simulated frame and broadcast
+            frame = self._generate_sim_frame()
+            # Encode frame as JPEG base64 for WebSocket transmission
+            import cv2
+            _, buffer = cv2.imencode('.jpg', frame)
+            frame_base64 = buffer.tobytes()
+            if self._frame_broadcast_callback:
+                import base64
+                self._frame_broadcast_callback(base64.b64encode(frame_base64).decode('utf-8'))
+            return None, self._sim_hand_pos.copy(), self._sim_robot_pos.copy()
 
         from cv.get_workspace import get_workspace
 

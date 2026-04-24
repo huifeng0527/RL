@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getSessionDetail, startEvaluation, stopEvaluation, getEvalStatus, createEvalSocket } from '../services/api';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
@@ -22,6 +22,8 @@ export default function Evaluation() {
   const [results, setResults] = useState(null);
   const [scores, setScores] = useState(null);
   const [error, setError] = useState(null);
+  const [frameUrl, setFrameUrl] = useState(null);
+  const canvasRef = useRef(null);
 
   useEffect(() => {
     loadSession();
@@ -51,6 +53,11 @@ export default function Evaluation() {
       setProgress({ task: data.task, progress: data.progress, message: data.message });
       const taskIndex = TASKS.findIndex(t => t.name === data.task);
       if (taskIndex >= 0) setCurrentTaskIndex(taskIndex);
+    } else if (data.type === 'frame') {
+      // Update video frame
+      const blob = new Blob([Uint8Array.from(atob(data.data), c => c.charCodeAt(0))], { type: 'image/jpeg' });
+      const url = URL.createObjectURL(blob);
+      setFrameUrl(url);
     } else if (data.type === 'complete') {
       setEvalStatus('complete');
       loadSession(); // Reload to get full results
@@ -327,6 +334,32 @@ export default function Evaluation() {
           >
             开始评估
           </button>
+        </div>
+      )}
+
+      {/* Video Feed Section */}
+      {(evalStatus === 'countdown' || evalStatus === 'running') && (
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+          <h3 className="text-lg font-bold text-gray-800 mb-4">实时画面</h3>
+          <div className="relative bg-black rounded-lg overflow-hidden" style={{ maxWidth: '640px' }}>
+            {frameUrl ? (
+              <img
+                src={frameUrl}
+                alt="Camera feed"
+                className="w-full h-auto"
+                style={{ maxHeight: '480px', objectFit: 'contain' }}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-64 text-gray-400">
+                等待画面...
+              </div>
+            )}
+            {/* Task Info Overlay */}
+            <div className="absolute top-0 left-0 right-0 bg-gradient-to-b from-black/70 to-transparent p-4">
+              <p className="text-white font-bold text-lg">{progress.task || '准备中...'}</p>
+              <p className="text-white/80 text-sm">{progress.message}</p>
+            </div>
+          </div>
         </div>
       )}
     </div>

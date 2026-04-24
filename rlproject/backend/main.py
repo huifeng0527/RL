@@ -242,7 +242,14 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
                     "message": progress.message
                 })
 
+            def frame_broadcast_callback(frame_base64: str):
+                manager.broadcast({
+                    "type": "frame",
+                    "data": frame_base64
+                })
+
             eval_engine.set_progress_callback(progress_callback)
+            eval_engine.set_frame_broadcast_callback(frame_broadcast_callback)
 
             result = eval_engine.run_all()
 
