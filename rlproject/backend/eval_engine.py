@@ -177,6 +177,8 @@ class EvalEngine:
             self.hand_detector = HandDetection()
 
             print("[EvalEngine] Loading camera calibration...")
+            _backend_dir = os.path.dirname(os.path.abspath(__file__))
+            _project_root = os.path.dirname(_backend_dir)
             self.cali = CameraCalibration(
                 calibration_matrix_path=os.path.join(_project_root, 'src', 'camera_calibration', 'calibration_data.npz'),
                 homography_matrix_path=os.path.join(_project_root, 'src', 'camera_calibration', 'Homography_matrix.npy')
@@ -291,6 +293,9 @@ class EvalEngine:
                 'hand_world': hand_world,
                 'robot_world': robot_world
             })
+        if self._frame_broadcast_callback:
+            _, buffer = cv2.imencode('.jpg', undistorted_frame)
+            self._frame_broadcast_callback(base64.b64encode(buffer.tobytes()).decode('utf-8'))
 
         return undistorted_frame, hand_world, robot_world
 
@@ -347,16 +352,6 @@ class EvalEngine:
 
         results = {'catch_times': [], 'peak_vels': []}
 
-        if not self.simulate:
-            if not self.cap:
-                return results
-            ret, frame = self.cap.read()
-            if not ret:
-                return results
-            undistorted_frame = get_workspace(self.cali.undistort_frame(frame))
-            undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-            h_px, w_px = undistorted_frame.shape[:2]
-
         self._countdown()
 
         for catch_num in range(5):
@@ -366,24 +361,13 @@ class EvalEngine:
             self._update_progress("Sprint", 1, catch_num / 5, f"第 {catch_num + 1}/5 次")
 
             _, hand_world, _ = self._get_frame_and_positions()
-            if hand_world is not None:
-                current_pos = hand_world[:2] if len(hand_world) >= 2 else hand_world
-            else:
-                current_pos = np.array([self.w_env / 2, self.h_env / 2])
+            current_pos = hand_world[:2] if hand_world is not None and len(hand_world) >= 2 else np.array([self.w_env / 2, self.h_env / 2])
 
             target = self._generate_target_position(current_pos, min_dist=3.0)
-            target_pixel = np.array([
-                target[0] / self.w_env * w_px,
-                (1 - target[1] / self.h_env) * h_px  # Flip Y
-            ]).astype(int)
 
-            # Move virtual target to position
-            # (In real implementation, this would move a marker or be visualized)
-
-            # Wait for user to catch target
             start_time = time.time()
             peak_vel = 0
-            last_pos = current_pos if hand_pixel is not None else None
+            last_pos = current_pos.copy()
             caught = False
 
             while self._running and not caught:
@@ -425,16 +409,6 @@ class EvalEngine:
         self._running = True
 
         results = {'rmse_list': [], 'jerk_list': []}
-
-        if not self.simulate:
-            if not self.cap:
-                return results
-            ret, frame = self.cap.read()
-            if not ret:
-                return results
-            undistorted_frame = get_workspace(self.cali.undistort_frame(frame))
-            undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-            h_px, w_px = undistorted_frame.shape[:2]
 
         self._countdown()
 
@@ -500,16 +474,6 @@ class EvalEngine:
 
         results = {'is_caught': False, 'survival_time': 0.0, 'dist_list': []}
 
-        if not self.simulate:
-            if not self.cap or not self.rl_model:
-                return results
-            ret, frame = self.cap.read()
-            if not ret:
-                return results
-            undistorted_frame = get_workspace(self.cali.undistort_frame(frame))
-            undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-            h_px, w_px = undistorted_frame.shape[:2]
-
         self._countdown()
 
         duration = 30  # seconds
@@ -562,16 +526,6 @@ class EvalEngine:
         self._running = True
 
         results = {'min_x': 999, 'max_x': 0, 'min_y': 999, 'max_y': 0, 'vel_list': []}
-
-        if not self.simulate:
-            if not self.cap:
-                return results
-            ret, frame = self.cap.read()
-            if not ret:
-                return results
-            undistorted_frame = get_workspace(self.cali.undistort_frame(frame))
-            undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-            h_px, w_px = undistorted_frame.shape[:2]
 
         self._countdown()
 
