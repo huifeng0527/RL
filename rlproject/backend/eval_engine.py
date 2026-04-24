@@ -659,6 +659,7 @@ class EvalEngine:
             task_order = ['sprint', 'tracking', 'league', 'boundary']
 
         result = EvalResult()
+        self._running = True
 
         self._move_to_center()
 
