@@ -81,7 +81,7 @@ def draw_capsule_rotated(surf, color, center_x, center_y, width, length, angle_d
     pygame.gfxdraw.filled_circle(surf, int(x2), int(y2), int(width / 2), color)
 
 
-def draw_nail(start_x, start_y, width, length, angle, fill_color, nail_color):
+def draw_nail(surf, start_x, start_y, width, length, angle, fill_color, nail_color):
     """Draw a nail on a finger."""
     nail_dist = length * 0.75
     nail_w = width * 0.6
@@ -137,13 +137,13 @@ def draw_detailed_hand(surf, fill_color, border_color, center, radius, angle_deg
         current_angle = angle_deg + fang
 
         draw_capsule_rotated(surf, fill_color, pos[0], pos[1], finger_width, current_len, current_angle)
-        draw_nail(pos[0], pos[1], finger_width, current_len, current_angle, fill_color, nail_color)
+        draw_nail(surf, pos[0], pos[1], finger_width, current_len, current_angle, fill_color, nail_color)
 
         pygame.gfxdraw.aacircle(surf, int(pos[0]), int(pos[1]), int(finger_width * 0.4), (230, 150, 130))
         pygame.gfxdraw.filled_circle(surf, int(pos[0]), int(pos[1]), int(finger_width * 0.4), (230, 150, 130))
 
     draw_capsule_rotated(surf, fill_color, thumb_pos[0], thumb_pos[1], finger_width * 1.3, finger_len * 0.85, angle_deg + thumb_angle)
-    draw_nail(thumb_pos[0], thumb_pos[1], finger_width * 1.3, finger_len * 0.85, angle_deg + thumb_angle, fill_color, nail_color)
+    draw_nail(surf, thumb_pos[0], thumb_pos[1], finger_width * 1.3, finger_len * 0.85, angle_deg + thumb_angle, fill_color, nail_color)
 
     pygame.gfxdraw.aacircle(surf, int(cx), int(cy), int(palm_size - 2), fill_color)
     pygame.gfxdraw.filled_circle(surf, int(cx), int(cy), int(palm_size - 2), fill_color)

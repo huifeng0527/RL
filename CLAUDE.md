@@ -2,80 +2,108 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Core Architecture
+## Project Overview
 
-This repository implements a rehabilitation training environment using reinforcement learning, where:
-- `src/custom_env.py` contains `RehabilitationEnv`, a gymnasium environment for robot-hand interaction
-- Training alternates between two modes (`training_mode='robot'` or `'hand'`)
-- Hand behavior uses scripted movement (move toward or away from robot)
-- Observations include position data, distance metrics, and 16-frame historical trajectories
+This is a rehabilitation training system using reinforcement learning. It has two main components:
 
-Key architectural components:
-- Opponent pool system in `RehabilitationEnv` for multi-agent training
-- Biomechanical cost calculation for hand movement reward shaping
-- Academic-style rendering with detailed hand visualization
-- Dual perspective observations (`_get_robot_obs` and `_get_hand_obs`)
+1. **Simulation** (`src/`): Train RL agents in simulation
+2. **Deployment** (`rlproject/`): Deploy trained models on real hardware (UR robot)
 
-## Project Structure
+## Architecture
 
 ```
-src/
-├── __init__.py          # Package exports
-├── custom_env.py        # Core RehabilitationEnv class
-├── renderer.py          # Academic-style rendering
-├── training.py          # Training utilities
-├── ab_study.py          # Ablation study framework
-├── utils/
-│   ├── __init__.py
-│   └── callbacks.py     # DebugCallback
-├── scripts/             # Training scripts
-└── archive/             # Old code (main.ipynb)
+RL/
+├── src/                          # Simulation training
+│   ├── custom_env.py             # RehabilitationEnv (gymnasium environment)
+│   ├── renderer.py               # Academic-style visualization
+│   ├── training.py               # train_robot() / train_hand() utilities
+│   ├── ab_study.py               # Ablation study with 4 feature extractors
+│   ├── scripts/
+│   │   └── train_dual_iterative.py  # Dual agent iterative training
+│   └── utils/
+│       ├── callbacks.py          # DebugCallback
+│       ├── feature_extractors.py # MLP, LSTM, Aux extractors
+│       └── ablation_callbacks.py # PPOAuxTrainingCallback
+│
+└── rlproject/                    # Real-world deployment
+    └── src/
+        ├── main.py               # Real-world fine-tuning with PPO
+        ├── eval.py               # Evaluation tasks (Sprint/Tracking/LeagueGame/Boundary)
+        └── custom_env/           # Deployment-specific environment
 ```
+
+## Core Training Logic
+
+**Dual Agent Training** (`train_dual_iterative.py`):
+- `training_mode='robot'`: Robot learns to catch hand (uses `hand_model_pool` for opponents)
+- `training_mode='hand'`: Hand learns to avoid robot (uses scripted movement)
+
+
+**Observation Structure**:
+- `10 + 16*2 = 42` dimensions: position(2) + velocity(2) + distance(1) + bounds(4) + stride(1) + history(32)
 
 ## Development Commands
 
-### Training
+**IMPORTANT: Always use conda environment `rl` first**
 ```bash
-# Train robot agent
-python -c "from src.training import train_robot; train_robot()"
-
-# Train hand agent
-python -c "from src.training import train_hand; train_hand('logs/robot_model/best_model.zip')"
+conda activate rl
 ```
+
+### Simulation Training
+```bash
+# Start new training
+python src/scripts/train_dual_iterative.py --iterations 5 --steps 5000000
+
+# Resume from previous training (--start_from N means iteration N must train)
+python src/scripts/train_dual_iterative.py --resume_from logs/dual_iterative_0422_1812 --start_from 2 --steps 3000000
+```
+
+**Resume behavior**:
+- Models from iterations < `start_from` are loaded from `resume_from` and copied to new directory
+- Iterations >= `start_from` always train (models not skipped)
+- Previous iteration's robot is used as starting point when continuing training
 
 ### Testing
 ```bash
-# Manual environment test
-python -c "from src.custom_env import RehabilitationEnv; env = RehabilitationEnv(render_mode='human'); obs, _ = env.reset(); env.render()"
+# Test dual agents
+python src/scripts/test_dual.py --robot <robot_model.zip> --hand <hand_model.zip>
+
+# Mouse control (you control robot, agent plays hand)
+python src/scripts/test_mouse_robot.py --model <hand_model.zip>
+
+# Mouse control (you control hand, agent plays robot)
+python src/scripts/test_mouse_hand.py --model <robot_model.zip>
+
+# Cross evaluation heatmap
+python src/scripts/cross_eval.py --base_dir logs/dual_iterative_0419_1041 --iterations 5
 ```
 
-### Environment Setup
+### Deployment (rlproject)
 ```bash
-pip install gymnasium stable-baselines3 torch pygame numpy
+cd rlproject/src
+python main.py              # Real-world fine-tuning
+python eval.py              # Evaluation tasks
 ```
 
-## Key Files
+## Key Implementation Notes
 
-- `src/custom_env.py`: Core environment implementation
-  - `RehabilitationEnv` class with dual training modes
-  - Scripted hand movement via `_get_scripted_hand_move()`
-  - Biomechanical cost calculation for hand training
-  - History buffers for trajectory tracking
+- When `training_mode='hand'`, no hand model sampling occurs - scripted movement is used
+- `hand_model_pool` is only populated when `training_mode='robot'` and `hand_model_paths` is provided
+- Observation dimension: 10 scalar + 32 history (16 frames x 2 channels) = 42 total
+- APF module removed - robot uses direct RL action output
+- Feature extractors in `utils/feature_extractors.py`: MLPOnlyExtractor, LSTMExtractor, AuxLSTMExtractor, GatedExtractor, AuxGatedExtractor
 
-- `src/renderer.py`: Academic-style visualization
-  - Detailed hand drawing with fingers and nails
-  - Trajectory rendering
-  - Arm visualization
+## Hardware Configuration
 
-- `src/training.py`: Training utilities
-  - `train_robot()`: Train robot to catch hand
-  - `train_hand()`: Train hand to avoid robot
+| Component | Configuration |
+|-----------|--------------|
+| Robot IP | 192.168.1.2 |
+| Control Frequency | 25Hz (dt=0.04s) |
+| Camera Resolution | 2592x1944 |
+| YOLO Model | `rlproject/src/runs/detect/train3/weights/best.onnx` |
 
-- `src/ab_study.py`: Ablation study framework with four feature extractors
+## Dependencies
 
-## Special Notes
-
-- Observation structure: 10 scalar dimensions + 32 historical dimensions (16 frames × 2 channels)
-- Hand opponent pool uses `None` for scripted behavior, or loads trained models
-- APF module has been removed - robot uses direct RL action
-- Do not modify the observation dimension calculations without updating all feature extractors
+```bash
+pip install gymnasium stable-baselines3 torch pygame numpy ultralytics mediapipe opencv-python
+```

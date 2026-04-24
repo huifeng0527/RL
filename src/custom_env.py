@@ -104,6 +104,7 @@ class RehabilitationEnv(gym.Env):
     def __init__(self,
                  training_mode='robot', # 'robot' or 'hand'
                  robot_model=None,      # 训练 Hand 时需要的 Robot 对手
+                 hand_model=None,       # 直接传入的 hand 模型（优先级高于 pool）
                  hand_model_paths=None, # 训练 Robot 时需要的 Hand 对手路径列表
                  pathology_mode='healthy', # 'healthy', 'parkinson', 'stroke', 'ataxia'
                  render_mode=None):
@@ -116,24 +117,28 @@ class RehabilitationEnv(gym.Env):
 
         # Biomechanical filter for simulating pathology
         self.biomech_filter = BiomechanicalFilter(mode=pathology_mode)
-      # ========================================================
-        # [核心修改 1]：构建 Hand 对手池 (Opponent Pool)
-        # 永远把 None (代表基于规则的 Script Hand) 放在池子的第一个位置
-        self.hand_model_pool = [None] 
-        
-        # 如果传入了历史模型的路径列表，让环境自己去逐个加载
-        if hand_model_paths is not None:
-            from stable_baselines3 import SAC,PPO # 确保环境内部能拿到 SAC
-            for path in hand_model_paths:
-                try:
-                    # custom_objects 用于避免设备错乱 (Device mismatch)
-                    model = PPO.load(path, custom_objects={'learning_rate': 0.0, 'optimizer_class': None})
-                    self.hand_model_pool.append(model)
-                except Exception as e:
-                    print(f"无法加载历史对手模型 {path}, Error: {e}")
-        
-        # 当前局使用的 hand_model，默认先给个 None
-        self.hand_model = None
+
+        # ========================================================
+        # Hand 模型加载逻辑：
+        # - hand_model 参数优先级最高：直接使用这一个模型
+        # - 否则用 hand_model_paths 构建对手池（None=脚本手）
+        # ========================================================
+        self.hand_model = hand_model
+
+        if hand_model is not None:
+            # 优先级1：直接传入的 hand_model（独占模式）
+            self.hand_model_pool = [hand_model]
+        else:
+            # 优先级2：使用对手池（仅在训练 Robot 时需要）
+            self.hand_model_pool = []
+            if hand_model_paths is not None:
+                from stable_baselines3 import SAC, PPO
+                for path in hand_model_paths:
+                    try:
+                        model = PPO.load(path, custom_objects={'learning_rate': 0.0, 'optimizer_class': None})
+                        self.hand_model_pool.append(model)
+                    except Exception as e:
+                        print(f"无法加载历史对手模型 {path}, Error: {e}")
 
 
 
@@ -151,15 +156,15 @@ class RehabilitationEnv(gym.Env):
 
         # --- Thresholds ---
         self.distance_threshold_collision = 2
-        self.distance_threshold_penalty = 3.0
+        # self.distance_threshold_penalty = 3.0
         
         # --- Rewards Config ---
         self.reward_hand_catch = 30
-        self.reward_robot_caught = -30
+        self.reward_robot_caught = -40
         self.reward_arm_hit = -20
-        self.reward_bound = -40
+        self.reward_bound = -50
         self.reward_step = -0.2 if training_mode == 'hand' else 0.2
-        self.reward_survival = 10
+        # self.reward_survival = 10
         
         # Biomechanical Cost Weights
         self.w_sweep = 10.0
@@ -167,7 +172,9 @@ class RehabilitationEnv(gym.Env):
         
         # --- Movement Params ---
         self.stride_robot_random = [0.6, 0.8]
-        self.stride_hand_random = [0.3, 1.1]
+        # dual: [0.3, 0.4]
+
+        self.stride_hand_random = [0.3, 0.4]
         self.hand_move_epsilon = 0.2
         
         self.max_steps = 100
@@ -203,7 +210,28 @@ class RehabilitationEnv(gym.Env):
             buffer.append(np.zeros(2, dtype=np.float32))
 
     def _sample_episode_parameters(self):
-        self.hand_model = random.choice(self.hand_model_pool)
+        # ========================================================
+        # PFSP: Priority Fictitious Self-Play (仅在训练 Robot 时使用)
+        # 当训练 Hand 时，不需要采样 hand_model
+        # ========================================================
+        if self.training_mode == 'robot' and len(self.hand_model_pool) > 0:
+            pool_size = len(self.hand_model_pool)
+
+            if pool_size == 1:
+                self.hand_model = self.hand_model_pool[0]
+            else:
+                p = np.zeros(pool_size)
+                p[0] = 0.20   # 20% 打 Script Hand (保底基本功)
+                p[-1] = 0.50  # 50% 打最新 Hand (突破上限)
+
+                if pool_size > 2:
+                    remaining_prob = 0.30 / (pool_size - 2)
+                    p[1:-1] = remaining_prob  # 30% 平分给历史模型
+                else:
+                    p[-1] = 0.80  # 只有 script + 1个模型时
+
+                self.hand_model = np.random.choice(self.hand_model_pool, p=p)
+
         self.stride_robot = np.random.uniform(*self.stride_robot_random)
         self.stride_hand = np.random.uniform(*self.stride_hand_random)
         self.arm_blocking_length = np.random.uniform(0, 1)
@@ -228,7 +256,7 @@ class RehabilitationEnv(gym.Env):
             reward = 0.5
         else:
             reward = -0.3 * (self.current_distance - z_max)
-        return float(np.clip(reward, -10, 10))
+        return float(np.clip(reward, -1, 1))
 
     def _robot_out_of_bounds(self):
         return bool(

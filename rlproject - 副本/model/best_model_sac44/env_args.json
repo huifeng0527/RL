@@ -1,0 +1,21 @@
+{
+    "grid_size": 10,
+    "distance_threshold_penalty": 3.8898035048722575,
+    "distance_threshold_collision": 2.2993939627887094,
+    "penalty_factor": 5,
+    "distance_reward_factor": 0,
+    "smooth_action_penalty": 1,
+    "max_steps": 50,
+    "margin": 0.3,
+    "reward_step": 10,
+    "reward_max_step": 200,
+    "reward_bound": -200,
+    "reward_arm": -100,
+    "reward_hand": -100,
+    "stride_robot": 2,
+    "stride_hand_range": [
+        0.6,
+        0.8
+    ],
+    "move_hand_epsilon": 0.1
+}
