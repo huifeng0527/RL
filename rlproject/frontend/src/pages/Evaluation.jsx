@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getSessionDetail, startEvaluation, stopEvaluation, getEvalStatus, createEvalSocket } from '../services/api';
+import { getSessionDetail, startEvaluation, stopEvaluation, getEvalStatus, createEvalSocket, updateSessionNotes } from '../services/api';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 
 const TASKS = [
@@ -24,6 +24,9 @@ export default function Evaluation() {
   const [error, setError] = useState(null);
   const [frameUrl, setFrameUrl] = useState(null);
   const [celebrating, setCelebrating] = useState(false);
+  const [fps, setFps] = useState(0);
+  const [notes, setNotes] = useState('');
+  const [videoPath, setVideoPath] = useState(null);
 
   useEffect(() => {
     loadSession();
@@ -36,6 +39,7 @@ export default function Evaluation() {
     try {
       const res = await getSessionDetail(sessionId);
       setSession(res.data);
+      setNotes(res.data.notes || '');
       if (res.data.sprint) {
         setResults(res.data);
         calculateScores(res.data);
@@ -51,6 +55,7 @@ export default function Evaluation() {
     if (data.type === 'progress') {
       setEvalStatus('running');
       setProgress({ task: data.task, progress: data.progress, message: data.message });
+      if (data.fps) setFps(data.fps);
       const taskIndex = TASKS.findIndex(t => t.name === data.task);
       if (taskIndex >= 0) setCurrentTaskIndex(taskIndex);
     } else if (data.type === 'frame') {
@@ -60,6 +65,7 @@ export default function Evaluation() {
     } else if (data.type === 'complete') {
       setEvalStatus('complete');
       setCelebrating(true);
+      if (data.video_path) setVideoPath(data.video_path);
       setTimeout(() => setCelebrating(false), 2000);
       loadSession();
     } else if (data.type === 'error') {
@@ -188,7 +194,13 @@ export default function Evaluation() {
       {/* Progress Section */}
       {(evalStatus === 'countdown' || evalStatus === 'running') && (
         <div className="card-elevated p-6 mb-6 animate-fade-in">
-          <h3 className="text-lg font-bold text-slate-800 mb-6">评估进度</h3>
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-bold text-slate-800">评估进度</h3>
+            <div className="bg-slate-100 px-4 py-2 rounded-lg">
+              <span className="text-slate-600 text-sm">FPS: </span>
+              <span className="font-bold text-blue-600">{fps.toFixed(1)}</span>
+            </div>
+          </div>
           <div className="space-y-4">
             {TASKS.map((task, idx) => {
               const isCompleted = idx < currentTaskIndex;
@@ -441,6 +453,37 @@ export default function Evaluation() {
               <p className="text-white font-bold text-lg drop-shadow-lg">{progress.task || '准备中...'}</p>
               <p className="text-white/80 text-sm drop-shadow-lg">{progress.message}</p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notes Section */}
+      {(evalStatus === 'complete' || results) && (
+        <div className="card-elevated p-6 mb-6 animate-fade-in">
+          <h3 className="text-lg font-bold text-slate-800 mb-4">评估备注</h3>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="添加评估备注..."
+            className="w-full p-4 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+            rows={3}
+          />
+          <div className="flex justify-between items-center mt-4">
+            <button
+              onClick={async () => {
+                try {
+                  await updateSessionNotes(sessionId, notes);
+                } catch (error) {
+                  console.error('Failed to save notes:', error);
+                }
+              }}
+              className="btn btn-primary"
+            >
+              保存备注
+            </button>
+            {videoPath && (
+              <p className="text-sm text-slate-500">录像已保存: {videoPath.split('\\').pop()}</p>
+            )}
           </div>
         </div>
       )}

@@ -10,6 +10,7 @@ import sys
 import os
 import base64
 import math
+import time
 
 _backend_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_backend_dir)
@@ -23,7 +24,6 @@ from cv.get_workspace import get_workspace
 
 import numpy as np
 import cv2
-import time
 from collections import deque
 from typing import Dict, List, Optional, Callable, Any
 from dataclasses import dataclass
@@ -122,6 +122,17 @@ class EvalEngine:
         # Robot pose constants (from eval.py)
         self.RX_C, self.RY_C, self.RZ_C = 0.193, 0.067, 5.3
 
+        # FPS tracking
+        self._fps = 0.0
+        self._frame_count = 0
+        self._fps_start_time = time.time()
+        self._current_fps = 0.0
+
+        # Video recording
+        self._video_writer = None
+        self._video_path = None
+        self._is_recording = False
+
         # Simulation state
         self._sim_hand_pos = None
         self._sim_robot_pos = None
@@ -164,6 +175,36 @@ class EvalEngine:
         )
         if self._progress_callback:
             self._progress_callback(p)
+
+    def _start_video_recording(self, session_id: int):
+        """Start recording video to file."""
+        if self._is_recording:
+            return
+        # Create videos directory
+        videos_dir = os.path.join(os.path.dirname(_backend_dir), 'videos')
+        os.makedirs(videos_dir, exist_ok=True)
+        # Generate filename with timestamp
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        self._video_path = os.path.join(videos_dir, f"eval_session_{session_id}_{timestamp}.mp4")
+        # Use mp4v codec (more compatible)
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        self._video_writer = cv2.VideoWriter(
+            self._video_path, fourcc, 25.0, (self.w_px, self.h_px)
+        )
+        self._is_recording = True
+        print(f"[EvalEngine] Started recording to {self._video_path}")
+
+    def _stop_video_recording(self):
+        """Stop recording video."""
+        if self._video_writer is not None:
+            self._video_writer.release()
+            self._video_writer = None
+        self._is_recording = False
+        print(f"[EvalEngine] Stopped recording")
+
+    def get_video_path(self) -> Optional[str]:
+        """Get the path to the recorded video."""
+        return self._video_path
 
     def connect(self) -> bool:
         """Connect to hardware (robot, camera, models) or run in simulate mode."""
@@ -223,6 +264,7 @@ class EvalEngine:
 
     def disconnect(self):
         """Disconnect from hardware."""
+        self._stop_video_recording()
         if self.cap:
             self.cap.release()
             self.cap = None
@@ -275,6 +317,18 @@ class EvalEngine:
         if self._frame_broadcast_callback:
             _, buffer = cv2.imencode('.jpg', undistorted_frame)
             self._frame_broadcast_callback(base64.b64encode(buffer.tobytes()).decode('utf-8'))
+
+        # Update FPS
+        self._frame_count += 1
+        elapsed = time.time() - self._fps_start_time
+        if elapsed >= 1.0:
+            self._current_fps = self._frame_count / elapsed
+            self._frame_count = 0
+            self._fps_start_time = time.time()
+
+        # Record frame to video
+        if self._is_recording and self._video_writer is not None:
+            self._video_writer.write(undistorted_frame)
 
         # Return hand_env and robot_env in environment coordinates (matching w_env/h_env units)
         return undistorted_frame, hand_env, robot_env
@@ -459,7 +513,7 @@ class EvalEngine:
                     sprint_target_spawn_time = t_now
             else:
                 self._update_progress("Sprint", 1, sprint_catch_count / 5,
-                                       f"第 {sprint_catch_count + 1}/5 次 - 距离: {dist_to_target:.2f}")
+                                       f"第 {sprint_catch_count + 1}/5 次 - 距离: {dist_to_target:.2f} | FPS: {self._current_fps:.1f}")
 
             time.sleep(self.target_dt)
 
@@ -513,7 +567,7 @@ class EvalEngine:
                 shape_name = 'Figure-8'
                 t_8 = (elapsed - 10.0) * 1.2
                 target_x = self.w_env / 2 + (self.w_env / 3) * math.sin(t_8)
-                target_y = self.h_env / 2 + (self.w_env / 3) * math.sin(t_8) * math.cos(t_8)
+                target_y = self.w_env / 2 + (self.w_env / 3) * math.sin(t_8) * math.cos(t_8)
 
             target_env = np.array([target_x, target_y])
 
@@ -556,7 +610,7 @@ class EvalEngine:
             self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
             last_control_time = t_now
 
-            self._update_progress("Tracking", 2, progress, f"追踪中... {elapsed:.1f}s / {duration}s [{shape_name}]")
+            self._update_progress("Tracking", 2, progress, f"追踪中... {elapsed:.1f}s / {duration}s [{shape_name}] | FPS: {self._current_fps:.1f}")
 
             time.sleep(self.target_dt)
 
@@ -593,7 +647,7 @@ class EvalEngine:
                 break
 
             progress = elapsed / duration
-            self._update_progress("LeagueGame", 3, progress, f"对抗中... {elapsed:.1f}s / {duration}s")
+            self._update_progress("LeagueGame", 3, progress, f"对抗中... {elapsed:.1f}s / {duration}s | FPS: {self._current_fps:.1f}")
 
             # Get hand position (now returns hand_env and robot_env in env coords)
             frame, hand_env, robot_env = self._get_frame_and_positions()
@@ -756,19 +810,23 @@ class EvalEngine:
             self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
             last_control_time = t_now
 
-            self._update_progress("Boundary", 4, progress, f"边界追踪... {elapsed:.1f}s / {duration}s")
+            self._update_progress("Boundary", 4, progress, f"边界追踪... {elapsed:.1f}s / {duration}s | FPS: {self._current_fps:.1f}")
 
             time.sleep(self.target_dt)
 
         return results
 
-    def run_all(self, task_order: List[str] = None) -> EvalResult:
+    def run_all(self, task_order: List[str] = None, session_id: int = None) -> EvalResult:
         """Run all evaluation tasks."""
         if task_order is None:
             task_order = ['sprint', 'tracking', 'league', 'boundary']
 
         result = EvalResult()
         self._running = True
+
+        # Start video recording
+        if session_id is not None:
+            self._start_video_recording(session_id)
 
         self._move_to_center()
 
@@ -798,8 +856,12 @@ class EvalEngine:
             if self._running:
                 self._move_to_center()
 
+        # Stop video recording
+        self._stop_video_recording()
+
         return result
 
     def stop(self):
         """Stop the current evaluation."""
         self._running = False
+        self._stop_video_recording()

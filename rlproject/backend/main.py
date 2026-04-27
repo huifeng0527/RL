@@ -1,5 +1,5 @@
 """FastAPI backend for rehabilitation evaluation system."""
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Patch
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -72,9 +72,14 @@ class SessionResponse(BaseModel):
     patient_id: int
     created_at: datetime
     total_score: Optional[float]
+    notes: Optional[str]
 
     class Config:
         from_attributes = True
+
+
+class SessionNotesUpdate(BaseModel):
+    notes: str
 
 
 class EvalResultCreate(BaseModel):
@@ -219,11 +224,25 @@ def get_session_detail(session_id: int, db: Session = Depends(get_db)):
         "patient_id": session.patient_id,
         "created_at": session.created_at,
         "total_score": session.total_score,
+        "notes": session.notes,
         "sprint": session.sprint.__dict__ if session.sprint else None,
         "tracking": session.tracking.__dict__ if session.tracking else None,
         "league": session.league.__dict__ if session.league else None,
         "boundary": session.boundary.__dict__ if session.boundary else None,
     }
+
+
+@app.patch("/api/sessions/{session_id}/notes")
+def update_session_notes(session_id: int, notes_update: SessionNotesUpdate, db: Session = Depends(get_db)):
+    """Update session notes."""
+    db_session = db.query(EvalSession).filter(EvalSession.id == session_id).first()
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    db_session.notes = notes_update.notes
+    db.commit()
+    db.refresh(db_session)
+    return {"message": "Notes updated", "notes": db_session.notes}
 
 
 # Routes - Evaluation
@@ -258,7 +277,8 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
                     "task": progress.current_task,
                     "task_index": progress.task_index,
                     "progress": progress.task_progress,
-                    "message": progress.message
+                    "message": progress.message,
+                    "fps": getattr(eval_engine, '_current_fps', 0) if eval_engine else 0
                 })
 
             def frame_broadcast_callback(frame_base64: str):
@@ -270,7 +290,7 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
             eval_engine.set_progress_callback(progress_callback)
             eval_engine.set_frame_broadcast_callback(frame_broadcast_callback)
 
-            result = eval_engine.run_all()
+            result = eval_engine.run_all(session_id=session_id)
 
             db_local = next(get_db())
             try:
@@ -334,7 +354,9 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
             finally:
                 db_local.close()
 
-            _broadcast({"type": "complete", "total_score": total_score})
+            # Broadcast video path if available
+            video_path = eval_engine.get_video_path() if eval_engine else None
+            _broadcast({"type": "complete", "total_score": total_score, "video_path": video_path})
 
         except Exception as e:
             _broadcast({"type": "error", "message": str(e)})

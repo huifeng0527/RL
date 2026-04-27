@@ -34,6 +34,7 @@ class Session(Base):
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     total_score = Column(Float, nullable=True)
+    notes = Column(Text, nullable=True)  # 新增：评估备注
 
     patient = relationship("Patient", back_populates="sessions")
     sprint = relationship("EvalSprint", back_populates="session", uselist=False, cascade="all, delete-orphan")

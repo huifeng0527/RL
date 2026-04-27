@@ -18,6 +18,7 @@ export const deletePatient = (id) => api.delete(`/patients/${id}`);
 export const getSessions = (patientId) => api.get('/sessions', { params: { patient_id: patientId } });
 export const getSessionDetail = (id) => api.get(`/sessions/${id}`);
 export const createSession = (patientId) => api.post('/sessions', { patient_id: patientId });
+export const updateSessionNotes = (sessionId, notes) => api.patch(`/sessions/${sessionId}/notes`, { notes });
 
 // Evaluation
 export const startEvaluation = (sessionId) => api.post('/eval/start', null, { params: { session_id: sessionId } });
