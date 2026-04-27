@@ -293,7 +293,7 @@ class EvalEngine:
         if hand_positions:
             hand_pixel = np.array(hand_positions[0], dtype=np.float64)
             # Convert pixel to environment coordinates (same unit as w_env/h_env)
-            hand_env = hand_pixel / np.array([w_px / self.w_env, h_px / self.h_env])
+            hand_env = hand_pixel * np.array([self.w_env / w_px, self.h_env / h_px])
         else:
             hand_pixel = None
             hand_env = None
