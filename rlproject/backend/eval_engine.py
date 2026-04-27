@@ -467,23 +467,23 @@ class EvalEngine:
             hand_history.append(hand_move)
             last_hand_env = hand_env
 
-            # Update peak velocity
+            # Update peak velocity (only update, not append - eval.py logic)
             if len(results['peak_vels']) <= sprint_catch_count:
                 results['peak_vels'].append(inst_vel)
             else:
                 results['peak_vels'][sprint_catch_count] = max(results['peak_vels'][sprint_catch_count], inst_vel)
 
-            # Set desired target in pixel coordinates
+            # Set desired target in pixel coordinates (ONLY this - no clipping/limiting here)
             desired_virtual_target = np.array([
                 sprint_target_env[0] * w_px / self.w_env,
                 sprint_target_env[1] * h_px / self.h_env
             ])
 
-            # Safety clipping (from eval.py)
+            # Safety clipping (from eval.py - Section C)
             desired_virtual_target[0] = np.clip(desired_virtual_target[0], 50, w_px - 50)
             desired_virtual_target[1] = np.clip(desired_virtual_target[1], 50, h_px - 50)
 
-            # Max step limitation (from eval.py)
+            # Max step limitation (from eval.py - Section C)
             max_pixel_step = self.MAX_SAFE_STRIDE * (w_px / self.w_env)
             diff_vec = desired_virtual_target - virtual_target_pixel
             dist_pixel = np.linalg.norm(diff_vec)
@@ -493,7 +493,7 @@ class EvalEngine:
             else:
                 virtual_target_pixel = desired_virtual_target.copy()
 
-            # Send command to robot with dynamic dt (from eval.py)
+            # Send command to robot with dynamic dt (from eval.py - Section C)
             actual_dt = max(t_now - last_control_time, 0.01)
             safe_dt = min(actual_dt, 0.2)  # clamp to 0.2s max
             self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
