@@ -109,7 +109,7 @@ class ReportGenerator:
 
             # Sub-indicator 3b: avg distance (40%)
             # 3.0 = best (100), 8.0 = worst (0) - closer to robot = better
-            dist_score = self._normalize_score(avg_dist, bound_0=8.0, bound_100=3.0)
+            dist_score = self._normalize_score(avg_dist, bound_0=8.0, bound_100=4)
 
             scores['league'] = time_score * 0.6 + dist_score * 0.4
         else:

@@ -25,12 +25,52 @@ RL/
 │       ├── feature_extractors.py # MLP, LSTM, Aux extractors
 │       └── ablation_callbacks.py # PPOAuxTrainingCallback
 │
-└── rlproject/                    # Real-world deployment
-    └── src/
-        ├── main.py               # Real-world fine-tuning with PPO
-        ├── eval.py               # Evaluation tasks (Sprint/Tracking/LeagueGame/Boundary)
-        └── custom_env/           # Deployment-specific environment
+└── rlproject/                    # Real-world deployment (前后端分离系统)
+    ├── backend/                  # FastAPI 后端 (port 8000)
+    │   ├── main.py               # REST API + WebSocket
+    │   ├── database.py           # SQLite 数据库模型
+    │   ├── eval_engine.py        # 评估引擎 (4种任务)
+    │   └── report_generator.py   # PDF 报告生成
+    ├── frontend/                # React + Vite 前端 (port 5173)
+    │   └── src/
+    │       ├── pages/            # Patients, PatientDetail, Evaluation, History
+    │       ├── components/       # Layout 等组件
+    │       └── services/api.js   # API 调用封装
+    └── start_system.py           # 前后端统一启动脚本
 ```
+
+## 前后端系统
+
+### 启动方式
+```bash
+python rlproject/start_system.py              # 启动前后端
+python rlproject/start_system.py --backend-only   # 只启动后端
+python rlproject/start_system.py --frontend-only  # 只启动前端
+```
+
+### API 端点
+- `GET/POST /api/patients` - 患者管理
+- `GET/POST /api/sessions` - 评估会话
+- `PATCH /api/sessions/{id}/notes` - 更新备注
+- `DELETE /api/sessions/{id}` - 删除会话（同时删除录像）
+- `POST /api/eval/start` - 开始评估
+- `WebSocket /ws/eval` - 实时进度、帧、FPS 推送
+
+### 数据库
+- SQLite: `rlproject/backend/rehab_eval.db`
+- 表: patients, sessions, eval_sprint, eval_tracking, eval_league, eval_boundary
+- Session 表新增 `video_path` 字段存储评估录像路径
+
+### 评估任务 (EvalEngine)
+1. **Sprint** - 反应与爆发力（5次目标捕捉）
+2. **Tracking** - 多轨迹追踪（Circle + Figure-8）
+3. **LeagueGame** - 对抗与安全距离（RL机器人追击）
+4. **Boundary** - 活动范围与稳定性（矩形边界追踪）
+
+### 前端组件
+- `Evaluation.jsx` - 实时显示 FPS、进度、任务状态
+- `History.jsx` - 评估历史，支持备注编辑和删除
+- 录像保存于 `rlproject/videos/eval_session_{id}_{timestamp}.mp4`
 
 ## Core Training Logic
 
@@ -90,7 +130,6 @@ python eval.py              # Evaluation tasks
 - When `training_mode='hand'`, no hand model sampling occurs - scripted movement is used
 - `hand_model_pool` is only populated when `training_mode='robot'` and `hand_model_paths` is provided
 - Observation dimension: 10 scalar + 32 history (16 frames x 2 channels) = 42 total
-- APF module removed - robot uses direct RL action output
 - Feature extractors in `utils/feature_extractors.py`: MLPOnlyExtractor, LSTMExtractor, AuxLSTMExtractor, GatedExtractor, AuxGatedExtractor
 
 ## Hardware Configuration
@@ -107,3 +146,5 @@ python eval.py              # Evaluation tasks
 ```bash
 pip install gymnasium stable-baselines3 torch pygame numpy ultralytics mediapipe opencv-python
 ```
+## Rule
+在对话结束，请给我推送一句名言，中文也好，英文也好

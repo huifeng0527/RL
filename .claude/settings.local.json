@@ -17,7 +17,8 @@
       "Skill(claude-hud:setup)",
       "Skill(update-config)",
       "Bash(git commit *)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(where npm *)"
     ]
   }
 }

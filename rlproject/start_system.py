@@ -32,8 +32,9 @@ class SystemManager:
         """启动前端服务"""
         print("[启动] 前端服务 (Vite dev server on port 5173)...")
         os.chdir(os.path.join(PROJECT_ROOT, 'frontend'))
+        npm_cmd = os.path.join(os.environ.get('PROGRAMFILES', 'C:\\Program Files'), 'nodejs', 'npm.cmd')
         self.frontend_process = subprocess.Popen(
-            ['npm', 'run', 'dev'],
+            [npm_cmd, 'run', 'dev'],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             bufsize=1,
