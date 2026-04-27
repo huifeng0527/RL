@@ -16,6 +16,18 @@ class URControl:
         return self.rtde_r.getActualTCPPose()
     
     # ---------------------------------------------------------
+    # 方案零：Movel 点对点移动 (用于跳跃到新目标点)
+    # ---------------------------------------------------------
+    def move_robot(self, target_pose, speed=0.2, acceleration=0.2):
+        """
+        使用 movel 指令移动到指定位置（点对点移动）。
+        target_pose: [x, y, z, rx, ry, rz] (单位: m, rad)
+        speed: 工具速度 (m/s)
+        acceleration: 工具加速度 (m/s^2)
+        """
+        self.rtde_c.moveL(target_pose, speed, acceleration, asynchronous=False)
+
+    # ---------------------------------------------------------
     # 方案一：位置伺服控制 (强烈推荐用于强化学习高频控制)
     # ---------------------------------------------------------
     def servo_robot(self, target_pose, dt):
