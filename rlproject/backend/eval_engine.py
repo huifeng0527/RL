@@ -383,13 +383,31 @@ class EvalEngine:
         self.robot_control.rtde_c.moveL(target_pose, 0.2, 0.2, asynchronous=False)
 
     def _send_robot_to_pixel(self, target_pixel: np.ndarray, dt: float = 0.04):
-        """Send robot to target pixel position (from eval.py logic)."""
+        """Send robot to target pixel position (from eval.py logic).
+
+        Uses moveL for large jumps (point-to-point) and servoL for continuous tracking.
+        """
         if self.simulate:
             # Convert pixel to env coordinates for simulation
             x = target_pixel[0] / self.w_px * self.w_env
             y = (self.h_px - target_pixel[1]) / self.h_px * self.h_env
             self._sim_robot_pos = np.array([x, y])
             return
+
+        # Track last position to detect large jumps
+        last_pixel = getattr(self, '_last_target_pixel', None)
+        self._last_target_pixel = target_pixel.copy()
+
+        if last_pixel is not None:
+            pixel_jump = np.linalg.norm(target_pixel - last_pixel)
+            jump_threshold = self.MAX_SAFE_STRIDE * (self.w_px / self.w_env) * 3  # 3x normal step
+
+            if pixel_jump > jump_threshold:
+                # Large jump detected - use moveL for smooth point-to-point motion
+                target_world = self.cali.pixel_to_world(target_pixel.astype(int))
+                target_pose = [target_world[0], target_world[1], 0.116, self.RX_C, self.RY_C, self.RZ_C]
+                self.robot_control.rtde_c.moveL(target_pose, 0.2, 0.2, asynchronous=False)
+                return
 
         # Convert pixel to world coordinates
         target_world = self.cali.pixel_to_world(target_pixel.astype(int))
