@@ -8,7 +8,14 @@
       "Bash(\"/g/anaconda/envs/RL/python.exe\" -m src.scripts.train_dual_iterative --iterations 1 --steps 1000 --n_envs 2 --extractor lstm)",
       "Bash(\"/g/anaconda/envs/RL/python.exe\" -m src.scripts.train_dual_iterative --iterations 1 --steps 500 --n_envs 2 --extractor gate)",
       "Bash(/g/anaconda/envs/RL/python.exe:*)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(git status *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(python *)",
+      "Skill(claude-hud:setup)",
+      "Skill(update-config)"
     ]
   }
 }

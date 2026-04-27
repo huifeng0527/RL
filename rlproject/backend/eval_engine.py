@@ -439,8 +439,10 @@ class EvalEngine:
             else:
                 virtual_target_pixel = desired_virtual_target.copy()
 
-            # Send command to robot
-            self._send_robot_to_pixel(virtual_target_pixel, dt=0.04)
+            # Send command to robot with dynamic dt (from eval.py)
+            actual_dt = max(t_now - last_control_time, 0.01)
+            safe_dt = min(actual_dt, 0.2)  # clamp to 0.2s max
+            self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
             last_control_time = time.time()
 
             # Check if caught
@@ -549,7 +551,9 @@ class EvalEngine:
             else:
                 virtual_target_pixel = desired_virtual_target.copy()
 
-            self._send_robot_to_pixel(virtual_target_pixel, dt=0.04)
+            actual_dt = max(t_now - last_control_time, 0.01)
+            safe_dt = min(actual_dt, 0.2)
+            self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
             last_control_time = t_now
 
             self._update_progress("Tracking", 2, progress, f"追踪中... {elapsed:.1f}s / {duration}s [{shape_name}]")
@@ -646,13 +650,15 @@ class EvalEngine:
             else:
                 virtual_target_pixel = desired_virtual_target.copy()
 
-            self._send_robot_to_pixel(virtual_target_pixel, dt=0.04)
+            actual_dt = max(t_now - last_control_time, 0.01)
+            safe_dt = min(actual_dt, 0.2)
+            self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
 
             # Update hand history
             hand_move = hand_env - last_hand_env
             hand_history.append(hand_move)
             last_hand_env = hand_env
-            last_control_time = t_now
+            last_control_time = time.time()
 
             time.sleep(self.target_dt)
 
@@ -745,7 +751,9 @@ class EvalEngine:
             else:
                 virtual_target_pixel = desired_virtual_target.copy()
 
-            self._send_robot_to_pixel(virtual_target_pixel, dt=0.04)
+            actual_dt = max(t_now - last_control_time, 0.01)
+            safe_dt = min(actual_dt, 0.2)
+            self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
             last_control_time = t_now
 
             self._update_progress("Boundary", 4, progress, f"边界追踪... {elapsed:.1f}s / {duration}s")
