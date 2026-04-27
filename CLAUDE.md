@@ -139,7 +139,7 @@ python eval.py              # Evaluation tasks
 | Robot IP | 192.168.1.2 |
 | Control Frequency | 25Hz (dt=0.04s) |
 | Camera Resolution | 2592x1944 |
-| YOLO Model | `rlproject/src/runs/detect/train3/weights/best.onnx` |
+| YOLO Model | `RL/rlproject/src/runs/detect/train3/weights/best.onnx` |
 
 ## Dependencies
 

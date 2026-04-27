@@ -148,7 +148,7 @@ class EvalEngine:
             )),
             'Figure-8': np.column_stack((
                 self.w_env / 2 + (self.w_env / 3) * np.sin(self.t_vals),
-                self.h_env / 2 + (self.w_env / 3) * np.sin(self.t_vals) * np.cos(self.t_vals)
+                self.h_env / 2 + (self.h_env / 3) * np.sin(self.t_vals) * np.cos(self.t_vals)
             ))
         }
 
@@ -601,7 +601,7 @@ class EvalEngine:
                 shape_name = 'Figure-8'
                 t_8 = (elapsed - 10.0) * 1.2
                 target_x = self.w_env / 2 + (self.w_env / 3) * math.sin(t_8)
-                target_y = self.w_env / 2 + (self.w_env / 3) * math.sin(t_8) * math.cos(t_8)
+                target_y = self.h_env / 2 + (self.h_env / 3) * math.sin(t_8) * math.cos(t_8)
 
             target_env = np.array([target_x, target_y])
 
@@ -639,14 +639,12 @@ class EvalEngine:
             else:
                 virtual_target_pixel = desired_virtual_target.copy()
 
-            actual_dt = max(t_now - last_control_time, 0.01)
-            safe_dt = min(actual_dt, 0.2)
-            self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
+            target_world = self.cali.pixel_to_world(virtual_target_pixel.astype(int))
+            target_pose = [target_world[0], target_world[1], 0.116, self.RX_C, self.RY_C, self.RZ_C]
+            self.robot_control.servo_robot(target_pose, dt=safe_dt)
             last_control_time = t_now
 
             self._update_progress("Tracking", 2, progress, f"追踪中... {elapsed:.1f}s / {duration}s [{shape_name}] | FPS: {self._current_fps:.1f}")
-
-            time.sleep(self.target_dt)
 
         return results
 
@@ -738,17 +736,13 @@ class EvalEngine:
             else:
                 virtual_target_pixel = desired_virtual_target.copy()
 
-            actual_dt = max(t_now - last_control_time, 0.01)
-            safe_dt = min(actual_dt, 0.2)
-            self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
-
-            # Update hand history
+            target_world = self.cali.pixel_to_world(virtual_target_pixel.astype(int))
+            target_pose = [target_world[0], target_world[1], 0.116, self.RX_C, self.RY_C, self.RZ_C]
+            self.robot_control.servo_robot(target_pose, dt=safe_dt)
             hand_move = hand_env - last_hand_env
             hand_history.append(hand_move)
             last_hand_env = hand_env
             last_control_time = time.time()
-
-            time.sleep(self.target_dt)
 
         if not results['is_caught']:
             results['survival_time'] = duration
@@ -839,14 +833,12 @@ class EvalEngine:
             else:
                 virtual_target_pixel = desired_virtual_target.copy()
 
-            actual_dt = max(t_now - last_control_time, 0.01)
-            safe_dt = min(actual_dt, 0.2)
-            self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
+            target_world = self.cali.pixel_to_world(virtual_target_pixel.astype(int))
+            target_pose = [target_world[0], target_world[1], 0.116, self.RX_C, self.RY_C, self.RZ_C]
+            self.robot_control.servo_robot(target_pose, dt=safe_dt)
             last_control_time = t_now
 
             self._update_progress("Boundary", 4, progress, f"边界追踪... {elapsed:.1f}s / {duration}s | FPS: {self._current_fps:.1f}")
-
-            time.sleep(self.target_dt)
 
         return results
 
