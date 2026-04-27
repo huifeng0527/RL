@@ -15,7 +15,9 @@
       "Bash(git push *)",
       "Bash(python *)",
       "Skill(claude-hud:setup)",
-      "Skill(update-config)"
+      "Skill(update-config)",
+      "Bash(git commit *)",
+      "Bash(xargs grep *)"
     ]
   }
 }

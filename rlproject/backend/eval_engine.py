@@ -293,7 +293,8 @@ class EvalEngine:
         if hand_positions:
             hand_pixel = np.array(hand_positions[0], dtype=np.float64)
             # Convert pixel to environment coordinates (same unit as w_env/h_env)
-            hand_env = hand_pixel * np.array([self.w_env / w_px, self.h_env / h_px])
+            # hand_pixel is [x, y] in pixels, divide by pixel dimensions to get environment coords
+            hand_env = np.array([hand_pixel[0] * self.w_env / w_px, hand_pixel[1] * self.h_env / h_px], dtype=np.float64)
         else:
             hand_pixel = None
             hand_env = None
@@ -303,7 +304,7 @@ class EvalEngine:
         real_robot_pixel = self.cali.world_to_pixel(position_robot_world)
         robot_world = np.array([position_robot_world[0], position_robot_world[1]])
         # Robot in environment coords for distance calculation
-        robot_env = real_robot_pixel * np.array([self.w_env / self.w_px, self.h_env / self.h_px])
+        robot_env = np.array([real_robot_pixel[0] * self.w_env / self.w_px, real_robot_pixel[1] * self.h_env / self.h_px], dtype=np.float64)
 
         if self._frame_callback:
             self._frame_callback(undistorted_frame, {
