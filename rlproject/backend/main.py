@@ -1,5 +1,5 @@
 """FastAPI backend for rehabilitation evaluation system."""
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Patch
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
