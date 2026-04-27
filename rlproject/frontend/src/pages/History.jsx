@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getSessions, getPatients } from '../services/api';
+import { getSessions, getPatients, deleteSession } from '../services/api';
 
 export default function History() {
   const [sessions, setSessions] = useState([]);
   const [patients, setPatients] = useState({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
 
   useEffect(() => {
     loadData();
@@ -26,6 +27,16 @@ export default function History() {
       console.error('Failed to load data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDelete = async (sessionId) => {
+    try {
+      await deleteSession(sessionId);
+      setSessions(sessions.filter(s => s.id !== sessionId));
+      setDeleteConfirm(null);
+    } catch (error) {
+      console.error('Failed to delete session:', error);
     }
   };
 
@@ -162,6 +173,29 @@ export default function History() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </Link>
+                  {deleteConfirm === session.id ? (
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => handleDelete(session.id)}
+                        className="flex-1 py-2 px-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors"
+                      >
+                        确认删除
+                      </button>
+                      <button
+                        onClick={() => setDeleteConfirm(null)}
+                        className="flex-1 py-2 px-3 bg-slate-100 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors"
+                      >
+                        取消
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setDeleteConfirm(session.id)}
+                      className="btn btn-ghost w-full justify-center py-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors mt-1"
+                    >
+                      删除记录
+                    </button>
+                  )}
                 </div>
               </div>
             );

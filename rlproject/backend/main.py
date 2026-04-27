@@ -9,6 +9,7 @@ import json
 import asyncio
 import threading
 import queue
+import os
 
 from database import (
     get_db, init_db, Patient, Session as EvalSession,
@@ -245,6 +246,25 @@ def update_session_notes(session_id: int, notes_update: SessionNotesUpdate, db: 
     return {"message": "Notes updated", "notes": db_session.notes}
 
 
+@app.delete("/api/sessions/{session_id}")
+def delete_session(session_id: int, db: Session = Depends(get_db)):
+    """Delete a session and its associated video file."""
+    db_session = db.query(EvalSession).filter(EvalSession.id == session_id).first()
+    if not db_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Delete video file if exists
+    if db_session.video_path and os.path.exists(db_session.video_path):
+        try:
+            os.remove(db_session.video_path)
+        except Exception as e:
+            print(f"[Warning] Failed to delete video file: {e}")
+
+    db.delete(db_session)
+    db.commit()
+    return {"message": "Session deleted"}
+
+
 # Routes - Evaluation
 @app.post("/api/eval/start")
 async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
@@ -354,8 +374,12 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
             finally:
                 db_local.close()
 
-            # Broadcast video path if available
+            # 保存视频路径到 session
             video_path = eval_engine.get_video_path() if eval_engine else None
+            if video_path:
+                db_session.video_path = video_path
+
+            # Broadcast video path if available
             _broadcast({"type": "complete", "total_score": total_score, "video_path": video_path})
 
         except Exception as e:
