@@ -508,11 +508,10 @@ class EvalEngine:
                 sprint_catch_count += 1
 
                 if sprint_catch_count < 5:
-                    # Generate new target
+                    # Generate new target and jump robot directly to it (movel), then track from new position
                     sprint_target_env = self._generate_target_position(hand_env, min_dist=3.0)
                     sprint_target_spawn_time = t_now
 
-                    # Jump robot to new target using movel (teleport first, then track)
                     new_target_pixel = np.array([
                         sprint_target_env[0] * w_px / self.w_env,
                         sprint_target_env[1] * h_px / self.h_env
@@ -522,6 +521,7 @@ class EvalEngine:
                     if not self.simulate:
                         self.robot_control.move_robot(new_target_pose)
                     virtual_target_pixel = new_target_pixel.copy()
+                    desired_virtual_target = new_target_pixel.copy()
             else:
                 self._update_progress("Sprint", 1, sprint_catch_count / 5,
                                        f"第 {sprint_catch_count + 1}/5 次 - 距离: {dist_to_target:.2f} | FPS: {self._current_fps:.1f}")
