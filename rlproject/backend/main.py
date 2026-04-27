@@ -9,7 +9,6 @@ import json
 import asyncio
 import threading
 import queue
-import os
 
 from database import (
     get_db, init_db, Patient, Session as EvalSession,
@@ -248,17 +247,19 @@ def update_session_notes(session_id: int, notes_update: SessionNotesUpdate, db: 
 
 @app.delete("/api/sessions/{session_id}")
 def delete_session(session_id: int, db: Session = Depends(get_db)):
-    """Delete a session and its associated video file."""
+    """Delete a session and its associated evaluation video."""
     db_session = db.query(EvalSession).filter(EvalSession.id == session_id).first()
     if not db_session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Delete video file if exists
-    if db_session.video_path and os.path.exists(db_session.video_path):
+    # Delete associated video file if exists
+    if db_session.video_path:
         try:
-            os.remove(db_session.video_path)
+            if os.path.exists(db_session.video_path):
+                os.remove(db_session.video_path)
+                print(f"[API] Deleted video: {db_session.video_path}")
         except Exception as e:
-            print(f"[Warning] Failed to delete video file: {e}")
+            print(f"[API] Failed to delete video: {e}")
 
     db.delete(db_session)
     db.commit()
@@ -374,13 +375,20 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
             finally:
                 db_local.close()
 
-            # 保存视频路径到 session
-            video_path = eval_engine.get_video_path() if eval_engine else None
-            if video_path:
-                db_session.video_path = video_path
-
             # Broadcast video path if available
+            video_path = eval_engine.get_video_path() if eval_engine else None
             _broadcast({"type": "complete", "total_score": total_score, "video_path": video_path})
+
+            # Save video_path to session
+            if video_path:
+                db_session_local = next(get_db())
+                try:
+                    session_to_update = db_session_local.query(EvalSession).filter(EvalSession.id == session_id).first()
+                    if session_to_update:
+                        session_to_update.video_path = video_path
+                        db_session_local.commit()
+                finally:
+                    db_session_local.close()
 
         except Exception as e:
             _broadcast({"type": "error", "message": str(e)})

@@ -7,7 +7,9 @@ export default function History() {
   const [patients, setPatients] = useState({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  const [selectedSession, setSelectedSession] = useState(null);
+  const [notesText, setNotesText] = useState('');
 
   useEffect(() => {
     loadData();
@@ -31,12 +33,29 @@ export default function History() {
   };
 
   const handleDelete = async (sessionId) => {
+    if (!confirm('确定要删除这次评估记录吗？关联的录像也会一并删除。')) return;
     try {
       await deleteSession(sessionId);
-      setSessions(sessions.filter(s => s.id !== sessionId));
-      setDeleteConfirm(null);
+      loadData();
     } catch (error) {
       console.error('Failed to delete session:', error);
+    }
+  };
+
+  const handleOpenNotes = (session) => {
+    setSelectedSession(session);
+    setNotesText(session.notes || '');
+    setShowNotesModal(true);
+  };
+
+  const handleSaveNotes = async () => {
+    if (!selectedSession) return;
+    try {
+      await updateSessionNotes(selectedSession.id, notesText);
+      setShowNotesModal(false);
+      loadData();
+    } catch (error) {
+      console.error('Failed to update notes:', error);
     }
   };
 
@@ -163,43 +182,66 @@ export default function History() {
                   </div>
                 )}
 
-                <div className="pt-4 border-t border-slate-100">
+                <div className="pt-4 border-t border-slate-100 flex gap-2">
+                  <button
+                    onClick={() => handleOpenNotes(session)}
+                    className="btn btn-ghost flex-1 justify-center py-2.5 text-slate-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                  >
+                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    备注
+                  </button>
                   <Link
                     to={`/evaluate/${session.id}`}
-                    className="btn btn-ghost w-full justify-center py-2.5 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors"
+                    className="btn btn-ghost flex-1 justify-center py-2.5 group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors"
                   >
                     查看详情
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </Link>
-                  {deleteConfirm === session.id ? (
-                    <div className="flex gap-2 mt-2">
-                      <button
-                        onClick={() => handleDelete(session.id)}
-                        className="flex-1 py-2 px-3 bg-red-50 text-red-600 rounded-lg text-sm font-medium hover:bg-red-100 transition-colors"
-                      >
-                        确认删除
-                      </button>
-                      <button
-                        onClick={() => setDeleteConfirm(null)}
-                        className="flex-1 py-2 px-3 bg-slate-100 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setDeleteConfirm(session.id)}
-                      className="btn btn-ghost w-full justify-center py-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors mt-1"
-                    >
-                      删除记录
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleDelete(session.id)}
+                    className="btn btn-ghost py-2.5 text-red-500 hover:bg-red-50 hover:text-red-600 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Notes Modal */}
+      {showNotesModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 shadow-2xl">
+            <h3 className="text-lg font-bold text-slate-800 mb-4">评估备注</h3>
+            <textarea
+              value={notesText}
+              onChange={(e) => setNotesText(e.target.value)}
+              placeholder="添加备注信息..."
+              className="w-full h-32 p-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+            />
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={() => setShowNotesModal(false)}
+                className="flex-1 btn btn-ghost py-2.5"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleSaveNotes}
+                className="flex-1 btn btn-primary py-2.5"
+              >
+                保存
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

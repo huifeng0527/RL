@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getSessionDetail, startEvaluation, stopEvaluation, getEvalStatus, createEvalSocket, updateSessionNotes } from '../services/api';
+import { getSessionDetail, startEvaluation, stopEvaluation, getEvalStatus, createEvalSocket } from '../services/api';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 
 const TASKS = [
@@ -16,7 +16,7 @@ export default function Evaluation() {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [evalStatus, setEvalStatus] = useState('idle');
-  const [progress, setProgress] = useState({ task: '', progress: 0, message: '', fps: 0 });
+  const [progress, setProgress] = useState({ task: '', progress: 0, message: '' });
   const [currentTaskIndex, setCurrentTaskIndex] = useState(0);
   const [ws, setWs] = useState(null);
   const [results, setResults] = useState(null);
@@ -24,8 +24,7 @@ export default function Evaluation() {
   const [error, setError] = useState(null);
   const [frameUrl, setFrameUrl] = useState(null);
   const [celebrating, setCelebrating] = useState(false);
-  const [notes, setNotes] = useState('');
-  const [notesEditing, setNotesEditing] = useState(false);
+  const [fps, setFps] = useState(0);
 
   useEffect(() => {
     loadSession();
@@ -38,7 +37,6 @@ export default function Evaluation() {
     try {
       const res = await getSessionDetail(sessionId);
       setSession(res.data);
-      setNotes(res.data.notes || '');
       if (res.data.sprint) {
         setResults(res.data);
         calculateScores(res.data);
@@ -50,19 +48,11 @@ export default function Evaluation() {
     }
   };
 
-  const handleSaveNotes = async () => {
-    try {
-      await updateSessionNotes(sessionId, notes);
-      setNotesEditing(false);
-    } catch (error) {
-      console.error('Failed to save notes:', error);
-    }
-  };
-
   const handleWebSocketMessage = useCallback((data) => {
     if (data.type === 'progress') {
       setEvalStatus('running');
-      setProgress({ task: data.task, progress: data.progress, message: data.message, fps: data.fps });
+      setProgress({ task: data.task, progress: data.progress, message: data.message });
+      if (data.fps !== undefined) setFps(data.fps);
       const taskIndex = TASKS.findIndex(t => t.name === data.task);
       if (taskIndex >= 0) setCurrentTaskIndex(taskIndex);
     } else if (data.type === 'frame') {
@@ -403,50 +393,6 @@ export default function Evaluation() {
         </div>
       )}
 
-      {/* Notes Section */}
-      {(results || evalStatus === 'idle') && (
-        <div className="card-elevated p-6 mt-6 animate-fade-in">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">评估备注</h3>
-          {notesEditing ? (
-            <div className="space-y-3">
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="添加备注信息..."
-                className="input w-full h-24 resize-none"
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={handleSaveNotes}
-                  className="btn btn-primary"
-                >
-                  保存备注
-                </button>
-                <button
-                  onClick={() => {
-                    setNotesEditing(false);
-                    setNotes(session?.notes || '');
-                  }}
-                  className="btn btn-ghost"
-                >
-                  取消
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div>
-              <p className="text-slate-600 whitespace-pre-wrap">{notes || '暂无备注'}</p>
-              <button
-                onClick={() => setNotesEditing(true)}
-                className="btn btn-ghost mt-2"
-              >
-                {notes ? '编辑备注' : '添加备注'}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Idle State */}
       {evalStatus === 'idle' && !results && (
         <div className="card-elevated p-12 text-center animate-fade-in">
@@ -493,17 +439,13 @@ export default function Evaluation() {
               </div>
             )}
             <div className="video-overlay pointer-events-none" />
-            <div className="absolute top-0 left-0 right-0 p-4">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-white font-bold text-lg drop-shadow-lg">{progress.task || '准备中...'}</p>
-                  <p className="text-white/80 text-sm drop-shadow-lg">{progress.message}</p>
-                </div>
-                {progress.fps > 0 && (
-                  <div className="bg-black/50 rounded-lg px-2 py-1">
-                    <span className="text-white font-mono text-sm">{progress.fps.toFixed(1)} FPS</span>
-                  </div>
-                )}
+            <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-start">
+              <div>
+                <p className="text-white font-bold text-lg drop-shadow-lg">{progress.task || '准备中...'}</p>
+                <p className="text-white/80 text-sm drop-shadow-lg">{progress.message}</p>
+              </div>
+              <div className="bg-black/50 px-3 py-1 rounded-lg">
+                <p className="text-white font-mono text-sm">FPS: {fps.toFixed(1)}</p>
               </div>
             </div>
           </div>

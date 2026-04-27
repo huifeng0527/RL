@@ -436,16 +436,47 @@ class EvalEngine:
         if norm < 1e-8:
             return np.zeros_like(v)
         return v / norm
+    
+    def _moveto_sprint_target(self, target_env: np.ndarray, w_px: int, h_px: int):
+        """
+        将机器人用 moveL 直接移动到 Sprint 目标的世界坐标位置。
+        仿真模式下直接更新模拟位置。
+        """
+        if self.simulate:
+            self._sim_robot_pos = target_env.copy()
+            return
+
+        # env 坐标 → 像素坐标 → 世界坐标
+        target_pixel = np.array([
+            target_env[0] * w_px / self.w_env,
+            target_env[1] * h_px / self.h_env
+        ], dtype=np.float64)
+
+        target_pixel[0] = np.clip(target_pixel[0], 50, w_px - 50)
+        target_pixel[1] = np.clip(target_pixel[1], 50, h_px - 50)
+
+        target_world = self.cali.pixel_to_world(target_pixel.astype(int))
+        target_pose = [
+            target_world[0], target_world[1], 0.116,
+            self.RX_C, self.RY_C, self.RZ_C
+        ]
+
+        # 停止当前伺服，然后 moveL 直接到位
+        self.robot_control.rtde_c.servoStop()
+        self.robot_control.rtde_c.moveL(target_pose, 0.3, 0.3, asynchronous=False)
+        print(f"  [Sprint] moveL → target_env={target_env}, world={target_world[:2]}")
 
     def run_sprint(self) -> Dict:
-        """Run Sprint task: 5 target catches measuring reaction time and velocity (from eval.py)."""
+        """Run Sprint task: 5 target catches measuring reaction time and velocity.
+        Robot moves to each target via moveL (direct), not servo accumulation.
+        After being caught, robot immediately moveL to next target position.
+        """
         self._current_task = "Sprint"
         self._task_index = 1
         self._running = True
 
         results = {'catch_times': [], 'peak_vels': []}
 
-        # Get camera frame to initialize dimensions
         frame, hand_env_init, _ = self._get_frame_and_positions()
         if frame is not None:
             h_px, w_px = frame.shape[:2]
@@ -454,22 +485,23 @@ class EvalEngine:
 
         self._countdown()
 
-        sprint_target_env = np.array([3.0, 3.0])
         sprint_catch_count = 0
+
+        # ── 生成第一个目标并用 moveL 直接到位 ──
+        sprint_target_env = self._generate_target_position(
+            np.array([self.w_env / 2, self.h_env / 2]), min_dist=3.0
+        )
+        self._moveto_sprint_target(sprint_target_env, w_px, h_px)
         sprint_target_spawn_time = time.time()
 
-        # Initialize virtual target at center
-        virtual_target_pixel = np.array([w_px / 2, h_px / 2], dtype=np.float64)
-
         last_control_time = time.time()
-        hand_history = deque([np.zeros(2)] * 16, maxlen=16)
         last_hand_env = np.zeros(2)
         inst_vel = 0.0
 
         while self._running and sprint_catch_count < 5:
             t_now = time.time()
 
-            # Get hand position
+            # 获取手部位置
             frame, hand_env, _ = self._get_frame_and_positions()
             if frame is not None:
                 h_px, w_px = frame.shape[:2]
@@ -479,46 +511,22 @@ class EvalEngine:
             else:
                 hand_env = np.array([self.w_env / 2, self.h_env / 2])
 
-            # Calculate velocity
+            # 计算瞬时速度
             dt_vision = max(t_now - last_control_time, 0.01)
             hand_move = hand_env - last_hand_env
             inst_vel = np.linalg.norm(hand_move) / dt_vision
-            hand_history.append(hand_move)
             last_hand_env = hand_env
+            last_control_time = t_now
 
-            # Update peak velocity (only update, not append - eval.py logic)
+            # 记录峰值速度
             if len(results['peak_vels']) <= sprint_catch_count:
                 results['peak_vels'].append(inst_vel)
             else:
-                results['peak_vels'][sprint_catch_count] = max(results['peak_vels'][sprint_catch_count], inst_vel)
+                results['peak_vels'][sprint_catch_count] = max(
+                    results['peak_vels'][sprint_catch_count], inst_vel
+                )
 
-            # Set desired target in pixel coordinates (ONLY this - no clipping/limiting here)
-            desired_virtual_target = np.array([
-                sprint_target_env[0] * w_px / self.w_env,
-                sprint_target_env[1] * h_px / self.h_env
-            ])
-
-            # Safety clipping (from eval.py - Section C)
-            desired_virtual_target[0] = np.clip(desired_virtual_target[0], 50, w_px - 50)
-            desired_virtual_target[1] = np.clip(desired_virtual_target[1], 50, h_px - 50)
-
-            # Max step limitation (from eval.py - Section C)
-            max_pixel_step = self.MAX_SAFE_STRIDE * (w_px / self.w_env)
-            diff_vec = desired_virtual_target - virtual_target_pixel
-            dist_pixel = np.linalg.norm(diff_vec)
-
-            if dist_pixel > max_pixel_step:
-                virtual_target_pixel += (diff_vec / dist_pixel) * max_pixel_step
-            else:
-                virtual_target_pixel = desired_virtual_target.copy()
-
-            # Send command to robot with dynamic dt (from eval.py - Section C)
-            actual_dt = max(t_now - last_control_time, 0.01)
-            safe_dt = min(actual_dt, 0.2)  # clamp to 0.2s max
-            self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
-            last_control_time = time.time()
-
-            # Check if caught
+            # 判断是否抓到
             dist_to_target = np.linalg.norm(sprint_target_env - hand_env)
             if dist_to_target < 1.5:
                 catch_time = t_now - sprint_target_spawn_time
@@ -527,27 +535,23 @@ class EvalEngine:
                 sprint_catch_count += 1
 
                 if sprint_catch_count < 5:
-                    # Generate new target and jump robot directly to it (movel), then track from new position
-                    sprint_target_env = self._generate_target_position(hand_env, min_dist=3.0)
-                    sprint_target_spawn_time = t_now
-
-                    new_target_pixel = np.array([
-                        sprint_target_env[0] * w_px / self.w_env,
-                        sprint_target_env[1] * h_px / self.h_env
-                    ])
-                    new_target_world = self.cali.pixel_to_world(new_target_pixel.astype(int))
-                    new_target_pose = [new_target_world[0], new_target_world[1], 0.116, self.RX_C, self.RY_C, self.RZ_C]
-                    if not self.simulate:
-                        self.robot_control.move_robot(new_target_pose)
-                    virtual_target_pixel = new_target_pixel.copy()
-                    desired_virtual_target = new_target_pixel.copy()
+                    # ── 直接 moveL 跳到新目标，不用伺服累加 ──
+                    sprint_target_env = self._generate_target_position(
+                        hand_env, min_dist=3.0
+                    )
+                    self._moveto_sprint_target(sprint_target_env, w_px, h_px)
+                    sprint_target_spawn_time = time.time()
             else:
-                self._update_progress("Sprint", 1, sprint_catch_count / 5,
-                                       f"第 {sprint_catch_count + 1}/5 次 - 距离: {dist_to_target:.2f} | FPS: {self._current_fps:.1f}")
+                self._update_progress(
+                    "Sprint", 1, sprint_catch_count / 5,
+                    f"第 {sprint_catch_count + 1}/5 次 - 距离: {dist_to_target:.2f}"
+                )
 
             time.sleep(self.target_dt)
 
         return results
+
+
 
     def run_tracking(self) -> Dict:
         """Run Tracking task: Follow moving target along predefined paths (from eval.py)."""

@@ -35,7 +35,7 @@ class Session(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     total_score = Column(Float, nullable=True)
     notes = Column(Text, nullable=True)  # 新增：评估备注
-    video_path = Column(Text, nullable=True)  # 新增：视频文件路径
+    video_path = Column(String(500), nullable=True)  # 评估录像路径
 
     patient = relationship("Patient", back_populates="sessions")
     sprint = relationship("EvalSprint", back_populates="session", uselist=False, cascade="all, delete-orphan")
