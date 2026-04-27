@@ -5,7 +5,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')
-from matplotlib.patches import PolarAxes
 import matplotlib.patches as mpatches
 from datetime import datetime
 from typing import Dict, Optional
@@ -163,7 +162,7 @@ class ReportGenerator:
 
         return {
             'fma_ue': round(est_fma, 1),
-            'arat': round(arat_estimate, 1),
+            'arat': round(est_arat, 1),
             'total': round(total, 1)
         }
 

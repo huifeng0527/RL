@@ -234,6 +234,7 @@ class EvalEngine:
             _, buffer = cv2.imencode('.jpg', frame)
             if self._frame_broadcast_callback:
                 self._frame_broadcast_callback(base64.b64encode(buffer.tobytes()).decode('utf-8'))
+            # Return in environment coordinates (matching w_env/h_env units)
             return None, self._sim_hand_pos.copy(), self._sim_robot_pos.copy()
 
         ret, frame = self.cap.read()
@@ -249,28 +250,34 @@ class EvalEngine:
         annotated_frame, hand_positions = self.hand_detector.process_frame(undistorted_frame)
         if hand_positions:
             hand_pixel = np.array(hand_positions[0], dtype=np.float64)
-            hand_world = self.cali.pixel_to_world(hand_pixel.astype(int))
+            # Convert pixel to environment coordinates (same unit as w_env/h_env)
+            hand_env = hand_pixel / np.array([w_px / self.w_env, h_px / self.h_env])
         else:
             hand_pixel = None
-            hand_world = None
+            hand_env = None
 
-        # Robot position from UR
+        # Robot position from UR (world coords for LeagueGame RL model)
         *position_robot_world, _, _, _, _ = self.robot_control.get_robot_pose()
         real_robot_pixel = self.cali.world_to_pixel(position_robot_world)
         robot_world = np.array([position_robot_world[0], position_robot_world[1]])
+        # Robot in environment coords for distance calculation
+        robot_env = real_robot_pixel * np.array([self.w_env / self.w_px, self.h_env / self.h_px])
 
         if self._frame_callback:
             self._frame_callback(undistorted_frame, {
                 'hand': hand_pixel,
                 'robot': real_robot_pixel,
-                'hand_world': hand_world,
+                'hand_env': hand_env,
+                'robot_env': robot_env,
+                'hand_world': hand_env,  # deprecated, use hand_env
                 'robot_world': robot_world
             })
         if self._frame_broadcast_callback:
             _, buffer = cv2.imencode('.jpg', undistorted_frame)
             self._frame_broadcast_callback(base64.b64encode(buffer.tobytes()).decode('utf-8'))
 
-        return undistorted_frame, hand_world, robot_world
+        # Return hand_env and robot_env in environment coordinates (matching w_env/h_env units)
+        return undistorted_frame, hand_env, robot_env
 
     def _generate_sim_frame(self) -> np.ndarray:
         """Generate a simulated camera frame for testing."""
@@ -366,7 +373,7 @@ class EvalEngine:
         results = {'catch_times': [], 'peak_vels': []}
 
         # Get camera frame to initialize dimensions
-        frame, hand_world, robot_world = self._get_frame_and_positions()
+        frame, hand_env_init, _ = self._get_frame_and_positions()
         if frame is not None:
             h_px, w_px = frame.shape[:2]
         else:
@@ -390,13 +397,12 @@ class EvalEngine:
             t_now = time.time()
 
             # Get hand position
-            frame, hand_world, _ = self._get_frame_and_positions()
+            frame, hand_env, _ = self._get_frame_and_positions()
             if frame is not None:
                 h_px, w_px = frame.shape[:2]
 
-            if hand_world is not None:
-                hand_pos = hand_world[:2] if len(hand_world) >= 2 else hand_world
-                hand_env = hand_pos
+            if hand_env is not None:
+                hand_env = hand_env[:2] if len(hand_env) >= 2 else hand_env
             else:
                 hand_env = np.array([self.w_env / 2, self.h_env / 2])
 
@@ -486,12 +492,12 @@ class EvalEngine:
             progress = elapsed / duration
 
             # Get hand position
-            frame, hand_world, _ = self._get_frame_and_positions()
+            frame, hand_env, _ = self._get_frame_and_positions()
             if frame is not None:
                 h_px, w_px = frame.shape[:2]
 
-            if hand_world is not None:
-                hand_env = hand_world[:2] if len(hand_world) >= 2 else hand_world
+            if hand_env is not None:
+                hand_env = hand_env[:2] if len(hand_env) >= 2 else hand_env
             else:
                 hand_env = None
 
@@ -585,18 +591,18 @@ class EvalEngine:
             progress = elapsed / duration
             self._update_progress("LeagueGame", 3, progress, f"对抗中... {elapsed:.1f}s / {duration}s")
 
-            # Get hand position
-            frame, hand_world, robot_world = self._get_frame_and_positions()
+            # Get hand position (now returns hand_env and robot_env in env coords)
+            frame, hand_env, robot_env = self._get_frame_and_positions()
             if frame is not None:
                 h_px, w_px = frame.shape[:2]
 
-            if hand_world is not None:
-                hand_env = hand_world[:2] if len(hand_world) >= 2 else hand_world
+            if hand_env is not None:
+                hand_env = hand_env[:2] if len(hand_env) >= 2 else hand_env
             else:
                 hand_env = np.array([self.w_env / 2, self.h_env / 2])
 
-            if robot_world is not None:
-                robot_env = robot_world[:2] if len(robot_world) >= 2 else robot_world
+            if robot_env is not None:
+                robot_env = robot_env[:2] if len(robot_env) >= 2 else robot_env
             else:
                 robot_env = np.array([self.w_env / 2, self.h_env / 2])
 
@@ -702,12 +708,12 @@ class EvalEngine:
             target_env = np.array([tx, ty])
 
             # Get hand position and update bounds
-            frame, hand_world, _ = self._get_frame_and_positions()
+            frame, hand_env, _ = self._get_frame_and_positions()
             if frame is not None:
                 h_px, w_px = frame.shape[:2]
 
-            if hand_world is not None:
-                hand_env = hand_world[:2] if len(hand_world) >= 2 else hand_world
+            if hand_env is not None:
+                hand_env = hand_env[:2] if len(hand_env) >= 2 else hand_env
 
                 results['min_x'] = min(results['min_x'], hand_env[0])
                 results['max_x'] = max(results['max_x'], hand_env[0])
