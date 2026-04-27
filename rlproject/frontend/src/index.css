@@ -1,1 +1,456 @@
 @import "tailwindcss";
+
+/* ===================================
+   Custom Animations
+   =================================== */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+  50% { transform: scale(1.02); box-shadow: 0 0 20px 5px rgba(59, 130, 246, 0.2); }
+}
+
+@keyframes countUp {
+  from { opacity: 0; transform: scale(0.5); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes progressFill {
+  from { width: 0; }
+}
+
+@keyframes borderGlow {
+  0%, 100% { box-shadow: 0 0 5px rgba(59, 130, 246, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.8); }
+}
+
+@keyframes celebrate {
+  0% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.1) rotate(-5deg); }
+  50% { transform: scale(1.2) rotate(5deg); }
+  75% { transform: scale(1.1) rotate(-3deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes ripple {
+  0% { transform: scale(0); opacity: 0.6; }
+  100% { transform: scale(4); opacity: 0; }
+}
+
+/* ===================================
+   Base Styles
+   =================================== */
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  @apply bg-slate-50 text-slate-800;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+::selection {
+  @apply bg-blue-100 text-blue-800;
+}
+
+/* ===================================
+   Scrollbar Styling
+   =================================== */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-slate-100 rounded-full;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 rounded-full;
+  transition: background 0.2s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-400;
+}
+
+/* ===================================
+   Card Styles
+   =================================== */
+.card {
+  @apply bg-white rounded-2xl shadow-sm border border-slate-100;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card:hover {
+  @apply shadow-md;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.15);
+}
+
+.card-elevated {
+  @apply bg-white rounded-2xl shadow-lg border border-slate-100;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-elevated:hover {
+  @apply shadow-xl;
+  transform: translateY(-4px);
+  box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.2);
+}
+
+/* ===================================
+   Button Styles
+   =================================== */
+.btn {
+  @apply px-5 py-2.5 rounded-xl font-medium transition-all duration-200 inline-flex items-center justify-center gap-2;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, white 10%, transparent 10%);
+  transform: scale(0);
+  opacity: 0;
+  transition: transform 0.4s, opacity 0.4s;
+}
+
+.btn:active::after {
+  transform: scale(4);
+  opacity: 0.3;
+  transition: transform 0s, opacity 0s;
+}
+
+.btn-primary {
+  @apply bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-200;
+}
+
+.btn-primary:hover {
+  @apply from-blue-700 to-blue-800 shadow-xl shadow-blue-300;
+  transform: translateY(-1px);
+}
+
+.btn-primary:active {
+  @apply from-blue-800 to-blue-900;
+  transform: translateY(0);
+}
+
+.btn-success {
+  @apply bg-gradient-to-r from-emerald-600 to-emerald-700 text-white shadow-lg shadow-emerald-200;
+}
+
+.btn-success:hover {
+  @apply from-emerald-700 to-emerald-800 shadow-xl shadow-emerald-300;
+  transform: translateY(-1px);
+}
+
+.btn-danger {
+  @apply bg-gradient-to-r from-red-600 to-red-700 text-white shadow-lg shadow-red-200;
+}
+
+.btn-danger:hover {
+  @apply from-red-700 to-red-800 shadow-xl shadow-red-300;
+  transform: translateY(-1px);
+}
+
+.btn-ghost {
+  @apply text-slate-600 hover:bg-slate-100;
+}
+
+.btn-ghost:hover {
+  @apply bg-slate-200;
+}
+
+/* ===================================
+   Input Styles
+   =================================== */
+.input {
+  @apply w-full px-4 py-3 rounded-xl border border-slate-200 bg-white;
+  transition: all 0.2s;
+}
+
+.input:focus {
+  @apply outline-none border-blue-500 ring-2 ring-blue-100;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+}
+
+.input::placeholder {
+  @apply text-slate-400;
+}
+
+/* ===================================
+   Table Styles
+   =================================== */
+.table-row {
+  @apply border-b border-slate-100 transition-colors duration-150;
+}
+
+.table-row:hover {
+  @apply bg-gradient-to-r from-blue-50/50 to-slate-50;
+}
+
+/* ===================================
+   Progress Bar Styles
+   =================================== */
+.progress-bar {
+  @apply h-2 rounded-full bg-slate-100 overflow-hidden;
+}
+
+.progress-fill {
+  @apply h-full rounded-full transition-all duration-500 ease-out;
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  animation: shimmer 2s infinite;
+  background-size: 200% 100%;
+}
+
+/* ===================================
+   Badge Styles
+   =================================== */
+.badge {
+  @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium;
+}
+
+.badge-blue {
+  @apply bg-blue-100 text-blue-700;
+}
+
+.badge-green {
+  @apply bg-emerald-100 text-emerald-700;
+}
+
+.badge-orange {
+  @apply bg-orange-100 text-orange-700;
+}
+
+.badge-purple {
+  @apply bg-purple-100 text-purple-700;
+}
+
+.badge-red {
+  @apply bg-red-100 text-red-700;
+}
+
+/* ===================================
+   Modal Styles
+   =================================== */
+.modal-backdrop {
+  @apply fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.modal-content {
+  @apply bg-white rounded-2xl shadow-2xl;
+  animation: fadeInScale 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ===================================
+   Task Card Styles
+   =================================== */
+.task-card {
+  @apply relative overflow-hidden rounded-2xl border border-slate-100 transition-all duration-300;
+}
+
+.task-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.task-card:hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.15);
+}
+
+.task-card.active {
+  @apply ring-2 ring-offset-2;
+  animation: breathe 2s ease-in-out infinite;
+}
+
+.task-card.completed {
+  @apply opacity-75;
+}
+
+/* ===================================
+   Video Feed Styles
+   =================================== */
+.video-container {
+  @apply relative rounded-2xl overflow-hidden bg-slate-900;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.video-container::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 1rem;
+  background: linear-gradient(45deg, #3b82f6, #8b5cf6, #ec4899, #f43f5e);
+  z-index: -1;
+  animation: borderGlow 3s ease-in-out infinite;
+  opacity: 0.6;
+}
+
+.video-overlay {
+  @apply absolute inset-0 bg-gradient-to-t from-slate-900/90 via-transparent to-transparent;
+}
+
+/* ===================================
+   Animation Utilities
+   =================================== */
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out;
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.animate-pulse-soft {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-celebrate {
+  animation: celebrate 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ===================================
+   Skeleton Loading
+   =================================== */
+.skeleton {
+  @apply bg-slate-200 rounded-lg;
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* ===================================
+   Score Display
+   =================================== */
+.score-circle {
+  @apply w-32 h-32 rounded-full flex items-center justify-center;
+  background: conic-gradient(from 180deg, #3b82f6 var(--progress, 0%), #e2e8f0 var(--progress, 0%));
+  position: relative;
+}
+
+.score-circle::before {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  @apply bg-white rounded-full;
+}
+
+.score-value {
+  @apply relative z-10 text-3xl font-bold text-slate-800;
+  animation: countUp 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ===================================
+   Empty State
+   =================================== */
+.empty-state {
+  @apply flex flex-col items-center justify-center py-16 px-8 text-center;
+}
+
+.empty-state-icon {
+  @apply w-24 h-24 rounded-full bg-slate-100 flex items-center justify-center mb-6;
+  animation: float 3s ease-in-out infinite;
+}
+
+.empty-state-icon svg {
+  @apply w-12 h-12 text-slate-400;
+}
+
+/* ===================================
+   Toast Notification
+   =================================== */
+.toast {
+  @apply fixed bottom-6 right-6 px-6 py-4 rounded-xl shadow-xl flex items-center gap-3 z-50;
+  animation: slideInRight 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.toast-success {
+  @apply bg-emerald-500 text-white;
+}
+
+.toast-error {
+  @apply bg-red-500 text-white;
+}
+
+.toast-info {
+  @apply bg-blue-500 text-white;
+}

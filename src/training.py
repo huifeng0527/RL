@@ -150,7 +150,7 @@ def train_hand(
     eval_freq=10000
 ):
     """Train hand agent to avoid the robot."""
-    robot_model = PPO.load(robot_model_path, custom_objects={'learning_rate': 0.0, 'optimizer_class': None})
+    robot_model = PPO.load(robot_model_path, custom_objects={'learning_rate': 0.0, 'optimizer_class': None}, verbose=0)
 
     model, callback, save_path = setup_training(
         training_mode='hand',

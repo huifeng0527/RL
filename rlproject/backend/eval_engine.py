@@ -9,6 +9,7 @@ This module provides a clean interface for running the 4 evaluation tasks:
 import sys
 import os
 import base64
+import math
 
 _backend_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_backend_dir)
@@ -23,11 +24,9 @@ from cv.get_workspace import get_workspace
 import numpy as np
 import cv2
 import time
-import math
 from collections import deque
 from typing import Dict, List, Optional, Callable, Any
-from dataclasses import dataclass, field
-import json
+from dataclasses import dataclass
 
 
 @dataclass
@@ -53,7 +52,7 @@ class TaskProgress:
     current_task: str = ""
     task_index: int = 0
     total_tasks: int = 4
-    task_progress: float = 0.0  # 0.0 - 1.0
+    task_progress: float = 0.0
     message: str = ""
 
 
@@ -66,8 +65,8 @@ class EvalEngine:
         yolo_model_path: str = None,
         rl_model_path: str = None,
         calibration_path: str = None,
-        control_freq: float = 8,
-        simulate: bool = True  # 模拟模式，不连接硬件
+        control_freq: float = 25.0,
+        simulate: bool = True
     ):
         """
         Initialize evaluation engine.
@@ -85,15 +84,15 @@ class EvalEngine:
         self.target_dt = 1.0 / control_freq
         self.simulate = simulate
 
-        # Environment dimensions
+        # Environment dimensions (from eval.py)
         self.w_env, self.h_env = 15, 10
         self.grid_size = 10
+        self.MAX_SAFE_STRIDE = 0.6  # Max robot movement per step (from eval.py)
 
-        # Paths - use absolute paths based on known locations
-        # rlproject/backend/eval_engine.py -> rlproject/ -> RL/
-        _backend_dir = os.path.dirname(os.path.abspath(__file__))  # C:\...\rlproject\backend
-        _project_root = os.path.dirname(_backend_dir)  # C:\...\rlproject
-        _rl_root = os.path.dirname(_project_root)  # C:\...\RL
+        # Paths
+        _backend_dir = os.path.dirname(os.path.abspath(__file__))
+        _project_root = os.path.dirname(_backend_dir)
+        _rl_root = os.path.dirname(_project_root)
 
         self.yolo_model_path = yolo_model_path or os.path.join(
             _project_root, 'src', 'runs', 'detect', 'train3', 'weights', 'best.onnx'
@@ -102,30 +101,45 @@ class EvalEngine:
             _rl_root, 'logs', 'ablation_study_0416_1050',
             '2_MLP_LSTM', 'best_model.zip'
         )
-        self.calibration_path = calibration_path or os.path.join(
-            _project_root, 'src', 'calibration_data.npz'
-        )
 
-        # Hardware interfaces (initialized on connect)
+        # Hardware interfaces
         self.robot_control = None
         self.hand_detector = None
         self.cali = None
         self.rl_model = None
         self.cap = None
 
+        # Camera dimensions
+        self.w_px, self.h_px = 2592, 1944
+
         # Runtime state
         self._running = False
         self._current_task = None
         self._progress_callback: Optional[Callable] = None
         self._frame_callback: Optional[Callable] = None
-        self._frame_broadcast_callback: Optional[Callable] = None  # For WebSocket frame broadcast
+        self._frame_broadcast_callback: Optional[Callable] = None
 
-        # Robot pose constants
+        # Robot pose constants (from eval.py)
         self.RX_C, self.RY_C, self.RZ_C = 0.193, 0.067, 5.3
 
-        # Camera dimensions for simulate mode
+        # Simulation state
+        self._sim_hand_pos = None
+        self._sim_robot_pos = None
         self._sim_frame_w = 640
         self._sim_frame_h = 480
+
+        # For ideal trajectories (from eval.py)
+        self.t_vals = np.linspace(0, 2 * math.pi, 500)
+        self.ideal_trajectories = {
+            'Circle': np.column_stack((
+                self.w_env / 2 + (self.w_env / 3) * np.cos(self.t_vals),
+                self.h_env / 2 + (self.h_env / 3) * np.sin(self.t_vals)
+            )),
+            'Figure-8': np.column_stack((
+                self.w_env / 2 + (self.w_env / 3) * np.sin(self.t_vals),
+                self.h_env / 2 + (self.w_env / 3) * np.sin(self.t_vals) * np.cos(self.t_vals)
+            ))
+        }
 
     def set_progress_callback(self, callback: Callable[[TaskProgress], None]):
         """Set callback for progress updates."""
@@ -157,15 +171,11 @@ class EvalEngine:
             print("[EvalEngine] Running in SIMULATE mode (no hardware)")
             self._sim_hand_pos = np.array([self.w_env / 2, self.h_env / 2])
             self._sim_robot_pos = np.array([self.w_env / 2, self.h_env / 2])
-            self._sim_time = 0
             return True
 
         try:
             print("[EvalEngine] Connecting to robot...")
 
-
-
-            # Lazy imports for hardware dependencies
             from robot_control.ur_control import URControl
             from cv.hand_detect import HandDetection
             from camera_calibration.camera_calibration import CameraCalibration
@@ -177,8 +187,7 @@ class EvalEngine:
             self.hand_detector = HandDetection()
 
             print("[EvalEngine] Loading camera calibration...")
-            _backend_dir = os.path.dirname(os.path.abspath(__file__))
-            _project_root = os.path.dirname(_backend_dir)
+            _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             self.cali = CameraCalibration(
                 calibration_matrix_path=os.path.join(_project_root, 'src', 'camera_calibration', 'calibration_data.npz'),
                 homography_matrix_path=os.path.join(_project_root, 'src', 'camera_calibration', 'Homography_matrix.npy')
@@ -198,6 +207,13 @@ class EvalEngine:
             if not self.cap.isOpened():
                 raise RuntimeError("Camera not accessible")
 
+            # Get actual frame dimensions
+            ret, frame = self.cap.read()
+            if ret:
+                undistorted_frame = get_workspace(self.cali.undistort_frame(frame))
+                undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                self.h_px, self.w_px = undistorted_frame.shape[:2]
+
             print("[EvalEngine] Connected successfully!")
             return True
 
@@ -210,50 +226,6 @@ class EvalEngine:
         if self.cap:
             self.cap.release()
             self.cap = None
-
-    def _get_sim_positions(self) -> tuple:
-        """Get simulated hand/robot positions for testing without hardware."""
-        # Simulate hand following target with some noise and delay
-        self._sim_time += self.target_dt
-
-        # Simulate random hand movement (user following target)
-        # Add some randomness to simulate real user behavior
-        noise = np.random.randn(2) * 0.1
-        self._sim_hand_pos = self._sim_hand_pos + noise
-
-        # Keep within bounds
-        self._sim_hand_pos = np.clip(self._sim_hand_pos, 0.5, [self.w_env - 0.5, self.h_env - 0.5])
-
-        return self._sim_hand_pos.copy(), self._sim_robot_pos.copy()
-
-    def _generate_sim_frame(self) -> np.ndarray:
-        """Generate a simulated camera frame for testing."""
-        frame = np.zeros((self._sim_frame_h, self._sim_frame_w, 3), dtype=np.uint8)
-
-        # Draw grid
-        grid_color = (40, 40, 40)
-        for i in range(0, self._sim_frame_w, 50):
-            cv2.line(frame, (i, 0), (i, self._sim_frame_h), grid_color, 1)
-        for i in range(0, self._sim_frame_h, 50):
-            cv2.line(frame, (0, i), (self._sim_frame_w, i), grid_color, 1)
-
-        # Draw robot position (blue circle)
-        robot_px = int(self._sim_robot_pos[0] / self.w_env * self._sim_frame_w)
-        robot_py = int(self._sim_robot_pos[1] / self.h_env * self._sim_frame_h)
-        cv2.circle(frame, (robot_px, robot_py), 15, (255, 0, 0), -1)
-        cv2.putText(frame, "Robot", (robot_px - 25, robot_py - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-
-        # Draw hand position (green circle)
-        hand_px = int(self._sim_hand_pos[0] / self.w_env * self._sim_frame_w)
-        hand_py = int(self._sim_hand_pos[1] / self.h_env * self._sim_frame_h)
-        cv2.circle(frame, (hand_px, hand_py), 12, (0, 255, 0), -1)
-        cv2.putText(frame, "Hand", (hand_px - 20, hand_py - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-
-        # Draw task info
-        cv2.putText(frame, f"Task: {self._current_task or 'Ready'}", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-        return frame
 
     def _get_frame_and_positions(self) -> tuple:
         """Capture frame and compute hand/robot positions."""
@@ -282,14 +254,15 @@ class EvalEngine:
             hand_pixel = None
             hand_world = None
 
-        # Robot position
-        center_pixel = np.array([w_px / 2, h_px / 2])
-        robot_world = self.cali.pixel_to_world(center_pixel.astype(int))
+        # Robot position from UR
+        *position_robot_world, _, _, _, _ = self.robot_control.get_robot_pose()
+        real_robot_pixel = self.cali.world_to_pixel(position_robot_world)
+        robot_world = np.array([position_robot_world[0], position_robot_world[1]])
 
         if self._frame_callback:
             self._frame_callback(undistorted_frame, {
                 'hand': hand_pixel,
-                'robot': center_pixel,
+                'robot': real_robot_pixel,
                 'hand_world': hand_world,
                 'robot_world': robot_world
             })
@@ -298,6 +271,31 @@ class EvalEngine:
             self._frame_broadcast_callback(base64.b64encode(buffer.tobytes()).decode('utf-8'))
 
         return undistorted_frame, hand_world, robot_world
+
+    def _generate_sim_frame(self) -> np.ndarray:
+        """Generate a simulated camera frame for testing."""
+        frame = np.zeros((self._sim_frame_h, self._sim_frame_w, 3), dtype=np.uint8)
+
+        grid_color = (40, 40, 40)
+        for i in range(0, self._sim_frame_w, 50):
+            cv2.line(frame, (i, 0), (i, self._sim_frame_h), grid_color, 1)
+        for i in range(0, self._sim_frame_h, 50):
+            cv2.line(frame, (0, i), (self._sim_frame_w, i), grid_color, 1)
+
+        robot_px = int(self._sim_robot_pos[0] / self.w_env * self._sim_frame_w)
+        robot_py = int(self._sim_robot_pos[1] / self.h_env * self._sim_frame_h)
+        cv2.circle(frame, (robot_px, robot_py), 15, (255, 0, 0), -1)
+        cv2.putText(frame, "Robot", (robot_px - 25, robot_py - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+
+        hand_px = int(self._sim_hand_pos[0] / self.w_env * self._sim_frame_w)
+        hand_py = int(self._sim_hand_pos[1] / self.h_env * self._sim_frame_h)
+        cv2.circle(frame, (hand_px, hand_py), 12, (0, 255, 0), -1)
+        cv2.putText(frame, "Hand", (hand_px - 20, hand_py - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+        cv2.putText(frame, f"Task: {self._current_task or 'Ready'}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+
+        return frame
 
     def _move_to_center(self):
         """Move robot to center position."""
@@ -322,6 +320,20 @@ class EvalEngine:
         target_pose = [center_world[0], center_world[1], 0.116, self.RX_C, self.RY_C, self.RZ_C]
         self.robot_control.rtde_c.moveL(target_pose, 0.2, 0.2, asynchronous=False)
 
+    def _send_robot_to_pixel(self, target_pixel: np.ndarray, dt: float = 0.04):
+        """Send robot to target pixel position (from eval.py logic)."""
+        if self.simulate:
+            # Convert pixel to env coordinates for simulation
+            x = target_pixel[0] / self.w_px * self.w_env
+            y = (self.h_px - target_pixel[1]) / self.h_px * self.h_env
+            self._sim_robot_pos = np.array([x, y])
+            return
+
+        # Convert pixel to world coordinates
+        target_world = self.cali.pixel_to_world(target_pixel.astype(int))
+        target_pose = [target_world[0], target_world[1], 0.116, self.RX_C, self.RY_C, self.RZ_C]
+        self.robot_control.servo_robot(target_pose, dt=dt)
+
     def _countdown(self, seconds: int = 3):
         """Display countdown."""
         for i in range(seconds, 0, -1):
@@ -332,156 +344,241 @@ class EvalEngine:
         """Generate random target position at least min_dist from current position."""
         while True:
             target = np.array([
-                np.random.uniform(1, self.w_env - 1),
-                np.random.uniform(1, self.h_env - 1)
+                np.random.uniform(2.0, self.w_env - 2.0),
+                np.random.uniform(2.0, self.h_env - 2.0)
             ])
             if np.linalg.norm(target - current_pos) >= min_dist:
                 return target
 
-    def _pixel_to_env(self, pixel: np.ndarray, w_px: float, h_px: float) -> np.ndarray:
-        """Convert pixel coordinates to environment coordinates."""
-        x = pixel[0] / w_px * self.w_env
-        y = (h_px - pixel[1]) / h_px * self.h_env  # Flip Y axis
-        return np.array([x, y])
+    def safe_normalize(self, v: np.ndarray) -> np.ndarray:
+        """Normalize vector safely."""
+        norm = np.linalg.norm(v)
+        if norm < 1e-8:
+            return np.zeros_like(v)
+        return v / norm
 
     def run_sprint(self) -> Dict:
-        """Run Sprint task: 5 target catches measuring reaction time and velocity."""
+        """Run Sprint task: 5 target catches measuring reaction time and velocity (from eval.py)."""
         self._current_task = "Sprint"
         self._task_index = 1
         self._running = True
 
         results = {'catch_times': [], 'peak_vels': []}
 
+        # Get camera frame to initialize dimensions
+        frame, hand_world, robot_world = self._get_frame_and_positions()
+        if frame is not None:
+            h_px, w_px = frame.shape[:2]
+        else:
+            w_px, h_px = self.w_px, self.h_px
+
         self._countdown()
 
-        for catch_num in range(5):
-            if not self._running:
-                break
+        sprint_target_env = np.array([3.0, 3.0])
+        sprint_catch_count = 0
+        sprint_target_spawn_time = time.time()
 
-            self._update_progress("Sprint", 1, catch_num / 5, f"第 {catch_num + 1}/5 次")
+        # Initialize virtual target at center
+        virtual_target_pixel = np.array([w_px / 2, h_px / 2], dtype=np.float64)
 
-            _, hand_world, _ = self._get_frame_and_positions()
-            current_pos = hand_world[:2] if hand_world is not None and len(hand_world) >= 2 else np.array([self.w_env / 2, self.h_env / 2])
+        last_control_time = time.time()
+        hand_history = deque([np.zeros(2)] * 16, maxlen=16)
+        last_hand_env = np.zeros(2)
+        inst_vel = 0.0
 
-            target = self._generate_target_position(current_pos, min_dist=3.0)
+        while self._running and sprint_catch_count < 5:
+            t_now = time.time()
 
-            start_time = time.time()
-            peak_vel = 0
-            last_pos = current_pos.copy()
-            caught = False
+            # Get hand position
+            frame, hand_world, _ = self._get_frame_and_positions()
+            if frame is not None:
+                h_px, w_px = frame.shape[:2]
 
-            while self._running and not caught:
-                elapsed = time.time() - start_time
-                if elapsed > 30:  # Timeout
-                    break
-
-                frame, hand_world, _ = self._get_frame_and_positions()
-                if hand_world is None:
-                    time.sleep(self.target_dt)
-                    continue
-
+            if hand_world is not None:
                 hand_pos = hand_world[:2] if len(hand_world) >= 2 else hand_world
-                dist = np.linalg.norm(hand_pos - target)
+                hand_env = hand_pos
+            else:
+                hand_env = np.array([self.w_env / 2, self.h_env / 2])
 
-                if dist < 1.5:  # Caught
-                    catch_time = time.time() - start_time
-                    results['catch_times'].append(catch_time)
-                    results['peak_vels'].append(peak_vel)
-                    caught = True
-                else:
-                    # Calculate velocity
-                    if last_pos is not None:
-                        vel = np.linalg.norm(hand_pos - last_pos) / self.target_dt
-                        peak_vel = max(peak_vel, vel)
-                    last_pos = hand_pos
+            # Calculate velocity
+            dt_vision = max(t_now - last_control_time, 0.01)
+            hand_move = hand_env - last_hand_env
+            inst_vel = np.linalg.norm(hand_move) / dt_vision
+            hand_history.append(hand_move)
+            last_hand_env = hand_env
 
-                self._update_progress("Sprint", 1, (catch_num + 0.5) / 5,
-                                       f"第 {catch_num + 1}/5 次 - 距离: {dist:.2f}")
+            # Update peak velocity
+            if len(results['peak_vels']) <= sprint_catch_count:
+                results['peak_vels'].append(inst_vel)
+            else:
+                results['peak_vels'][sprint_catch_count] = max(results['peak_vels'][sprint_catch_count], inst_vel)
 
-                time.sleep(self.target_dt)
+            # Set desired target in pixel coordinates
+            desired_virtual_target = np.array([
+                sprint_target_env[0] * w_px / self.w_env,
+                sprint_target_env[1] * h_px / self.h_env
+            ])
+
+            # Safety clipping (from eval.py)
+            desired_virtual_target[0] = np.clip(desired_virtual_target[0], 50, w_px - 50)
+            desired_virtual_target[1] = np.clip(desired_virtual_target[1], 50, h_px - 50)
+
+            # Max step limitation (from eval.py)
+            max_pixel_step = self.MAX_SAFE_STRIDE * (w_px / self.w_env)
+            diff_vec = desired_virtual_target - virtual_target_pixel
+            dist_pixel = np.linalg.norm(diff_vec)
+
+            if dist_pixel > max_pixel_step:
+                virtual_target_pixel += (diff_vec / dist_pixel) * max_pixel_step
+            else:
+                virtual_target_pixel = desired_virtual_target.copy()
+
+            # Send command to robot
+            self._send_robot_to_pixel(virtual_target_pixel, dt=0.04)
+            last_control_time = time.time()
+
+            # Check if caught
+            dist_to_target = np.linalg.norm(sprint_target_env - hand_env)
+            if dist_to_target < 1.5:
+                catch_time = t_now - sprint_target_spawn_time
+                results['catch_times'].append(catch_time)
+                print(f"  -> Target {sprint_catch_count + 1} caught in {catch_time:.2f}s!")
+                sprint_catch_count += 1
+
+                if sprint_catch_count < 5:
+                    # Generate new target
+                    sprint_target_env = self._generate_target_position(hand_env, min_dist=3.0)
+                    sprint_target_spawn_time = t_now
+            else:
+                self._update_progress("Sprint", 1, sprint_catch_count / 5,
+                                       f"第 {sprint_catch_count + 1}/5 次 - 距离: {dist_to_target:.2f}")
+
+            time.sleep(self.target_dt)
 
         return results
 
     def run_tracking(self) -> Dict:
-        """Run Tracking task: Follow moving target along predefined paths."""
+        """Run Tracking task: Follow moving target along predefined paths (from eval.py)."""
         self._current_task = "Tracking"
         self._task_index = 2
         self._running = True
 
         results = {'rmse_list': [], 'jerk_list': []}
 
+        frame, _, _ = self._get_frame_and_positions()
+        if frame is not None:
+            h_px, w_px = frame.shape[:2]
+        else:
+            w_px, h_px = self.w_px, self.h_px
+
         self._countdown()
 
-        duration = 20  # seconds
+        duration = 20
         start_time = time.time()
-        last_hand_pos = None
+        virtual_target_pixel = np.array([w_px / 2, h_px / 2], dtype=np.float64)
+        last_hand_env = None
         last_vel = None
+        last_control_time = time.time()
 
-        t = 0
         while self._running and (time.time() - start_time) < duration:
-            elapsed = time.time() - start_time
+            t_now = time.time()
+            elapsed = t_now - start_time
             progress = elapsed / duration
-            self._update_progress("Tracking", 2, progress, f"追踪中... {elapsed:.1f}s / {duration}s")
-
-            # Generate trajectory point (circle then figure-8)
-            if elapsed < 10:
-                # Circle path
-                cx, cy = self.w_env / 2, self.h_env / 2
-                r = min(self.w_env, self.h_env) / 3
-                omega = 2 * math.pi / 10  # Full circle in 10 seconds
-                target_x = cx + r * math.cos(omega * elapsed)
-                target_y = cy + r * math.sin(omega * elapsed)
-            else:
-                # Figure-8 path
-                cx, cy = self.w_env / 2, self.h_env / 2
-                r = min(self.w_env, self.h_env) / 4
-                omega = 2 * math.pi / 10
-                t = elapsed - 10
-                target_x = cx + r * math.sin(omega * t)
-                target_y = cy + r * math.sin(2 * omega * t)
-
-            target = np.array([target_x, target_y])
 
             # Get hand position
             frame, hand_world, _ = self._get_frame_and_positions()
+            if frame is not None:
+                h_px, w_px = frame.shape[:2]
+
             if hand_world is not None:
-                hand_pos = hand_world[:2] if len(hand_world) >= 2 else hand_world
+                hand_env = hand_world[:2] if len(hand_world) >= 2 else hand_world
             else:
-                hand_pos = target  # Use target as fallback
+                hand_env = None
 
-            # Calculate cross-track error (perpendicular distance to trajectory)
-            rmse = np.linalg.norm(hand_pos - target)
-            results['rmse_list'].append(float(rmse))
+            # Determine trajectory shape
+            if elapsed < 10.0:
+                shape_name = 'Circle'
+                t = elapsed * 1.2
+                target_x = self.w_env / 2 + (self.w_env / 3) * math.cos(t)
+                target_y = self.h_env / 2 + (self.h_env / 3) * math.sin(t)
+            else:
+                shape_name = 'Figure-8'
+                t_8 = (elapsed - 10.0) * 1.2
+                target_x = self.w_env / 2 + (self.w_env / 3) * math.sin(t_8)
+                target_y = self.h_env / 2 + (self.w_env / 3) * math.sin(t_8) * math.cos(t_8)
 
-            # Calculate jerk (rate of velocity change)
-            if last_hand_pos is not None:
-                vel = np.linalg.norm(hand_pos - last_hand_pos) / self.target_dt
+            target_env = np.array([target_x, target_y])
+
+            # Calculate cross-track error (from eval.py)
+            path_points = self.ideal_trajectories[shape_name]
+            if hand_env is not None:
+                distances_to_path = np.linalg.norm(path_points - hand_env, axis=1)
+                cross_track_error = np.min(distances_to_path)
+                results['rmse_list'].append(float(cross_track_error))
+
+                # Calculate jerk
+                vel = np.linalg.norm(hand_env - last_hand_env) / max(t_now - last_control_time, 0.01) if last_hand_env is not None else 0
                 if last_vel is not None:
-                    jerk = abs(vel - last_vel) / self.target_dt
+                    jerk = abs(vel - last_vel) / max(t_now - last_control_time, 0.01)
                     results['jerk_list'].append(float(jerk))
                 last_vel = vel
-            last_hand_pos = hand_pos
+                last_hand_env = hand_env
+
+            # Set desired target
+            desired_virtual_target = np.array([
+                target_env[0] * w_px / self.w_env,
+                target_env[1] * h_px / self.h_env
+            ])
+
+            # Safety clipping and step limitation
+            desired_virtual_target[0] = np.clip(desired_virtual_target[0], 50, w_px - 50)
+            desired_virtual_target[1] = np.clip(desired_virtual_target[1], 50, h_px - 50)
+
+            max_pixel_step = self.MAX_SAFE_STRIDE * (w_px / self.w_env)
+            diff_vec = desired_virtual_target - virtual_target_pixel
+            dist_pixel = np.linalg.norm(diff_vec)
+
+            if dist_pixel > max_pixel_step:
+                virtual_target_pixel += (diff_vec / dist_pixel) * max_pixel_step
+            else:
+                virtual_target_pixel = desired_virtual_target.copy()
+
+            self._send_robot_to_pixel(virtual_target_pixel, dt=0.04)
+            last_control_time = t_now
+
+            self._update_progress("Tracking", 2, progress, f"追踪中... {elapsed:.1f}s / {duration}s [{shape_name}]")
 
             time.sleep(self.target_dt)
 
         return results
 
     def run_league(self) -> Dict:
-        """Run LeagueGame task: Avoid RL-controlled robot."""
+        """Run LeagueGame task: Avoid RL-controlled robot (from eval.py)."""
         self._current_task = "LeagueGame"
         self._task_index = 3
         self._running = True
 
         results = {'is_caught': False, 'survival_time': 0.0, 'dist_list': []}
 
+        frame, _, _ = self._get_frame_and_positions()
+        if frame is not None:
+            h_px, w_px = frame.shape[:2]
+        else:
+            w_px, h_px = self.w_px, self.h_px
+
         self._countdown()
 
-        duration = 30  # seconds
+        duration = 30
         start_time = time.time()
-        robot_pos = np.array([self.w_env / 2, self.h_env / 2])
+        virtual_target_pixel = np.array([w_px / 2, h_px / 2], dtype=np.float64)
+        last_control_time = time.time()
+        hand_history = deque([np.zeros(2)] * 16, maxlen=16)
+        last_hand_env = np.zeros(2)
 
         while self._running:
-            elapsed = time.time() - start_time
+            t_now = time.time()
+            elapsed = t_now - start_time
+
             if elapsed > duration:
                 break
 
@@ -489,103 +586,170 @@ class EvalEngine:
             self._update_progress("LeagueGame", 3, progress, f"对抗中... {elapsed:.1f}s / {duration}s")
 
             # Get hand position
-            frame, hand_world, _ = self._get_frame_and_positions()
+            frame, hand_world, robot_world = self._get_frame_and_positions()
+            if frame is not None:
+                h_px, w_px = frame.shape[:2]
+
             if hand_world is not None:
-                hand_pos = hand_world[:2] if len(hand_world) >= 2 else hand_world
+                hand_env = hand_world[:2] if len(hand_world) >= 2 else hand_world
             else:
-                hand_pos = np.array([self.w_env / 2, self.h_env / 2])
+                hand_env = np.array([self.w_env / 2, self.h_env / 2])
 
-            # RL model generates action
-            # Simplified: move toward hand
-            dist = np.linalg.norm(robot_pos - hand_pos)
-            results['dist_list'].append(float(dist))
+            if robot_world is not None:
+                robot_env = robot_world[:2] if len(robot_world) >= 2 else robot_world
+            else:
+                robot_env = np.array([self.w_env / 2, self.h_env / 2])
 
-            if dist < 1.5:
+            dist_hand_robot = np.linalg.norm(robot_env - hand_env)
+            results['dist_list'].append(float(dist_hand_robot))
+
+            # Check if caught
+            if dist_hand_robot < 1.5:
                 results['is_caught'] = True
                 results['survival_time'] = elapsed
+                print(f"  -> Robot CAUGHT at {elapsed:.2f}s!")
                 break
 
-            # Move robot toward hand (simplified RL action)
-            direction = (hand_pos - robot_pos)
-            if np.linalg.norm(direction) > 0.01:
-                direction = direction / np.linalg.norm(direction)
+            # Build observation for RL model (from eval.py)
+            dist_obs = np.array([dist_hand_robot], dtype=np.float32)
+            boundary_obs = np.array([robot_env[0], self.w_env - robot_env[0], robot_env[1], self.h_env - robot_env[1]])
+            flat_history = np.array(hand_history).flatten()
 
-            robot_pos = robot_pos + direction * 0.3  # stride
+            obs_array = np.concatenate((
+                robot_env, hand_env, dist_obs, boundary_obs,
+                np.array([0.6]), flat_history
+            ))
+
+            # Get action from RL model
+            action, _ = self.rl_model.predict(obs_array, deterministic=True)
+
+            # Convert action to target position (from eval.py)
+            action_pixel = action * np.array([w_px / self.w_env, h_px / self.h_env]) * 0.6
+            desired_virtual_target = virtual_target_pixel + action_pixel
+
+            # Safety clipping and step limitation
+            desired_virtual_target[0] = np.clip(desired_virtual_target[0], 50, w_px - 50)
+            desired_virtual_target[1] = np.clip(desired_virtual_target[1], 50, h_px - 50)
+
+            max_pixel_step = self.MAX_SAFE_STRIDE * (w_px / self.w_env)
+            diff_vec = desired_virtual_target - virtual_target_pixel
+            dist_pixel = np.linalg.norm(diff_vec)
+
+            if dist_pixel > max_pixel_step:
+                virtual_target_pixel += (diff_vec / dist_pixel) * max_pixel_step
+            else:
+                virtual_target_pixel = desired_virtual_target.copy()
+
+            self._send_robot_to_pixel(virtual_target_pixel, dt=0.04)
+
+            # Update hand history
+            hand_move = hand_env - last_hand_env
+            hand_history.append(hand_move)
+            last_hand_env = hand_env
+            last_control_time = t_now
 
             time.sleep(self.target_dt)
 
         if not results['is_caught']:
             results['survival_time'] = duration
+            print(f"  -> Robot survived full {duration}s!")
 
         return results
 
     def run_boundary(self) -> Dict:
-        """Run Boundary task: Track target along rectangular boundary."""
+        """Run Boundary task: Track target along rectangular boundary (from eval.py)."""
         self._current_task = "Boundary"
         self._task_index = 4
         self._running = True
 
         results = {'min_x': 999, 'max_x': 0, 'min_y': 999, 'max_y': 0, 'vel_list': []}
 
+        frame, _, _ = self._get_frame_and_positions()
+        if frame is not None:
+            h_px, w_px = frame.shape[:2]
+        else:
+            w_px, h_px = self.w_px, self.h_px
+
         self._countdown()
 
-        duration = 20  # seconds
+        duration = 20
         start_time = time.time()
-        last_hand_pos = None
+        virtual_target_pixel = np.array([w_px / 2, h_px / 2], dtype=np.float64)
+        last_hand_env = None
+        last_control_time = time.time()
 
         while self._running and (time.time() - start_time) < duration:
-            elapsed = time.time() - start_time
+            t_now = time.time()
+            elapsed = t_now - start_time
             progress = elapsed / duration
-            self._update_progress("Boundary", 4, progress, f"边界追踪... {elapsed:.1f}s / {duration}s")
 
-            # Move target along rectangle perimeter
-            perimeter_time = (elapsed % 40) / 40 * 4  # 0-4 for 4 sides
-            side = int(perimeter_time)
-            t = perimeter_time - side
+            # Move target along rectangle perimeter (from eval.py)
+            perimeter = 2 * (self.w_env - 4) + 2 * (self.h_env - 4)
+            prog = (elapsed / duration) * perimeter
 
             x_min, x_max = 1, self.w_env - 1
             y_min, y_max = 1, self.h_env - 1
 
-            if side == 0:
-                target = np.array([x_min + t * (x_max - x_min), y_min])
-            elif side == 1:
-                target = np.array([x_max, y_min + t * (y_max - y_min)])
-            elif side == 2:
-                target = np.array([x_max - t * (x_max - x_min), y_max])
+            if prog < self.w_env - 4:
+                tx, ty = 1 + prog, y_min
+            elif prog < self.w_env - 4 + self.h_env - 4:
+                tx, ty = x_max, y_min + (prog - (self.w_env - 4))
+            elif prog < 2 * (self.w_env - 4) + self.h_env - 4:
+                tx, ty = x_max - (prog - (self.w_env - 4) - (self.h_env - 4)), y_max
             else:
-                target = np.array([x_min, y_max - t * (y_max - y_min)])
+                tx, ty = x_min, y_max - (prog - 2 * (self.w_env - 4) - (self.h_env - 4))
 
-            # Get hand position
+            target_env = np.array([tx, ty])
+
+            # Get hand position and update bounds
             frame, hand_world, _ = self._get_frame_and_positions()
-            if hand_world is not None:
-                hand_pos = hand_world[:2] if len(hand_world) >= 2 else hand_world
+            if frame is not None:
+                h_px, w_px = frame.shape[:2]
 
-                # Update bounds
-                results['min_x'] = min(results['min_x'], hand_pos[0])
-                results['max_x'] = max(results['max_x'], hand_pos[0])
-                results['min_y'] = min(results['min_y'], hand_pos[1])
-                results['max_y'] = max(results['max_y'], hand_pos[1])
+            if hand_world is not None:
+                hand_env = hand_world[:2] if len(hand_world) >= 2 else hand_world
+
+                results['min_x'] = min(results['min_x'], hand_env[0])
+                results['max_x'] = max(results['max_x'], hand_env[0])
+                results['min_y'] = min(results['min_y'], hand_env[1])
+                results['max_y'] = max(results['max_y'], hand_env[1])
 
                 # Calculate velocity
-                if last_hand_pos is not None:
-                    vel = np.linalg.norm(hand_pos - last_hand_pos) / self.target_dt
+                if last_hand_env is not None:
+                    vel = np.linalg.norm(hand_env - last_hand_env) / max(t_now - last_control_time, 0.01)
                     results['vel_list'].append(float(vel))
-                last_hand_pos = hand_pos
+                last_hand_env = hand_env
+
+            # Set desired target
+            desired_virtual_target = np.array([
+                target_env[0] * w_px / self.w_env,
+                target_env[1] * h_px / self.h_env
+            ])
+
+            # Safety clipping and step limitation
+            desired_virtual_target[0] = np.clip(desired_virtual_target[0], 50, w_px - 50)
+            desired_virtual_target[1] = np.clip(desired_virtual_target[1], 50, h_px - 50)
+
+            max_pixel_step = self.MAX_SAFE_STRIDE * (w_px / self.w_env)
+            diff_vec = desired_virtual_target - virtual_target_pixel
+            dist_pixel = np.linalg.norm(diff_vec)
+
+            if dist_pixel > max_pixel_step:
+                virtual_target_pixel += (diff_vec / dist_pixel) * max_pixel_step
+            else:
+                virtual_target_pixel = desired_virtual_target.copy()
+
+            self._send_robot_to_pixel(virtual_target_pixel, dt=0.04)
+            last_control_time = t_now
+
+            self._update_progress("Boundary", 4, progress, f"边界追踪... {elapsed:.1f}s / {duration}s")
 
             time.sleep(self.target_dt)
 
         return results
 
     def run_all(self, task_order: List[str] = None) -> EvalResult:
-        """
-        Run all evaluation tasks.
-
-        Args:
-            task_order: Optional list specifying task order. Defaults to ['sprint', 'tracking', 'league', 'boundary']
-
-        Returns:
-            EvalResult containing results for all tasks
-        """
+        """Run all evaluation tasks."""
         if task_order is None:
             task_order = ['sprint', 'tracking', 'league', 'boundary']
 
@@ -617,7 +781,8 @@ class EvalEngine:
                 elif task_name.lower() == 'boundary':
                     result.boundary = task_result
 
-            self._move_to_center()
+            if self._running:
+                self._move_to_center()
 
         return result
 

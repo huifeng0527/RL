@@ -28,8 +28,8 @@ def evaluate_pair(robot_path, hand_path, num_episodes=50, max_steps=40, z_min=4.
     """Evaluate a Robot vs Hand pair."""
     print(f"  Evaluating Robot: {os.path.basename(os.path.dirname(robot_path))} vs Hand: {os.path.basename(os.path.dirname(hand_path))}")
 
-    robot_model = PPO.load(robot_path)
-    hand_model = PPO.load(hand_path) if hand_path else None
+    robot_model = PPO.load(robot_path, verbose=0)
+    hand_model = PPO.load(hand_path, verbose=0) if hand_path else None
 
     env = RehabilitationEnv(
         training_mode='robot',

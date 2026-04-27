@@ -17,10 +17,9 @@ export default function PatientDetail() {
     try {
       const [patientRes, sessionsRes] = await Promise.all([
         getPatient(id),
-        getSessions(id)  // getSessions will return all sessions, filter in component
+        getSessions(id)
       ]);
       setPatient(patientRes.data);
-      // Filter sessions for this patient
       const filteredSessions = sessionsRes.data.filter(s => s.patient_id === parseInt(id));
       setSessions(filteredSessions);
     } catch (error) {
@@ -44,111 +43,170 @@ export default function PatientDetail() {
     return new Date(dateStr).toLocaleDateString('zh-CN');
   };
 
+  const getScoreColor = (score) => {
+    if (score === null) return 'text-slate-400';
+    if (score >= 70) return 'text-emerald-600';
+    if (score >= 40) return 'text-amber-600';
+    return 'text-red-600';
+  };
+
+  const getScoreBg = (score) => {
+    if (score === null) return 'bg-slate-100';
+    if (score >= 70) return 'bg-emerald-50 border-emerald-200';
+    if (score >= 40) return 'bg-amber-50 border-amber-200';
+    return 'bg-red-50 border-red-200';
+  };
+
   if (loading) {
-    return <div className="text-center py-12 text-gray-500">加载中...</div>;
+    return (
+      <div className="animate-fade-in">
+        <div className="card p-6 mb-6">
+          <div className="skeleton h-8 w-1/4 mb-4"></div>
+          <div className="skeleton h-4 w-3/4"></div>
+        </div>
+      </div>
+    );
   }
 
   if (!patient) {
-    return <div className="text-center py-12 text-gray-500">患者不存在</div>;
+    return <div className="text-center py-12 text-slate-500">患者不存在</div>;
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="animate-fade-in-up">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <Link to="/patients" className="text-blue-600 hover:text-blue-800 mb-2 inline-block">
-            ← 返回患者列表
+          <Link to="/patients" className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 mb-2 transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            返回患者列表
           </Link>
-          <h2 className="text-2xl font-bold text-gray-800">{patient.name}</h2>
+          <h2 className="text-2xl font-bold text-slate-800">{patient.name}</h2>
         </div>
         <button
           onClick={handleNewEval}
-          className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-lg"
+          className="btn btn-success"
         >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
           开始新评估
         </button>
       </div>
 
       {/* Patient Info Card */}
-      <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <h3 className="text-lg font-bold text-gray-800 mb-4">基本信息</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="card-elevated p-6 mb-6">
+        <div className="flex items-center gap-4 mb-6">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-2xl font-bold shadow-lg shadow-blue-200">
+            {patient.name.charAt(0).toUpperCase()}
+          </div>
           <div>
-            <span className="text-gray-500 text-sm">性别</span>
-            <p className="font-medium text-gray-900">
+            <h3 className="text-xl font-bold text-slate-800">{patient.name}</h3>
+            <p className="text-slate-500">{patient.diagnosis || '暂无诊断'}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+          <div className="p-4 bg-slate-50 rounded-xl">
+            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">性别</p>
+            <p className="font-semibold text-slate-700">
               {patient.gender === 'M' ? '男' : patient.gender === 'F' ? '女' : '-'}
             </p>
           </div>
-          <div>
-            <span className="text-gray-500 text-sm">出生日期</span>
-            <p className="font-medium text-gray-900">{formatDate(patient.birth_date)}</p>
+          <div className="p-4 bg-slate-50 rounded-xl">
+            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">出生日期</p>
+            <p className="font-semibold text-slate-700">{formatDate(patient.birth_date)}</p>
           </div>
-          <div>
-            <span className="text-gray-500 text-sm">诊断</span>
-            <p className="font-medium text-gray-900">{patient.diagnosis || '-'}</p>
+          <div className="p-4 bg-slate-50 rounded-xl">
+            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">评估次数</p>
+            <p className="font-semibold text-slate-700">{sessions.length} 次</p>
           </div>
-          <div>
-            <span className="text-gray-500 text-sm">添加时间</span>
-            <p className="font-medium text-gray-900">{formatDate(patient.created_at)}</p>
+          <div className="p-4 bg-slate-50 rounded-xl">
+            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">最近评估</p>
+            <p className="font-semibold text-slate-700">
+              {sessions.length > 0 ? formatDate(sessions[0].created_at) : '-'}
+            </p>
           </div>
         </div>
+
         {patient.notes && (
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <span className="text-gray-500 text-sm">备注</span>
-            <p className="text-gray-900">{patient.notes}</p>
+          <div className="mt-6 pt-6 border-t border-slate-100">
+            <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">备注</p>
+            <p className="text-slate-700">{patient.notes}</p>
           </div>
         )}
       </div>
 
       {/* Sessions History */}
-      <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-bold text-gray-800">评估历史</h3>
+      <div className="card-elevated overflow-hidden">
+        <div className="px-6 py-5 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+          <h3 className="text-lg font-bold text-slate-800">评估历史</h3>
         </div>
+
         {sessions.length === 0 ? (
-          <div className="p-6 text-center text-gray-500">
-            <p className="mb-4">暂无评估记录</p>
+          <div className="empty-state">
+            <div className="empty-state-icon">
+              <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-semibold text-slate-700 mb-2">暂无评估记录</h3>
+            <p className="text-slate-500 mb-6">为该患者创建第一次康复评估</p>
             <button
               onClick={handleNewEval}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              className="btn btn-primary"
             >
-              开始第一次评估
+              开始评估
             </button>
           </div>
         ) : (
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">评估时间</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">总分</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {sessions.map((session) => (
-                <tr key={session.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-gray-900">{formatDate(session.created_at)}</td>
-                  <td className="px-6 py-4">
+          <div className="divide-y divide-slate-100">
+            {sessions.map((session, index) => (
+              <div
+                key={session.id}
+                className="p-6 hover:bg-slate-50/50 transition-colors group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-slate-600 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="font-medium text-slate-700">评估 #{session.id}</p>
+                      <p className="text-sm text-slate-500">{formatDate(session.created_at)}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4">
                     {session.total_score !== null ? (
-                      <span className={`font-medium ${session.total_score >= 70 ? 'text-green-600' : session.total_score >= 40 ? 'text-yellow-600' : 'text-red-600'}`}>
-                        {session.total_score.toFixed(1)}
-                      </span>
+                      <div className={`px-4 py-2 rounded-xl border ${getScoreBg(session.total_score)}`}>
+                        <span className={`text-xl font-bold ${getScoreColor(session.total_score)}`}>
+                          {session.total_score.toFixed(1)}
+                        </span>
+                        <span className="text-xs text-slate-500 ml-1">/ 100</span>
+                      </div>
                     ) : (
-                      <span className="text-gray-400">进行中</span>
+                      <span className="px-4 py-2 rounded-xl bg-slate-100 text-slate-500 text-sm">进行中</span>
                     )}
-                  </td>
-                  <td className="px-6 py-4">
+
                     <Link
                       to={`/evaluate/${session.id}`}
-                      className="text-blue-600 hover:text-blue-800 font-medium"
+                      className="btn btn-ghost py-2 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       查看详情
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
                     </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>

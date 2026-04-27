@@ -44,7 +44,7 @@ def test_with_mouse(model_path=None, max_steps=1000, fps=60):
     hand_model = None
     if model_path:
         try:
-            hand_model = PPO.load(model_path)
+            hand_model = PPO.load(model_path, verbose=0)
             print(f"Hand model loaded from {model_path}")
         except Exception as e:
             print(f"Error loading model: {e}")

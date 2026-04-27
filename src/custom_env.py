@@ -135,7 +135,7 @@ class RehabilitationEnv(gym.Env):
                 from stable_baselines3 import SAC, PPO
                 for path in hand_model_paths:
                     try:
-                        model = PPO.load(path, custom_objects={'learning_rate': 0.0, 'optimizer_class': None})
+                        model = PPO.load(path, custom_objects={'learning_rate': 0.0, 'optimizer_class': None}, verbose=0)
                         self.hand_model_pool.append(model)
                     except Exception as e:
                         print(f"无法加载历史对手模型 {path}, Error: {e}")
@@ -156,7 +156,7 @@ class RehabilitationEnv(gym.Env):
 
         # --- Thresholds ---
         self.distance_threshold_collision = 2
-        # self.distance_threshold_penalty = 3.0
+        # self.distance_threshold_penalty = 3.0\
         
         # --- Rewards Config ---
         self.reward_hand_catch = 30
@@ -195,6 +195,21 @@ class RehabilitationEnv(gym.Env):
         self.robot_position = np.zeros(2)
         self.hand_position = np.zeros(2)
         self.blocking_point = np.zeros(2)
+
+        # ========================================================
+        # [核心新增]：Hand 物理约束状态变量
+        # ========================================================
+        self.last_hand_actual_move = np.zeros(2, dtype=np.float32)
+
+        # ========================================================
+        # [核心新增]：Robot 动作平滑惩罚状态变量
+        # ========================================================
+        self.last_robot_action = np.zeros(2, dtype=np.float32)
+        self._jerk_penalty = 0.0
+
+        # 旁路标志：外部直接控制 hand_position 时跳过物理约束
+        self._bypass_hand_physics = False
+
         self.hand_history_buffer = deque(maxlen=self.history_length)
         self.robot_history_buffer = deque(maxlen=self.history_length)
         self.trajectory_points = []
@@ -225,10 +240,10 @@ class RehabilitationEnv(gym.Env):
                 p[-1] = 0.50  # 50% 打最新 Hand (突破上限)
 
                 if pool_size > 2:
-                    remaining_prob = 0.30 / (pool_size - 2)
+                    remaining_prob = (1 - p[0] - p[-1]) / (pool_size - 2)
                     p[1:-1] = remaining_prob  # 30% 平分给历史模型
                 else:
-                    p[-1] = 0.80  # 只有 script + 1个模型时
+                    p[-1] = 1-p[0]  # 只有 script + 1个模型时
 
                 self.hand_model = np.random.choice(self.hand_model_pool, p=p)
 
@@ -405,6 +420,12 @@ class RehabilitationEnv(gym.Env):
         self.pre_distance = self.current_distance
         self.steps = 0
 
+        # [核心新增]：回合重置时清空物理惯性状态
+        self.last_hand_actual_move = np.zeros(2, dtype=np.float32)
+        self.last_robot_action = np.zeros(2, dtype=np.float32)
+        self._jerk_penalty = 0.0
+        self._bypass_hand_physics = False
+
         # Reset biomechanical filter for new episode
         self.biomech_filter.reset()
 
@@ -416,13 +437,15 @@ class RehabilitationEnv(gym.Env):
         return self._get_obs(), self._get_info()
 
     def _get_scripted_hand_move(self):
-        """后备的脚本控制"""
+        """后备的脚本控制（使用更大的步长，比 RL Hand 更激进）"""
+        # Scripted hand 用 0.5~0.7 的较大步长，更具威胁性
+        scripted_stride = random.uniform(0.5, 0.7)
         if random.random() < self.hand_move_epsilon:
             move = np.random.uniform(-1, 1, size=2)
-            move = self.safe_normalize(move) * self.stride_hand
+            move = self.safe_normalize(move) * scripted_stride
         else:
             vec = self.robot_position - self.hand_position
-            move = self.safe_normalize(vec) * self.stride_hand
+            move = self.safe_normalize(vec) * scripted_stride
         return move
     
     def _resolve_robot_move(self, action):
@@ -430,22 +453,50 @@ class RehabilitationEnv(gym.Env):
             if self.robot_model is None:
                 return np.zeros(2)
             obs_for_robot = self._get_robot_obs()
-            robot_action, _ = self.robot_model.predict(obs_for_robot, deterministic=True)
+            robot_action, _ = self.robot_model.predict(obs_for_robot, deterministic=False)
             return robot_action * self.stride_robot
 
         # Robot mode: use RL action directly
         return action * self.stride_robot
 
     def _resolve_hand_move(self, action):
+        # 旁路模式：外部直接控制 hand_position，跳过物理约束
+        if getattr(self, '_bypass_hand_physics', False):
+            return np.zeros(2)
+
+        # 1. 获取手的"大脑意图" (Raw Action)
         if self.training_mode == 'hand':
-            return action * self.stride_hand
+            hand_intent = action * self.stride_hand
+        elif self.hand_model is None:
+            hand_intent = self._get_scripted_hand_move()
+        else:
+            obs_for_hand = self._get_hand_obs()
+            hand_action, _ = self.hand_model.predict(obs_for_hand, deterministic=True)
+            hand_intent = hand_action * self.stride_hand
 
-        if self.hand_model is None:
-            return self._get_scripted_hand_move()
+        # ========================================================
+        # 2. 物理约束 I：一阶惯性低通滤波 (Muscle Inertia)
+        # ========================================================
+        alpha = 0.3
+        smoothed_move = alpha * hand_intent + (1.0 - alpha) * self.last_hand_actual_move
 
-        obs_for_hand = self._get_hand_obs()
-        hand_action, _ = self.hand_model.predict(obs_for_hand, deterministic=True)
-        return hand_action * self.stride_hand
+        # ========================================================
+        # 3. 物理约束 II：最大加速度截断 (Acceleration Clipping)
+        # ========================================================
+        max_accel = 0.15
+        delta_v = smoothed_move - self.last_hand_actual_move
+        accel_magnitude = np.linalg.norm(delta_v)
+
+        if accel_magnitude > max_accel:
+            delta_v = (delta_v / accel_magnitude) * max_accel
+
+        final_physics_move = self.last_hand_actual_move + delta_v
+
+        # ========================================================
+        # 4. 更新状态并返回最终的物理位移
+        # ========================================================
+        self.last_hand_actual_move = final_physics_move.copy()
+        return final_physics_move
 
     def _compute_reward_and_done(self, old_robot_pos):
         reward = 0.0
@@ -478,8 +529,20 @@ class RehabilitationEnv(gym.Env):
         dist_improvement = self.pre_distance - self.current_distance
         if self.training_mode == 'robot':
             reward += self.reward_step
+            # Robot 动作平滑惩罚：惩罚动作的突变（jerk）
+            # 动作变化越大，惩罚越重（避免 Robot 学会"抽搐"策略）
+            jerk_penalty = -0.1 * self._jerk_penalty
+            reward += jerk_penalty
         else:
-            reward += dist_improvement * 0.5 + self.reward_step
+            # Hand 必须主动追逐，不能镜像对峙
+            # 1. 接近奖励：越近越高（主动追击的内驱力）
+            reward += dist_improvement * 0.5
+            # 2. 距离亲近奖励：当前距离越近 bonus 越大（防止躺平对峙）
+            # max_distance ≈ 对角线 ≈ 18, min_distance = 0
+            proximity_reward = max(0, (18 - self.current_distance) / 18) * 0.1
+            reward += proximity_reward
+            # 3. 步进惩罚：促使 hand 尽快抓到你
+            reward += self.reward_step
 
         self.pre_distance = self.current_distance
 
@@ -514,6 +577,11 @@ class RehabilitationEnv(gym.Env):
 
         robot_actual_move = self.robot_position - old_robot_pos
         self.robot_history_buffer.append(robot_actual_move)
+
+        # Robot 动作平滑惩罚：计算 jerk（加速度变化率）并存储
+        self._jerk_penalty = np.linalg.norm(robot_actual_move - self.last_robot_action)
+        # 更新状态
+        self.last_robot_action = robot_actual_move.copy()
         
         self._calculate_fix_point()
         vec_arm = self.fixed_point - self.hand_position

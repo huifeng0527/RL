@@ -62,64 +62,107 @@ class ReportGenerator:
         plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white')
         plt.close()
 
+    def _normalize_score(self, value, bound_0, bound_100):
+        """Min-Max scaling with clinical boundaries.
+        If bound_100 > bound_0: larger is better.
+        If bound_100 < bound_0: smaller is better.
+        """
+        score = 100.0 * (value - bound_0) / (bound_100 - bound_0)
+        return max(0.0, min(100.0, score))
+
     def _calculate_scores(self, results: Dict) -> Dict[str, float]:
-        """Calculate normalized scores (0-100) for each task."""
+        """Calculate normalized scores (0-100) for each task using clinical standard min-max normalization.
+
+        Clinical Standards (from eval.py):
+        - Sprint: avg_catch_time [0.8s, 3.0s] - faster is better
+        - Tracking: avg_rmse [0.0, 2.0] - lower is better
+        - LeagueGame: survival_time [2.0s, 10.0s] (60%) + avg_dist [3.0, 8.0] (40%)
+        - Boundary: area_score (50%) + jerk_score (50%)
+        """
         scores = {}
 
-        # Sprint: based on average catch time (faster = better)
+        # Task 1: Sprint (Reaction & Explosive Power)
+        # avg_catch_time: 0.8s = best (100), 3.0s = worst (0)
         if results.get('sprint') and results['sprint'].get('catch_times'):
-            catch_times = results['sprint']['catch_times']
-            avg_time = np.mean(catch_times)
-            # Score: 100 if < 1s, 0 if > 6s
-            scores['sprint'] = max(0, min(100, (6 - avg_time) / 5 * 100))
+            avg_time = np.mean(results['sprint']['catch_times'])
+            scores['sprint'] = self._normalize_score(avg_time, bound_0=3.0, bound_100=0.8)
         else:
             scores['sprint'] = 0
 
-        # Tracking: based on average RMSE (lower = better)
+        # Task 2: Tracking (Multi-trajectory Smooth Tracking)
+        # avg_rmse: 0.0 = best (100), 2.0 = worst (0)
         if results.get('tracking') and results['tracking'].get('rmse_list'):
-            rmse_list = results['tracking']['rmse_list']
-            avg_rmse = np.mean(rmse_list)
-            # Score: 100 if < 0.5, 0 if > 5
-            scores['tracking'] = max(0, min(100, (5 - avg_rmse) / 4.5 * 100))
+            avg_rmse = np.mean(results['tracking']['rmse_list'])
+            scores['tracking'] = self._normalize_score(avg_rmse, bound_0=2.0, bound_100=0.0)
         else:
             scores['tracking'] = 0
 
-        # League: based on survival time and caught status
+        # Task 3: LeagueGame (Competition & Cognitive Interception)
+        # Two sub-indicators: survival_time (60%) + avg_dist (40%)
         if results.get('league'):
-            is_caught = results['league'].get('is_caught', True)
-            survival_time = results['league'].get('survival_time', 0)
-            if not is_caught:
-                scores['league'] = 100  # Survived full 30s
-            else:
-                scores['league'] = max(0, survival_time / 30 * 100)
+            survival_t = results['league'].get('survival_time', 0)
+            dist_list = results['league'].get('dist_list', [])
+            avg_dist = np.mean(dist_list) if dist_list else 8.0
+
+            # Sub-indicator 3a: survival time (60%)
+            # 2.0s = best (100), 10.0s = worst (0) - faster caught = better
+            time_score = self._normalize_score(survival_t, bound_0=10.0, bound_100=2.0)
+
+            # Sub-indicator 3b: avg distance (40%)
+            # 3.0 = best (100), 8.0 = worst (0) - closer to robot = better
+            dist_score = self._normalize_score(avg_dist, bound_0=8.0, bound_100=3.0)
+
+            scores['league'] = time_score * 0.6 + dist_score * 0.4
         else:
             scores['league'] = 0
 
-        # Boundary: based on range of motion
+        # Task 4: Boundary (Range of Motion & Stability)
+        # Two sub-indicators: area_score (50%) + jerk_score (50%)
         if results.get('boundary'):
             b = results['boundary']
-            range_x = b.get('max_x', 0) - b.get('min_x', 0)
-            range_y = b.get('max_y', 0) - b.get('min_y', 0)
-            total_range = range_x + range_y
-            # Score: 100 if total range > 20, 0 if < 5
-            scores['boundary'] = max(0, min(100, (total_range - 5) / 15 * 100))
+            # Area = (max_x - min_x) * (max_y - min_y)
+            area = max(0, b['max_x'] - b['min_x']) * max(0, b['max_y'] - b['min_y'])
+            max_area = (15 - 4) * (10 - 4)  # (w_env - 4) * (h_env - 4)
+
+            # Sub-indicator 4a: area coverage (50%)
+            # 0 = worst (0), max_area = best (100)
+            area_score = self._normalize_score(area, bound_0=0.0, bound_100=max_area)
+
+            # Sub-indicator 4b: motion jerk (50%)
+            # jerk = mean(|diff(vel_list)|), 0.0 = best (100), 3.0 = worst (0)
+            vel_list = b.get('vel_list', [])
+            mean_jerk = np.mean(np.abs(np.diff(vel_list))) if len(vel_list) > 1 else 3.0
+            jerk_score = self._normalize_score(mean_jerk, bound_0=3.0, bound_100=0.0)
+
+            scores['boundary'] = area_score * 0.5 + jerk_score * 0.5
         else:
             scores['boundary'] = 0
 
         return scores
 
     def _estimate_clinical_scores(self, scores: Dict[str, float]) -> Dict[str, float]:
-        """Estimate clinical scale scores (FMA-UE and ARAT) based on M-HECS scores."""
-        total = scores.get('sprint', 0) * 0.2 + scores.get('tracking', 0) * 0.3 + \
-                scores.get('league', 0) * 0.3 + scores.get('boundary', 0) * 0.2
+        """Estimate clinical scale scores (FMA-UE and ARAT) based on M-HECS scores.
 
-        # Rough estimation based on total score
-        # FMA-UE: 0-66, ARAT: 0-57
-        fma_estimate = total / 100 * 50 + 10  # Range: 10-60
-        arat_estimate = total / 100 * 45 + 5    # Range: 5-50
+        Formulas from eval.py:
+        - M-HECS total = 100 * (0.20 * sprint + 0.30 * tracking + 0.30 * league + 0.20 * boundary)
+        - FMA-UE (满分66): 侧重协同(Tracking)和范围(ROM)
+        - ARAT (满分57): 侧重爆发力(Sprint)和功能抓取(League)
+        """
+        s_sprint = scores.get('sprint', 0) / 100.0
+        s_tracking = scores.get('tracking', 0) / 100.0
+        s_league = scores.get('league', 0) / 100.0
+        s_boundary = scores.get('boundary', 0) / 100.0
+
+        total = 100.0 * (0.20 * s_sprint + 0.30 * s_tracking + 0.30 * s_league + 0.20 * s_boundary)
+
+        # FMA-UE (满分66)：侧重协同(Tracking)和范围(ROM)
+        est_fma = 66.0 * (0.10 * s_sprint + 0.45 * s_tracking + 0.05 * s_league + 0.40 * s_boundary)
+
+        # ARAT (满分57)：侧重爆发力(Sprint)和功能抓取(League)
+        est_arat = 57.0 * (0.40 * s_sprint + 0.15 * s_tracking + 0.35 * s_league + 0.10 * s_boundary)
 
         return {
-            'fma_ue': round(fma_estimate, 1),
+            'fma_ue': round(est_fma, 1),
             'arat': round(arat_estimate, 1),
             'total': round(total, 1)
         }

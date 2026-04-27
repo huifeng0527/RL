@@ -150,11 +150,12 @@ def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_cl
                 'max_grad_norm': 0.5,
                 'batch_size': 1024,
                 'n_steps': 4096,
-            }
+            },
+            verbose=0
         )
         # 重新设置学习率
         model.learning_rate = 1e-4
-        logger = configure(os.path.join(save_path, "tensorboard"), ["stdout", "tensorboard"])
+        logger = configure(os.path.join(save_path, "tensorboard"), ["tensorboard"])
         model.set_logger(logger)
     else:
         print("[*] 初始训练: 创建全新的 Robot 模型")
@@ -206,12 +207,13 @@ def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_cl
 
 
 def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_class=None,
-               skip_if_exists=False, resume_from_path=None):
+               skip_if_exists=False, resume_from_path=None, warm_start_path=None):
     """Train hand agent to avoid robot.
 
     Args:
         skip_if_exists: If True, skip training if best_model.zip already exists
-        resume_from_path: Path to existing model to use (for resume scenario)
+        resume_from_path: Path to existing model to skip training (use directly)
+        warm_start_path: Path to previous Hand model to warm-start from (continue training)
     """
     # 检查是否跳过训练
     hand_model_path = os.path.join(save_path, "hand", "best_model.zip")
@@ -234,7 +236,8 @@ def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_cla
     # Load robot model as opponent
     robot_model = PPO.load(
         robot_model_path,
-        custom_objects={'learning_rate': 0.0, 'optimizer_class': None}
+        custom_objects={'learning_rate': 0.0, 'optimizer_class': None},
+        verbose=0
     )
 
     vec_env = create_vec_env('hand', n_envs=n_envs, robot_model=robot_model)
@@ -246,20 +249,40 @@ def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_cla
     if extractor_class is not None:
         policy_kwargs["features_extractor_class"] = extractor_class
 
-    print("[*] 基因变异: 创建全新的 Hand 对手模型 (从头开始)")
-    model = PPO(
-        "MlpPolicy",
-        vec_env,
-        verbose=0,
-        learning_rate=3e-4,
-        ent_coef=0.01,
-        n_epochs=4,
-        max_grad_norm=0.5,
-        batch_size=512,
-        n_steps=2048,
-        policy_kwargs=policy_kwargs,
-        tensorboard_log=os.path.join(save_path, "tensorboard")
-    )
+    # 热启动：从上一代 Hand 模型继续训练（保留通用能力）
+    if warm_start_path and os.path.exists(warm_start_path):
+        print(f"[*] 热启动: 从上一代 Hand 模型继续训练 -> {warm_start_path}")
+        model = PPO.load(
+            warm_start_path,
+            env=vec_env,
+            custom_objects={
+                'learning_rate': 1e-4,  # 降低学习率微调
+                'ent_coef': 0.008,
+                'n_epochs': 4,
+                'max_grad_norm': 0.5,
+                'batch_size': 512,
+                'n_steps': 2048,
+            },
+            verbose=0
+        )
+        model.learning_rate = 1e-4
+        logger = configure(os.path.join(save_path, "tensorboard"), ["tensorboard"])
+        model.set_logger(logger)
+    else:
+        print("[*] 基因变异: 创建全新的 Hand 对手模型 (从头开始)")
+        model = PPO(
+            "MlpPolicy",
+            vec_env,
+            verbose=0,
+            learning_rate=3e-4,
+            ent_coef=0.01,
+            n_epochs=4,
+            max_grad_norm=0.5,
+            batch_size=512,
+            n_steps=2048,
+            policy_kwargs=policy_kwargs,
+            tensorboard_log=os.path.join(save_path, "tensorboard")
+        )
 
     eval_env = create_vec_env('hand', n_envs=1, robot_model=robot_model)
     eval_callback = EvalCallback(
@@ -297,7 +320,8 @@ def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_cla
 
 def run_iterative_training(
     n_iterations=5,
-    steps_per_iteration=500000,
+    robot_steps=1_000_000,
+    hand_steps=2_000_000,
     n_envs=4,
     base_save_path=None,
     extractor_name="mlp",
@@ -342,6 +366,7 @@ def run_iterative_training(
 
         # 加载上一轮的 Robot 模型作为起点
         if start_from_iteration > 1:
+            
             current_robot_path = os.path.join(resume_from, f"iteration_{start_from_iteration - 1}", "robot", "robot", "best_model.zip")
             if not os.path.exists(current_robot_path):
                 # 尝试 final_model
@@ -394,7 +419,7 @@ def run_iterative_training(
         # 1. 训练 Robot
         current_robot_path = train_robot(
             hand_model_paths=historical_hand_paths,
-            total_steps=steps_per_iteration,
+            total_steps=robot_steps,
             save_path=os.path.join(iteration_path, "robot"),
             n_envs=n_envs,
             extractor_class=extractor_class,
@@ -415,14 +440,22 @@ def run_iterative_training(
                 print(f"    发现已有 Hand Iter {iteration}")
 
         # 2. 训练 Hand
+        # 热启动：从上一轮 Hand 模型继续训练
+        prev_hand_warm_start = None
+        if iteration > 1:
+            prev_hand_path = os.path.join(base_save_path, f"iteration_{iteration - 1}", "hand", "hand", "best_model.zip")
+            if os.path.exists(prev_hand_path):
+                prev_hand_warm_start = prev_hand_path
+
         new_hand_path = train_hand(
             robot_model_path=current_robot_path,
-            total_steps=steps_per_iteration,
+            total_steps=hand_steps,
             save_path=os.path.join(iteration_path, "hand"),
             n_envs=n_envs,
             extractor_class=extractor_class,
             skip_if_exists=False,  # start_from 指定的轮次必须训练
-            resume_from_path=resume_hand_path  # 之前的轮次从这里加载
+            resume_from_path=resume_hand_path,  # 之前的轮次（跳过训练时使用）
+            warm_start_path=prev_hand_warm_start  # 上一轮 Hand 模型（热启动）
         )
 
         # 如果跳过了训练，使用 resume 的路径
@@ -447,8 +480,9 @@ def run_iterative_training(
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Dual agent iterative league training')
-    parser.add_argument('--iterations', type=int, default=5, help='Number of training iterations')
-    parser.add_argument('--steps', type=int, default=5_000_000, help='Steps per iteration')
+    parser.add_argument('--iterations', type=int, default=10, help='Number of training iterations')
+    parser.add_argument('--robot_steps', type=int, default=1_000_000, help='Steps per iteration for robot')
+    parser.add_argument('--hand_steps', type=int, default=2_000_000, help='Steps per iteration for hand')
     parser.add_argument('--n_envs', type=int, default=4, help='Number of parallel environments')
     parser.add_argument('--save_path', type=str, default=None, help='Save path')
     parser.add_argument('--extractor', type=str, default='aux_lstm',
@@ -463,7 +497,8 @@ if __name__ == '__main__':
 
     run_iterative_training(
         n_iterations=args.iterations,
-        steps_per_iteration=args.steps,
+        robot_steps=args.robot_steps,
+        hand_steps=args.hand_steps,
         n_envs=args.n_envs,
         base_save_path=args.save_path,
         extractor_name=args.extractor,

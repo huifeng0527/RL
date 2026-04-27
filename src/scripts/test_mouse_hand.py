@@ -44,7 +44,7 @@ def test_with_mouse(model_path=None, max_steps=1000, fps=60):
     robot_model = None
     if model_path:
         try:
-            robot_model = PPO.load(model_path)
+            robot_model = PPO.load(model_path, verbose=0)
             print(f"Robot model loaded from {model_path}")
         except Exception as e:
             print(f"Error loading model: {e}")
@@ -61,16 +61,19 @@ def test_with_mouse(model_path=None, max_steps=1000, fps=60):
     env.cell_size = cell_size
     env.random_noise = False
 
-    env.stride_robot = 0.5
-    env.stride_hand = 0.3
+
     env.margin = 0.1
-    env.distance_threshold_collision = 2.5
+    # 开启旁路模式：鼠标直接控制 hand_position，跳过物理约束
+    env._bypass_hand_physics = True
+    env.distance_threshold_collision = 1.5
 
     running = True
     episode_count = 0
 
     while running:
         obs, info = env.reset()
+        env.stride_robot = 0.6
+        env.stride_hand = 0.3
         episode_count += 1
         steps = 0
         total_reward = 0
@@ -117,7 +120,9 @@ def test_with_mouse(model_path=None, max_steps=1000, fps=60):
             else:
                 hand_move = np.zeros(2)
 
-            # Apply hand movement directly
+            # Apply hand movement directly (mouse control bypasses env's hand logic)
+            # 同步更新物理惯性状态，防止下一帧惯性滤波叠加残余速度
+            env.last_hand_actual_move = hand_move.copy()
             env.hand_position += hand_move
             env.hand_position = np.clip(
                 env.hand_position,
@@ -125,10 +130,6 @@ def test_with_mouse(model_path=None, max_steps=1000, fps=60):
                 [env.env_width - env.margin, env.env_height - env.margin]
             )
             env.hand_history_buffer.append(hand_move)
-
-            # Temporarily disable env's hand movement
-            temp_stride = env.stride_hand
-            env.stride_hand = 0.0
 
             # Get robot action and step
             obs = env._get_obs()
@@ -138,9 +139,6 @@ def test_with_mouse(model_path=None, max_steps=1000, fps=60):
                 action = env.action_space.sample()
 
             obs, reward, terminated, truncated, info = env.step(action)
-
-            # Restore stride
-            env.stride_hand = temp_stride
 
             total_reward += reward
             steps += 1

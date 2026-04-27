@@ -46,14 +46,14 @@ def test_dual(robot_model_path=None, hand_model_path=None, max_steps=1000, fps=3
 
     if robot_model_path:
         try:
-            robot_model = PPO.load(robot_model_path)
+            robot_model = PPO.load(robot_model_path, verbose=0)
             print(f"Robot model loaded from {robot_model_path}")
         except Exception as e:
             print(f"Error loading robot model: {e}")
 
     if hand_model_path:
         try:
-            hand_model = PPO.load(hand_model_path)
+            hand_model = PPO.load(hand_model_path, verbose=0)
             print(f"Hand model loaded from {hand_model_path}")
         except Exception as e:
             print(f"Error loading hand model: {e}")
@@ -146,11 +146,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Test robot vs hand agents')
     parser.add_argument('--robot', type=str, default=r"C:\Users\admin\Desktop\科研\RL\logs\dual_iterative_0423_1539\iteration_2\robot\robot\best_model.zip",
                         help='Path to robot model (PPO)')
-    parser.add_argument('--hand', type=str, default=r"C:\Users\admin\Desktop\科研\RL\logs\dual_iterative_0422_1812\iteration_1\hand\hand\best_model",
+    parser.add_argument('--hand', type=str, default="",
                         help='Path to hand model (PPO)')
     parser.add_argument('--steps', type=int, default=1000,
                         help='Max steps per episode')
-    parser.add_argument('--fps', type=int, default=10,
+    parser.add_argument('--fps', type=int, default=8,
                         help='Target frames per second (default: 30)')
 
     args = parser.parse_args()
