@@ -65,7 +65,7 @@ class EvalEngine:
         yolo_model_path: str = None,
         rl_model_path: str = None,
         calibration_path: str = None,
-        control_freq: float = 25.0,
+        control_freq: float = 8,
         simulate: bool = True
     ):
         """
@@ -97,10 +97,7 @@ class EvalEngine:
         self.yolo_model_path = yolo_model_path or os.path.join(
             _project_root, 'src', 'runs', 'detect', 'train3', 'weights', 'best.onnx'
         )
-        self.rl_model_path = rl_model_path or os.path.join(
-            _rl_root, 'logs', 'ablation_study_0416_1050',
-            '2_MLP_LSTM', 'best_model.zip'
-        )
+        self.rl_model_path = r"C:\Users\admin\Desktop\huifeng\RL\logs\dual_iterative_0427_1314\iteration_14\robot\robot\best_model.zip"
 
         # Hardware interfaces
         self.robot_control = None
@@ -118,9 +115,10 @@ class EvalEngine:
         self._progress_callback: Optional[Callable] = None
         self._frame_callback: Optional[Callable] = None
         self._frame_broadcast_callback: Optional[Callable] = None
+        self._stop_callback: Optional[Callable] = None
 
         # Robot pose constants (from eval.py)
-        self.RX_C, self.RY_C, self.RZ_C = 0.193, 0.067, 5.3
+        self.RX_C, self.RY_C, self.RZ_C , self.z= 0.193, 0.067, 5.3, 0.115
 
         # FPS tracking
         self._fps = 0.0
@@ -148,7 +146,7 @@ class EvalEngine:
             )),
             'Figure-8': np.column_stack((
                 self.w_env / 2 + (self.w_env / 3) * np.sin(self.t_vals),
-                self.h_env / 2 + (self.w_env / 3) * np.sin(self.t_vals) * np.cos(self.t_vals)
+                self.h_env / 2 + (self.h_env / 3) * np.sin(self.t_vals) * np.cos(self.t_vals)  # FIX 2: was w_env/2, now h_env/2
             ))
         }
 
@@ -163,6 +161,10 @@ class EvalEngine:
     def set_frame_broadcast_callback(self, callback: Callable[[str], None]):
         """Set callback for broadcasting frames via WebSocket."""
         self._frame_broadcast_callback = callback
+
+    def set_stop_callback(self, callback: Callable[[], None]):
+        """Set callback for notifying stop to WebSocket."""
+        self._stop_callback = callback
 
     def _update_progress(self, task: str, index: int, progress: float, message: str = ""):
         """Update progress and notify callback."""
@@ -379,7 +381,7 @@ class EvalEngine:
         self.robot_control.rtde_c.servoStop()
         center_pixel = np.array([w_px / 2, h_px / 2])
         center_world = self.cali.pixel_to_world(center_pixel.astype(int))
-        target_pose = [center_world[0], center_world[1], 0.116, self.RX_C, self.RY_C, self.RZ_C]
+        target_pose = [center_world[0], center_world[1], self.z, self.RX_C, self.RY_C, self.RZ_C]
         self.robot_control.rtde_c.moveL(target_pose, 0.2, 0.2, asynchronous=False)
 
     def _send_robot_to_pixel(self, target_pixel: np.ndarray, dt: float = 0.04):
@@ -405,13 +407,13 @@ class EvalEngine:
             if pixel_jump > jump_threshold:
                 # Large jump detected - use moveL for smooth point-to-point motion
                 target_world = self.cali.pixel_to_world(target_pixel.astype(int))
-                target_pose = [target_world[0], target_world[1], 0.116, self.RX_C, self.RY_C, self.RZ_C]
+                target_pose = [target_world[0], target_world[1], self.z, self.RX_C, self.RY_C, self.RZ_C]
                 self.robot_control.rtde_c.moveL(target_pose, 0.2, 0.2, asynchronous=False)
                 return
 
         # Convert pixel to world coordinates
         target_world = self.cali.pixel_to_world(target_pixel.astype(int))
-        target_pose = [target_world[0], target_world[1], 0.116, self.RX_C, self.RY_C, self.RZ_C]
+        target_pose = [target_world[0], target_world[1], self.z, self.RX_C, self.RY_C, self.RZ_C]
         self.robot_control.servo_robot(target_pose, dt=dt)
 
     def _countdown(self, seconds: int = 3):
@@ -424,8 +426,8 @@ class EvalEngine:
         """Generate random target position at least min_dist from current position."""
         while True:
             target = np.array([
-                np.random.uniform(2.0, self.w_env - 2.0),
-                np.random.uniform(2.0, self.h_env - 2.0)
+                np.random.uniform(1, self.w_env - 1),
+                np.random.uniform(1, self.h_env - 1)
             ])
             if np.linalg.norm(target - current_pos) >= min_dist:
                 return target
@@ -436,7 +438,7 @@ class EvalEngine:
         if norm < 1e-8:
             return np.zeros_like(v)
         return v / norm
-    
+
     def _moveto_sprint_target(self, target_env: np.ndarray, w_px: int, h_px: int):
         """
         将机器人用 moveL 直接移动到 Sprint 目标的世界坐标位置。
@@ -457,13 +459,13 @@ class EvalEngine:
 
         target_world = self.cali.pixel_to_world(target_pixel.astype(int))
         target_pose = [
-            target_world[0], target_world[1], 0.116,
+            target_world[0], target_world[1], self.z,
             self.RX_C, self.RY_C, self.RZ_C
         ]
 
         # 停止当前伺服，然后 moveL 直接到位
         self.robot_control.rtde_c.servoStop()
-        self.robot_control.rtde_c.moveL(target_pose, 0.3, 0.3, asynchronous=False)
+        self.robot_control.rtde_c.moveL(target_pose, 3, 1, asynchronous=False)
         print(f"  [Sprint] moveL → target_env={target_env}, world={target_world[:2]}")
 
     def run_sprint(self) -> Dict:
@@ -489,17 +491,18 @@ class EvalEngine:
 
         # ── 生成第一个目标并用 moveL 直接到位 ──
         sprint_target_env = self._generate_target_position(
-            np.array([self.w_env / 2, self.h_env / 2]), min_dist=3.0
+            np.array([self.w_env / 2, self.h_env / 2]), min_dist=4
         )
         self._moveto_sprint_target(sprint_target_env, w_px, h_px)
         sprint_target_spawn_time = time.time()
 
-        last_control_time = time.time()
+        last_control_time = time.time()  # FIX 3: timestamp before first loop iteration
         last_hand_env = np.zeros(2)
         inst_vel = 0.0
 
-        while self._running and sprint_catch_count < 5:
-            t_now = time.time()
+        while self._running and sprint_catch_count < 10:
+            loop_start = time.time()
+            t_now = loop_start
 
             # 获取手部位置
             frame, hand_env, _ = self._get_frame_and_positions()
@@ -516,7 +519,7 @@ class EvalEngine:
             hand_move = hand_env - last_hand_env
             inst_vel = np.linalg.norm(hand_move) / dt_vision
             last_hand_env = hand_env
-            last_control_time = t_now
+            last_control_time = t_now  # FIX 3: assign after using, before next iteration
 
             # 记录峰值速度
             if len(results['peak_vels']) <= sprint_catch_count:
@@ -528,30 +531,30 @@ class EvalEngine:
 
             # 判断是否抓到
             dist_to_target = np.linalg.norm(sprint_target_env - hand_env)
-            if dist_to_target < 1.5:
+            if dist_to_target < 2:
                 catch_time = t_now - sprint_target_spawn_time
                 results['catch_times'].append(catch_time)
                 print(f"  -> Target {sprint_catch_count + 1} caught in {catch_time:.2f}s!")
                 sprint_catch_count += 1
 
-                if sprint_catch_count < 5:
+                if sprint_catch_count < 10:
                     # ── 直接 moveL 跳到新目标，不用伺服累加 ──
                     sprint_target_env = self._generate_target_position(
-                        hand_env, min_dist=3.0
+                        sprint_target_env, min_dist=4
                     )
                     self._moveto_sprint_target(sprint_target_env, w_px, h_px)
                     sprint_target_spawn_time = time.time()
             else:
                 self._update_progress(
-                    "Sprint", 1, sprint_catch_count / 5,
-                    f"第 {sprint_catch_count + 1}/5 次 - 距离: {dist_to_target:.2f}"
+                    "Sprint", 1, sprint_catch_count / 10,
+                    f"第 {sprint_catch_count + 1}/10 次 - 距离: {dist_to_target:.2f}"
                 )
 
-            time.sleep(self.target_dt)
+            # sleep_time = self.target_dt - (time.time() - loop_start)
+            # if sleep_time > 0:
+            #     time.sleep(sleep_time)
 
         return results
-
-
 
     def run_tracking(self) -> Dict:
         """Run Tracking task: Follow moving target along predefined paths (from eval.py)."""
@@ -575,9 +578,11 @@ class EvalEngine:
         last_hand_env = None
         last_vel = None
         last_control_time = time.time()
+        last_perception_time = time.time()
 
         while self._running and (time.time() - start_time) < duration:
-            t_now = time.time()
+            loop_start = time.time()
+            t_now = loop_start
             elapsed = t_now - start_time
             progress = elapsed / duration
 
@@ -601,7 +606,7 @@ class EvalEngine:
                 shape_name = 'Figure-8'
                 t_8 = (elapsed - 10.0) * 1.2
                 target_x = self.w_env / 2 + (self.w_env / 3) * math.sin(t_8)
-                target_y = self.w_env / 2 + (self.w_env / 3) * math.sin(t_8) * math.cos(t_8)
+                target_y = self.h_env / 2 + (self.h_env / 3) * math.sin(t_8) * math.cos(t_8)  # FIX 2: h_env/2 (was w_env/2)
 
             target_env = np.array([target_x, target_y])
 
@@ -613,12 +618,14 @@ class EvalEngine:
                 results['rmse_list'].append(float(cross_track_error))
 
                 # Calculate jerk
-                vel = np.linalg.norm(hand_env - last_hand_env) / max(t_now - last_control_time, 0.01) if last_hand_env is not None else 0
+                dt_perception = max(t_now - last_perception_time, 0.01)
+                vel = np.linalg.norm(hand_env - last_hand_env) / dt_perception if last_hand_env is not None else 0
                 if last_vel is not None:
-                    jerk = abs(vel - last_vel) / max(t_now - last_control_time, 0.01)
+                    jerk = abs(vel - last_vel) / dt_perception
                     results['jerk_list'].append(float(jerk))
                 last_vel = vel
                 last_hand_env = hand_env
+                last_perception_time = t_now
 
             # Set desired target
             desired_virtual_target = np.array([
@@ -639,14 +646,17 @@ class EvalEngine:
             else:
                 virtual_target_pixel = desired_virtual_target.copy()
 
-            actual_dt = max(t_now - last_control_time, 0.01)
+            control_now = time.time()
+            actual_dt = max(control_now - last_control_time, 0.01)
             safe_dt = min(actual_dt, 0.2)
             self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
-            last_control_time = t_now
+            last_control_time = control_now
 
             self._update_progress("Tracking", 2, progress, f"追踪中... {elapsed:.1f}s / {duration}s [{shape_name}] | FPS: {self._current_fps:.1f}")
 
-            time.sleep(self.target_dt)
+            sleep_time = self.target_dt - (time.time() - loop_start)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
 
         return results
 
@@ -669,12 +679,13 @@ class EvalEngine:
         duration = 30
         start_time = time.time()
         virtual_target_pixel = np.array([w_px / 2, h_px / 2], dtype=np.float64)
-        last_control_time = time.time()
+        last_control_time = time.time()  # FIX 3: timestamp before loop
         hand_history = deque([np.zeros(2)] * 16, maxlen=16)
         last_hand_env = np.zeros(2)
 
         while self._running:
-            t_now = time.time()
+            loop_start = time.time()
+            t_now = loop_start
             elapsed = t_now - start_time
 
             if elapsed > duration:
@@ -738,7 +749,8 @@ class EvalEngine:
             else:
                 virtual_target_pixel = desired_virtual_target.copy()
 
-            actual_dt = max(t_now - last_control_time, 0.01)
+            control_now = time.time()
+            actual_dt = max(control_now - last_control_time, 0.01)
             safe_dt = min(actual_dt, 0.2)
             self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
 
@@ -746,9 +758,11 @@ class EvalEngine:
             hand_move = hand_env - last_hand_env
             hand_history.append(hand_move)
             last_hand_env = hand_env
-            last_control_time = time.time()
+            last_control_time = control_now
 
-            time.sleep(self.target_dt)
+            sleep_time = self.target_dt - (time.time() - loop_start)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
 
         if not results['is_caught']:
             results['survival_time'] = duration
@@ -777,9 +791,11 @@ class EvalEngine:
         virtual_target_pixel = np.array([w_px / 2, h_px / 2], dtype=np.float64)
         last_hand_env = None
         last_control_time = time.time()
+        last_perception_time = time.time()
 
         while self._running and (time.time() - start_time) < duration:
-            t_now = time.time()
+            loop_start = time.time()
+            t_now = loop_start
             elapsed = t_now - start_time
             progress = elapsed / duration
 
@@ -816,9 +832,10 @@ class EvalEngine:
 
                 # Calculate velocity
                 if last_hand_env is not None:
-                    vel = np.linalg.norm(hand_env - last_hand_env) / max(t_now - last_control_time, 0.01)
+                    vel = np.linalg.norm(hand_env - last_hand_env) / max(t_now - last_perception_time, 0.01)
                     results['vel_list'].append(float(vel))
                 last_hand_env = hand_env
+                last_perception_time = t_now
 
             # Set desired target
             desired_virtual_target = np.array([
@@ -839,14 +856,17 @@ class EvalEngine:
             else:
                 virtual_target_pixel = desired_virtual_target.copy()
 
-            actual_dt = max(t_now - last_control_time, 0.01)
+            control_now = time.time()
+            actual_dt = max(control_now - last_control_time, 0.01)
             safe_dt = min(actual_dt, 0.2)
             self._send_robot_to_pixel(virtual_target_pixel, dt=safe_dt)
-            last_control_time = t_now
+            last_control_time = control_now  # FIX 3: assign after control, before next iteration
 
             self._update_progress("Boundary", 4, progress, f"边界追踪... {elapsed:.1f}s / {duration}s | FPS: {self._current_fps:.1f}")
 
-            time.sleep(self.target_dt)
+            sleep_time = self.target_dt - (time.time() - loop_start)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
 
         return results
 
@@ -899,3 +919,5 @@ class EvalEngine:
         """Stop the current evaluation."""
         self._running = False
         self._stop_video_recording()
+        if self._stop_callback:
+            self._stop_callback()

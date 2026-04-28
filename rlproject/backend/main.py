@@ -308,8 +308,12 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
                     "data": frame_base64
                 })
 
+            def stop_callback():
+                _broadcast({"type": "stopped"})
+
             eval_engine.set_progress_callback(progress_callback)
             eval_engine.set_frame_broadcast_callback(frame_broadcast_callback)
+            eval_engine.set_stop_callback(stop_callback)
 
             result = eval_engine.run_all(session_id=session_id)
 

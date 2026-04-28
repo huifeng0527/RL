@@ -67,6 +67,9 @@ export default function Evaluation() {
     } else if (data.type === 'error') {
       setError(data.message);
       setEvalStatus('idle');
+    } else if (data.type === 'stopped') {
+      setEvalStatus('idle');
+      if (ws) ws.close();
     }
   }, []);
 
