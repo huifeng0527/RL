@@ -51,9 +51,9 @@ BASE_DIR = r"C:\Users\admin\Desktop\科研\RL\logs\dual_iterative_0427_1314"
 MODEL_PATHS = {
     'baseline_a': r"C:\Users\admin\Desktop\科研\RL\logs\ablation_study_0424_1945\2_MLP_LSTM\best_model.zip",
     'baseline_b': os.path.join(BASE_DIR, "baseline_b", "robot", "best_model.zip"),
-    'pfsp': os.path.join(BASE_DIR, "iteration_14", "robot", "robot", "best_model.zip"),
+    'pfsp': os.path.join(BASE_DIR, "iteration_13", "robot", "robot", "best_model.zip"),
 }
-UNSEEN_HAND_PATH = os.path.join(BASE_DIR, "iteration_14", "hand", "hand", "best_model.zip")
+UNSEEN_HAND_PATH = os.path.join(BASE_DIR, "iteration_13", "hand", "hand", "best_model.zip")
 
 
 # =============================================================================
@@ -121,7 +121,7 @@ class SpasmScriptHand:
 
     SLOW_STRIDE = 0.2
     FAST_STRIDE = 0.5
-    SLOW_FRAMES = 8   # 4 sec @ 8 FPS
+    SLOW_FRAMES = 32   # 4 sec @ 8 FPS
     FAST_FRAMES = 8    # 1 sec @ 8 FPS
 
     def __init__(self, epsilon: float = 0.2):
@@ -721,7 +721,7 @@ def main():
 
     tests = []
     if args.test == 'all':
-        tests = ['sluggish', 'spasm', 'unseen_rl',]
+        tests = ['sluggish', 'spasm', 'unseen_rl', 'human']
     else:
         tests = [args.test]
 
@@ -748,8 +748,8 @@ def main():
             if test == 'human':
                 # 人类测试需要交互式界面，单独处理
                 print(f"\n[Starting HUMAN test for {robot}]")
-                survival_times, catch_count, mean_survival, std_survival, zpd_rate, mean_dist = run_human_test_interactive(
-                    robot_path, robot, num_episodes=10, fps=args.fps
+                                survival_times, catch_count, mean_survival, std_survival, zpd_rate, mean_dist = run_human_test_interactive(
+                    robot_path, robot, num_episodes=args.episodes, fps=args.fps
                 )
                 zpd_steps = mean_survival * zpd_rate
                 metrics = StressTestMetrics(
@@ -757,6 +757,9 @@ def main():
                     test_name='human',
                     survival_times=survival_times,
                     mean_survival_time=mean_survival,
+                    std_survival_time=std_survival,
+                    catch_count=catch_count,
+                    catch_rate=catch_count / args.episodes,vival,
                     std_survival_time=std_survival,
                     catch_count=catch_count,
                     catch_rate=catch_count / 5,
