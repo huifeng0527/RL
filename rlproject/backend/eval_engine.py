@@ -65,7 +65,7 @@ class EvalEngine:
         yolo_model_path: str = None,
         rl_model_path: str = None,
         calibration_path: str = None,
-        control_freq: float = 25.0,
+        control_freq: float = 12,
         simulate: bool = True
     ):
         """
@@ -97,10 +97,7 @@ class EvalEngine:
         self.yolo_model_path = yolo_model_path or os.path.join(
             _project_root, 'src', 'runs', 'detect', 'train3', 'weights', 'best.onnx'
         )
-        self.rl_model_path = rl_model_path or os.path.join(
-            _rl_root, 'logs', 'ablation_study_0416_1050',
-            '2_MLP_LSTM', 'best_model.zip'
-        )
+        self.rl_model_path = r"C:\Users\admin\Desktop\huifeng\RL\logs\dual_iterative_0427_1314\iteration_14\robot\robot\best_model.zip"
 
         # Hardware interfaces
         self.robot_control = None
@@ -474,6 +471,7 @@ class EvalEngine:
         self._current_task = "Sprint"
         self._task_index = 1
         self._running = True
+        self._sprint_num = 10
 
         results = {'catch_times': [], 'peak_vels': []}
 
@@ -498,7 +496,7 @@ class EvalEngine:
         last_hand_env = np.zeros(2)
         inst_vel = 0.0
 
-        while self._running and sprint_catch_count < 5:
+        while self._running and sprint_catch_count < self._sprint_num:
             loop_start = time.time()
             t_now = loop_start
 
@@ -535,7 +533,7 @@ class EvalEngine:
                 print(f"  -> Target {sprint_catch_count + 1} caught in {catch_time:.2f}s!")
                 sprint_catch_count += 1
 
-                if sprint_catch_count < 5:
+                if sprint_catch_count < self._sprint_num:
                     # ── 直接 moveL 跳到新目标，不用伺服累加 ──
                     sprint_target_env = self._generate_target_position(
                         sprint_target_env, min_dist=3.0
@@ -544,8 +542,8 @@ class EvalEngine:
                     sprint_target_spawn_time = time.time()
             else:
                 self._update_progress(
-                    "Sprint", 1, sprint_catch_count / 5,
-                    f"第 {sprint_catch_count + 1}/5 次 - 距离: {dist_to_target:.2f}"
+                    "Sprint", 1, sprint_catch_count / self._sprint_num,
+                    f"第 {sprint_catch_count + 1}/{self._sprint_num} 次 - 距离: {dist_to_target:.2f}"
                 )
 
             sleep_time = self.target_dt - (time.time() - loop_start)
@@ -652,9 +650,9 @@ class EvalEngine:
 
             self._update_progress("Tracking", 2, progress, f"追踪中... {elapsed:.1f}s / {duration}s [{shape_name}] | FPS: {self._current_fps:.1f}")
 
-            sleep_time = self.target_dt - (time.time() - loop_start)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
+            # sleep_time = self.target_dt - (time.time() - loop_start)
+            # if sleep_time > 0:
+            #     time.sleep(sleep_time)
 
         return results
 
@@ -711,7 +709,7 @@ class EvalEngine:
             results['dist_list'].append(float(dist_hand_robot))
 
             # Check if caught
-            if dist_hand_robot < 1.5:
+            if dist_hand_robot < 2:
                 results['is_caught'] = True
                 results['survival_time'] = elapsed
                 print(f"  -> Robot CAUGHT at {elapsed:.2f}s!")

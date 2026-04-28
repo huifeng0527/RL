@@ -39,7 +39,12 @@ export default function Evaluation() {
       setSession(res.data);
       if (res.data.sprint) {
         setResults(res.data);
-        calculateScores(res.data);
+        setScores({
+          sprint: res.data.sprint_score || 0,
+          tracking: res.data.tracking_score || 0,
+          league: res.data.league_score || 0,
+          boundary: res.data.boundary_score || 0,
+        });
       }
     } catch (error) {
       console.error('Failed to load session:', error);
@@ -95,26 +100,6 @@ export default function Evaluation() {
     }
   };
 
-  const calculateScores = (data) => {
-    const s = {};
-    if (data.sprint?.catch_times) {
-      const avg = data.sprint.catch_times.reduce((a, b) => a + b, 0) / data.sprint.catch_times.length;
-      s.sprint = Math.max(0, Math.min(100, (6 - avg) / 5 * 100));
-    }
-    if (data.tracking?.rmse_list) {
-      const avg = data.tracking.rmse_list.reduce((a, b) => a + b, 0) / data.tracking.rmse_list.length;
-      s.tracking = Math.max(0, Math.min(100, (5 - avg) / 4.5 * 100));
-    }
-    if (data.league) {
-      s.league = data.league.is_caught ? Math.max(0, data.league.survival_time / 30 * 100) : 100;
-    }
-    if (data.boundary) {
-      const range = (data.boundary.max_x - data.boundary.min_x) + (data.boundary.max_y - data.boundary.min_y);
-      s.boundary = Math.max(0, Math.min(100, (range - 5) / 15 * 100));
-    }
-    setScores(s);
-  };
-
   const getRadarData = () => {
     if (!scores) return [];
     return TASKS.map((t, i) => ({
@@ -126,7 +111,7 @@ export default function Evaluation() {
 
   const getTotalScore = () => {
     if (!scores) return 0;
-    return (scores.sprint * 0.2 + scores.tracking * 0.3 + scores.league * 0.3 + scores.boundary * 0.2).toFixed(1);
+    return (scores.sprint || 0) + (scores.tracking || 0) + (scores.league || 0) + (scores.boundary || 0);
   };
 
   if (loading) {

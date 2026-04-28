@@ -34,6 +34,10 @@ class Session(Base):
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     total_score = Column(Float, nullable=True)
+    sprint_score = Column(Float, nullable=True)
+    tracking_score = Column(Float, nullable=True)
+    league_score = Column(Float, nullable=True)
+    boundary_score = Column(Float, nullable=True)
     notes = Column(Text, nullable=True)  # 新增：评估备注
     video_path = Column(String(500), nullable=True)  # 评估录像路径
 
