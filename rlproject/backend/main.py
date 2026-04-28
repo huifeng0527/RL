@@ -417,6 +417,16 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
                     db_local.add(boundary)
 
                 # Build results dict for scoring
+                results = {}
+                if result.sprint:
+                    results['sprint'] = result.sprint
+                if result.tracking:
+                    results['tracking'] = result.tracking
+                if result.league:
+                    results['league'] = result.league
+                if result.boundary:
+                    results['boundary'] = result.boundary
+
                 scores = _calculate_scores(results)
                 db_session.total_score = scores['total']
                 db_session.sprint_score = scores['sprint']
