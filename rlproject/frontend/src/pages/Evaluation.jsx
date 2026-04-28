@@ -110,8 +110,7 @@ export default function Evaluation() {
   };
 
   const getTotalScore = () => {
-    if (!scores) return 0;
-    return (scores.sprint || 0) + (scores.tracking || 0) + (scores.league || 0) + (scores.boundary || 0);
+    return session?.total_score?.toFixed(1) || '0.0';
   };
 
   if (loading) {

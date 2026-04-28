@@ -137,6 +137,14 @@ class ReportGenerator:
         else:
             scores['boundary'] = 0
 
+        # Weighted total (0-100), same as M-HECS formula
+        scores['total'] = (
+            scores['sprint'] * 0.20 +
+            scores['tracking'] * 0.30 +
+            scores['league'] * 0.30 +
+            scores['boundary'] * 0.20
+        )
+
         return scores
 
     def _estimate_clinical_scores(self, scores: Dict[str, float]) -> Dict[str, float]:

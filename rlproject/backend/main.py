@@ -15,65 +15,15 @@ from database import (
     EvalSprint, EvalTracking, EvalLeague, EvalBoundary
 )
 from eval_engine import EvalEngine, TaskProgress, EvalResult
+from report_generator import ReportGenerator
 
-
-def _normalize_score(value, bound_0, bound_100):
-    """Min-Max scaling with clinical boundaries (0-100)."""
-    score = 100.0 * (value - bound_0) / (bound_100 - bound_0)
-    return max(0.0, min(100.0, score))
+# Singleton for scoring
+_report_gen = ReportGenerator()
 
 
 def _calculate_scores(results) -> dict:
-    """Calculate normalized scores (0-100) for each task using clinical standard min-max normalization.
-
-    Mirrors report_generator._calculate_scores() for consistency.
-    Returns dict with sprint, tracking, league, boundary, and total keys.
-    """
-    scores = {}
-
-    # Task 1: Sprint - avg_catch_time [0.8s, 3.0s] -> 0-100
-    if results.get('sprint') and results['sprint'].get('catch_times'):
-        avg_time = sum(results['sprint']['catch_times']) / len(results['sprint']['catch_times'])
-        scores['sprint'] = _normalize_score(avg_time, bound_0=5, bound_100=0.1)
-    else:
-        scores['sprint'] = 0.0
-
-    # Task 2: Tracking - avg_rmse [0.0, 2.0] -> 0-100
-    if results.get('tracking') and results['tracking'].get('rmse_list'):
-        avg_rmse = sum(results['tracking']['rmse_list']) / len(results['tracking']['rmse_list'])
-        scores['tracking'] = _normalize_score(avg_rmse, bound_0=2.0, bound_100=0.0)
-    else:
-        scores['tracking'] = 0.0
-
-    # Task 3: League - survival_time (60%) + avg_dist (40%) -> 0-100
-    if results.get('league'):
-        survival_t = results['league'].get('survival_time', 0)
-        dist_list = results['league'].get('dist_list', [])
-        avg_dist = sum(dist_list) / len(dist_list) if dist_list else 8.0
-        time_score = _normalize_score(survival_t, bound_0=10.0, bound_100=2.0)
-        dist_score = _normalize_score(avg_dist, bound_0=8.0, bound_100=4)
-        scores['league'] = time_score * 0.6 + dist_score * 0.4
-    else:
-        scores['league'] = 0.0
-
-    # Task 4: Boundary - area_score (50%) + jerk_score (50%) -> 0-100
-    if results.get('boundary'):
-        b = results['boundary']
-        area = max(0, b['max_x'] - b['min_x']) * max(0, b['max_y'] - b['min_y'])
-        max_area = (15 - 4) * (10 - 4)
-        area_score = _normalize_score(area, bound_0=0.0, bound_100=max_area)
-        vel_list = b.get('vel_list', [])
-        if len(vel_list) > 1:
-            mean_jerk = sum(abs(vel_list[i] - vel_list[i-1]) for i in range(1, len(vel_list))) / (len(vel_list) - 1)
-        else:
-            mean_jerk = 3.0
-        jerk_score = _normalize_score(mean_jerk, bound_0=3.0, bound_100=0.0)
-        scores['boundary'] = area_score * 0.5 + jerk_score * 0.5
-    else:
-        scores['boundary'] = 0.0
-
-    scores['total'] = scores['sprint'] + scores['tracking'] + scores['league'] + scores['boundary']
-    return scores
+    """Calculate normalized scores (0-100) using report_generator logic."""
+    return _report_gen._calculate_scores(results)
 
 
 # Initialize database
