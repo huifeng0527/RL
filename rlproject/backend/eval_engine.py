@@ -16,7 +16,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics.charts.linecharts import HorizontalLineChart
 from reportlab.graphics.charts.barcharts import VerticalBarChart
-from reportlab.graphics.widgets.markingmodules import Banner
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 # Set Chinese font support
