@@ -1,0 +1,71 @@
+[
+  {
+    "robot_name": "baseline_a",
+    "test_name": "sluggish",
+    "survival_times": [
+      24,
+      100,
+      100,
+      9,
+      14,
+      4,
+      36,
+      77,
+      12,
+      32
+    ],
+    "mean_survival_time": 40.8,
+    "std_survival_time": 35.51844591194835,
+    "catch_count": 8,
+    "catch_rate": 0.8,
+    "zpd_maintenance_rate": 0.2607655502392344,
+    "mean_distance": 3.376444329836098,
+    "zpd_steps": 10.639234449760764
+  },
+  {
+    "robot_name": "baseline_b",
+    "test_name": "sluggish",
+    "survival_times": [
+      14,
+      10,
+      1,
+      16,
+      15,
+      13,
+      5,
+      34,
+      34,
+      13
+    ],
+    "mean_survival_time": 15.5,
+    "std_survival_time": 10.249390225764653,
+    "catch_count": 10,
+    "catch_rate": 1.0,
+    "zpd_maintenance_rate": 0.46060606060606063,
+    "mean_distance": 4.0424939297058575,
+    "zpd_steps": 7.13939393939394
+  },
+  {
+    "robot_name": "pfsp",
+    "test_name": "sluggish",
+    "survival_times": [
+      18,
+      17,
+      9,
+      4,
+      17,
+      29,
+      100,
+      1,
+      15,
+      17
+    ],
+    "mean_survival_time": 22.7,
+    "std_survival_time": 26.836728563668114,
+    "catch_count": 9,
+    "catch_rate": 0.9,
+    "zpd_maintenance_rate": 0.31223628691983124,
+    "mean_distance": 3.7196012544562405,
+    "zpd_steps": 7.087763713080169
+  }
+]

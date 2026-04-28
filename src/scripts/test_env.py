@@ -24,6 +24,12 @@ from typing import List, Optional, Tuple
 
 import numpy as np
 import pygame
+try:
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+    HAS_OPENPYXL = True
+except ImportError:
+    HAS_OPENPYXL = False
 
 from src.custom_env import RehabilitationEnv
 from src.renderer import render_aesthetic
@@ -33,7 +39,7 @@ from stable_baselines3 import PPO
 # =============================================================================
 # Constants
 # =============================================================================
-ZPD_MIN = 4.0
+ZPD_MIN = 3.5
 ZPD_MAX = 6.0
 GRID_SIZE = 10
 CELL_SIZE = 50
@@ -43,11 +49,11 @@ HEIGHT_PX = int(GRID_SIZE * CELL_SIZE)
 # Model paths
 BASE_DIR = r"C:\Users\admin\Desktop\科研\RL\logs\dual_iterative_0427_1314"
 MODEL_PATHS = {
-    'baseline_a': os.path.join(BASE_DIR, "iteration_1", "robot", "robot", "best_model.zip"),
+    'baseline_a': r"C:\Users\admin\Desktop\科研\RL\logs\ablation_study_0424_1945\2_MLP_LSTM\best_model.zip",
     'baseline_b': os.path.join(BASE_DIR, "baseline_b", "robot", "best_model.zip"),
-    'pfsp': os.path.join(BASE_DIR, "iteration_9", "robot", "robot", "best_model.zip"),
+    'pfsp': os.path.join(BASE_DIR, "iteration_14", "robot", "robot", "best_model.zip"),
 }
-UNSEEN_HAND_PATH = os.path.join(BASE_DIR, "iteration_9", "hand", "hand", "best_model.zip")
+UNSEEN_HAND_PATH = os.path.join(BASE_DIR, "iteration_14", "hand", "hand", "best_model.zip")
 
 
 # =============================================================================
@@ -65,6 +71,7 @@ class StressTestMetrics:
     catch_rate: float
     zpd_maintenance_rate: float
     mean_distance: float
+    zpd_steps: float = 0.0  # ZPD内有效步数 = S × Z
 
     def to_dict(self):
         return asdict(self)
@@ -114,7 +121,7 @@ class SpasmScriptHand:
 
     SLOW_STRIDE = 0.2
     FAST_STRIDE = 0.5
-    SLOW_FRAMES = 32   # 4 sec @ 8 FPS
+    SLOW_FRAMES = 8   # 4 sec @ 8 FPS
     FAST_FRAMES = 8    # 1 sec @ 8 FPS
 
     def __init__(self, epsilon: float = 0.2):
@@ -232,6 +239,94 @@ def calculate_zpd_rate(distances: List[float]) -> float:
     return in_zpd / len(distances)
 
 
+def save_results_to_excel(all_results: List[StressTestMetrics], output_path: str):
+    """Save results to a professionally formatted Excel file."""
+    if not HAS_OPENPYXL:
+        print("[Warning] openpyxl not installed, skipping Excel export")
+        return
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Stress Test Results"
+
+    # 定义样式
+    header_font = Font(name='Times New Roman', size=11, bold=True)
+    cell_font = Font(name='Times New Roman', size=11)
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    header_fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
+    center_align = Alignment(horizontal='center', vertical='center')
+
+    # 测试名称映射（用于表头）
+    test_names = {
+        'sluggish': 'Sluggish\n(S/C/Z/ZPD)',
+        'spasm': 'Spasm\n(S/C/Z/ZPD)',
+        'unseen_rl': 'Unseen RL\n(S/C/Z/ZPD)',
+        'human': 'Human\n(S/C/Z/ZPD)',
+    }
+    robot_names = {
+        'baseline_a': 'Baseline A',
+        'baseline_b': 'Baseline B',
+        'pfsp': 'PFSP (Ours)',
+    }
+
+    # 按 Test 分组
+    tests_order = ['sluggish', 'spasm', 'unseen_rl', 'human']
+    robots_order = ['baseline_a', 'baseline_b', 'pfsp']
+
+    # 构建数据矩阵
+    data = {}
+    for r in all_results:
+        data[(r.test_name, r.robot_name)] = r
+
+    # 写表头
+    headers = ['Model'] + [test_names.get(t, t) for t in tests_order]
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=h)
+        cell.font = header_font
+        cell.alignment = center_align
+        cell.border = thin_border
+        cell.fill = header_fill
+
+    # 设置列宽
+    ws.column_dimensions['A'].width = 15
+    for col in range(2, 2 + len(tests_order)):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 16
+
+    # 写数据行
+    for row_idx, robot in enumerate(robots_order, 2):
+        # Model 名称
+        cell = ws.cell(row=row_idx, column=1, value=robot_names.get(robot, robot))
+        cell.font = cell_font
+        cell.alignment = center_align
+        cell.border = thin_border
+
+        # 数据
+        for col_idx, test in enumerate(tests_order, 2):
+            key = (test, robot)
+            if key in data:
+                m = data[key]
+                val = f"{m.mean_survival_time:.1f}/{m.catch_rate:.0%}/{m.zpd_maintenance_rate:.0%}/{m.zpd_steps:.1f}"
+            else:
+                val = "N/A"
+            cell = ws.cell(row=row_idx, column=col_idx, value=val)
+            cell.font = cell_font
+            cell.alignment = center_align
+            cell.border = thin_border
+
+    # 添加底部注释
+    note_row = len(robots_order) + 3
+    note = ws.cell(row=note_row, column=1, value="Note: S=Survival time (steps), C=Catch rate (%), Z=ZPD maintenance rate (%)")
+    note.font = Font(name='Times New Roman', size=9, italic=True)
+
+    wb.save(output_path)
+    print(f"[Excel] Results saved to: {output_path}")
+
+
 def run_stress_test(
     robot_model_path: str,
     robot_name: str,
@@ -260,22 +355,33 @@ def run_stress_test(
 
     # 初始化测试手
     test_hand = None
+    hand_model_for_env = None  # 用于 unseen_rl 测试的 RL hand model
+
     if test_hand_type == 'sluggish':
         test_hand = SluggishScriptHand()
     elif test_hand_type == 'spasm':
         test_hand = SpasmScriptHand()
     elif test_hand_type == 'unseen_rl':
         if unseen_hand_model_path and os.path.exists(unseen_hand_model_path):
-            test_hand = UnseenRLHand(unseen_hand_model_path)
+            # 将 RL hand model 交给环境管理，由 _resolve_hand_move() 应用物理约束
+            hand_model_for_env = PPO.load(unseen_hand_model_path, custom_objects={
+                'learning_rate': 0.0,
+                'optimizer_class': None
+            }, verbose=0)
         else:
             print(f"[Warning] Unseen RL hand model not found: {unseen_hand_model_path}")
             return StressTestMetrics(
                 robot_name=robot_name, test_name=test_hand_type,
                 survival_times=[], mean_survival_time=0, std_survival_time=0,
-                catch_count=0, catch_rate=0, zpd_maintenance_rate=0, mean_distance=0
+                catch_count=0, catch_rate=0, zpd_maintenance_rate=0, mean_distance=0,
+                zpd_steps=0.0
             )
     elif test_hand_type == 'human':
         test_hand = HumanMouseHand(env)
+
+    # 如果有 RL hand model，设置为环境的 hand_model（由 _resolve_hand_move() 处理物理约束）
+    if hand_model_for_env is not None:
+        env.hand_model = hand_model_for_env
 
     # 用于可视化的pygame初始化
     screen = None
@@ -325,31 +431,36 @@ def run_stress_test(
             else:
                 action = env.action_space.sample()
 
-            # 更新测试手
+            # 更新测试手 (应用与 RL hand 相同的物理约束)
             if test_hand_type in ['sluggish', 'spasm']:
                 assert isinstance(test_hand, (SluggishScriptHand, SpasmScriptHand))
-                move = test_hand.get_move(env.hand_position, env.robot_position)
-                env.last_hand_actual_move = move.copy()
-                env.hand_position += move
-                env.hand_position = np.clip(
-                    env.hand_position,
-                    env.margin,
-                    [env.env_width - env.margin, env.env_height - env.margin]
-                )
-                env.hand_history_buffer.append(move)
+                desired_move = test_hand.get_move(env.hand_position, env.robot_position)
 
-            elif test_hand_type == 'unseen_rl':
-                assert isinstance(test_hand, UnseenRLHand)
-                hand_obs = env._get_hand_obs()
-                move = test_hand.get_move(hand_obs)
-                env.last_hand_actual_move = move.copy()
-                env.hand_position += move
+                # 物理约束 I：一阶惯性低通滤波 (Muscle Inertia)
+                alpha = 0.7
+                smoothed_move = alpha * desired_move + (1 - alpha) * env.last_hand_actual_move
+
+                # 物理约束 II：最大加速度截断 (Acceleration Clipping)
+                max_accel = 0.15
+                delta_v = smoothed_move - env.last_hand_actual_move
+                accel_magnitude = np.linalg.norm(delta_v)
+                if accel_magnitude > max_accel:
+                    delta_v = (delta_v / accel_magnitude) * max_accel
+
+                final_move = env.last_hand_actual_move + delta_v
+                env.last_hand_actual_move = final_move.copy()
+
+                env.hand_position += final_move
                 env.hand_position = np.clip(
                     env.hand_position,
                     env.margin,
                     [env.env_width - env.margin, env.env_height - env.margin]
                 )
-                env.hand_history_buffer.append(move)
+                env.hand_history_buffer.append(final_move)
+
+            # unseen_rl: 环境通过 hand_model + _resolve_hand_move() 自动处理物理约束，无需手动更新
+            # elif test_hand_type == 'unseen_rl':
+            #     pass  # 让 env.step() 自动处理
 
             elif test_hand_type == 'human' and visual:
                 mouse_x, mouse_y = pygame.mouse.get_pos()
@@ -394,6 +505,8 @@ def run_stress_test(
     mean_survival = np.mean(all_survival_times) if all_survival_times else 0
     std_survival = np.std(all_survival_times) if all_survival_times else 0
     mean_dist = np.mean(all_distances) if all_distances else 0
+    zpd_rate = calculate_zpd_rate(all_distances)
+    zpd_steps = mean_survival * zpd_rate  # ZPD内有效步数 = S × Z
 
     metrics = StressTestMetrics(
         robot_name=robot_name,
@@ -403,8 +516,9 @@ def run_stress_test(
         std_survival_time=float(std_survival),
         catch_count=catch_count,
         catch_rate=catch_count / num_episodes,
-        zpd_maintenance_rate=calculate_zpd_rate(all_distances),
-        mean_distance=float(mean_dist)
+        zpd_maintenance_rate=zpd_rate,
+        mean_distance=float(mean_dist),
+        zpd_steps=float(zpd_steps)
     )
 
     print(f"\nResults for {robot_name} vs {test_hand_type}:")
@@ -419,105 +533,126 @@ def run_stress_test(
 def run_human_test_interactive(
     robot_model_path: str,
     robot_name: str,
-    max_steps: int = 500,
-    fps: int = 30,
-) -> Tuple[int, float, List[float]]:
-    """运行交互式人类测试（鼠标控制）。"""
+    num_episodes: int = 5,
+    max_steps: int = 100,
+    fps: int = 8,
+) -> Tuple[List[int], int, float, float, float, float]:
+    """运行交互式人类测试（鼠标控制）。
 
+    Returns:
+        (survival_times, catch_count, mean_survival, std_survival, zpd_rate, zpd_steps)
+    """
     robot_model = PPO.load(robot_model_path, verbose=0)
-
-    env = RehabilitationEnv(
-        training_mode='robot',
-        robot_model=robot_model,
-        hand_model=None,
-    )
-    env.grid_size = GRID_SIZE
-    env.cell_size = CELL_SIZE
-    env._bypass_hand_physics = True
-    env.distance_threshold_collision = 1.5
-    env.stride_robot = 0.6
-    env.stride_hand = 0.3
-    env.max_steps = max_steps
 
     pygame.init()
     screen = pygame.display.set_mode((WIDTH_PX, HEIGHT_PX))
-    pygame.display.set_caption(f"HUMAN TEST: You control the HAND! vs {robot_name}")
     clock = pygame.time.Clock()
 
-    obs, info = env.reset()
-    distances = [info['dist']]
-    steps = 0
-    running = True
-    caught = False
+    all_survival_times = []
+    catch_count = 0
+    all_distances = []
 
-    print(f"\nHuman test started: You are the HAND!")
-    print(f"Goal: Survive as long as possible. Robot is trying to catch you.")
-    print(f"Press Q to quit.\n")
+    for ep in range(num_episodes):
+        env = RehabilitationEnv(
+            training_mode='robot',
+            robot_model=robot_model,
+            hand_model=None,
+        )
+        env.grid_size = GRID_SIZE
+        env.cell_size = CELL_SIZE
+        env._bypass_hand_physics = True
+        env.distance_threshold_collision = 1.5
+        env.stride_robot = 0.6
+        env.stride_hand = 0.3
+        env.max_steps = max_steps
 
-    while running and steps < max_steps:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_q:
+        pygame.display.set_caption(f"HUMAN TEST: Ep {ep+1}/{num_episodes} - You are the HAND! vs {robot_name}")
+
+        obs, info = env.reset()
+        distances = [info['dist']]
+        steps = 0
+        running = True
+
+        print(f"\nEpisode {ep+1}/{num_episodes}: Survive as long as possible!")
+        print("Press Q to quit this episode, R to restart.\n")
+
+        episode_done = False
+        caught = False
+
+        while running and not episode_done and steps < max_steps:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
                     running = False
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_q:
+                        running = False
+                    elif event.key == pygame.K_r:
+                        episode_done = True
 
-        # 获取鼠标位置并更新手
-        mouse_x, mouse_y = pygame.mouse.get_pos()
-        target_x = np.clip(mouse_x / CELL_SIZE, env.margin, env.env_width - env.margin)
-        target_y = np.clip(mouse_y / CELL_SIZE, env.margin, env.env_height - env.margin)
-        target_pos = np.array([target_x, target_y])
+            # 获取鼠标位置并更新手
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            target_x = np.clip(mouse_x / CELL_SIZE, env.margin, env.env_width - env.margin)
+            target_y = np.clip(mouse_y / CELL_SIZE, env.margin, env.env_height - env.margin)
+            target_pos = np.array([target_x, target_y])
 
-        vec_to_mouse = target_pos - env.hand_position
-        dist_to_mouse = np.linalg.norm(vec_to_mouse)
-        if dist_to_mouse > 1e-4:
-            move_dist = min(dist_to_mouse, env.stride_hand)
-            hand_move = (vec_to_mouse / dist_to_mouse) * move_dist
-        else:
-            hand_move = np.zeros(2)
+            vec_to_mouse = target_pos - env.hand_position
+            dist_to_mouse = np.linalg.norm(vec_to_mouse)
+            if dist_to_mouse > 1e-4:
+                move_dist = min(dist_to_mouse, env.stride_hand)
+                hand_move = (vec_to_mouse / dist_to_mouse) * move_dist
+            else:
+                hand_move = np.zeros(2)
 
-        env.last_hand_actual_move = hand_move.copy()
-        env.hand_position += hand_move
-        env.hand_position = np.clip(
-            env.hand_position, env.margin,
-            [env.env_width - env.margin, env.env_height - env.margin]
-        )
-        env.hand_history_buffer.append(hand_move)
+            env.last_hand_actual_move = hand_move.copy()
+            env.hand_position += hand_move
+            env.hand_position = np.clip(
+                env.hand_position, env.margin,
+                [env.env_width - env.margin, env.env_height - env.margin]
+            )
+            env.hand_history_buffer.append(hand_move)
 
-        # Robot动作
-        action, _ = robot_model.predict(obs, deterministic=True)
-        obs, reward, terminated, truncated, info = env.step(action)
-        distances.append(info['dist'])
-        steps += 1
+            # Robot动作
+            action, _ = robot_model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, info = env.step(action)
+            distances.append(info['dist'])
+            steps += 1
 
-        # 渲染
-        render_aesthetic(
-            env.robot_position,
-            env.hand_position,
-            env.fixed_point,
-            env.trajectory_points,
-            grid_size=GRID_SIZE,
-            cell_size=CELL_SIZE,
-            window=screen
-        )
+            # 渲染
+            render_aesthetic(
+                env.robot_position,
+                env.hand_position,
+                env.fixed_point,
+                env.trajectory_points,
+                grid_size=GRID_SIZE,
+                cell_size=CELL_SIZE,
+                window=screen
+            )
 
-        # 显示FPS和距离
-        font = pygame.font.SysFont('arial', 18)
-        dist_text = font.render(f"Dist: {info['dist']:.2f}  Steps: {steps}  ZPD: {ZPD_MIN}-{ZPD_MAX}", True, (0, 0, 0))
-        screen.blit(dist_text, (10, 10))
+            # 显示信息
+            font = pygame.font.SysFont('arial', 18)
+            dist_text = font.render(f"Ep {ep+1}/{num_episodes}  Dist: {info['dist']:.2f}  Steps: {steps}  ZPD: {ZPD_MIN}-{ZPD_MAX}", True, (0, 0, 0))
+            screen.blit(dist_text, (10, 10))
+            pygame.display.flip()
+            clock.tick(fps)
 
-        pygame.display.flip()
-        clock.tick(fps)
+            if terminated or truncated:
+                caught = terminated and info.get('done_reason') == 'Robot Caught'
+                episode_done = True
 
-        if terminated or truncated:
-            caught = terminated and info.get('done_reason') == 'Robot Caught'
-            running = False
-            break
+        all_survival_times.append(steps)
+        if caught:
+            catch_count += 1
+        all_distances.extend(distances)
+
+        env.close()
 
     pygame.quit()
-    env.close()
 
-    return steps, caught, distances
+    mean_survival = np.mean(all_survival_times)
+    std_survival = np.std(all_survival_times)
+    zpd_rate = calculate_zpd_rate(all_distances)
+
+    return all_survival_times, catch_count, mean_survival, std_survival, zpd_rate, np.mean(all_distances)
 
 
 # =============================================================================
@@ -586,7 +721,7 @@ def main():
 
     tests = []
     if args.test == 'all':
-        tests = ['sluggish', 'spasm', 'unseen_rl', 'human']
+        tests = ['sluggish', 'spasm', 'unseen_rl',]
     else:
         tests = [args.test]
 
@@ -613,19 +748,21 @@ def main():
             if test == 'human':
                 # 人类测试需要交互式界面，单独处理
                 print(f"\n[Starting HUMAN test for {robot}]")
-                survival, caught, distances = run_human_test_interactive(
-                    robot_path, robot, fps=args.fps
+                survival_times, catch_count, mean_survival, std_survival, zpd_rate, mean_dist = run_human_test_interactive(
+                    robot_path, robot, num_episodes=10, fps=args.fps
                 )
+                zpd_steps = mean_survival * zpd_rate
                 metrics = StressTestMetrics(
                     robot_name=robot,
                     test_name='human',
-                    survival_times=[survival],
-                    mean_survival_time=survival,
-                    std_survival_time=0,
-                    catch_count=1 if caught else 0,
-                    catch_rate=1.0 if caught else 0.0,
-                    zpd_maintenance_rate=calculate_zpd_rate(distances),
-                    mean_distance=np.mean(distances) if distances else 0
+                    survival_times=survival_times,
+                    mean_survival_time=mean_survival,
+                    std_survival_time=std_survival,
+                    catch_count=catch_count,
+                    catch_rate=catch_count / 5,
+                    zpd_maintenance_rate=zpd_rate,
+                    mean_distance=mean_dist,
+                    zpd_steps=zpd_steps
                 )
             else:
                 metrics = run_stress_test(
@@ -648,16 +785,37 @@ def main():
         print(f"Results saved to: {results_file}")
         print(f"{'='*60}")
 
-        # 打印汇总表
+        # 保存 Excel
+        excel_file = os.path.join(args.output, f"stress_test_results_{timestamp}.xlsx")
+        save_results_to_excel(all_results, excel_file)
+
+        # 打印专业汇总表 (Model x Test 矩阵)
         print("\n" + "="*80)
-        print("SUMMARY TABLE")
-        print("="*80)
-        print(f"{'Test':<12} {'Robot':<15} {'Survival':<12} {'Catch Rate':<12} {'ZPD Rate':<12}")
-        print("-"*80)
+        print("TABLE II: MULTI-DIMENSIONAL STRESS TEST RESULTS")
+        print("="*100)
+        print(f"{'':15} {'Sluggish':>20} {'Spasm':>20} {'Unseen RL':>20} {'Human':>20}")
+        print(f"{'':15} {'(S/C/Z/ZPD)':>20} {'(S/C/Z/ZPD)':>20} {'(S/C/Z/ZPD)':>20} {'(S/C/Z/ZPD)':>20}")
+        print("-"*100)
+
+        tests_order = ['sluggish', 'spasm', 'unseen_rl', 'human']
+        robots_order = ['baseline_a', 'baseline_b', 'pfsp']
+        robot_display = {'baseline_a': 'Baseline A', 'baseline_b': 'Baseline B', 'pfsp': 'PFSP (Ours)'}
+        data = {}
         for r in all_results:
-            print(f"{r.test_name:<12} {r.robot_name:<15} {r.mean_survival_time:<12.2f} "
-                  f"{r.catch_rate:<12.2%} {r.zpd_maintenance_rate:<12.2%}")
-        print("="*80)
+            data[(r.test_name, r.robot_name)] = r
+
+        for robot in robots_order:
+            row = f"{robot_display[robot]:15}"
+            for test in tests_order:
+                key = (test, robot)
+                if key in data:
+                    m = data[key]
+                    row += f" {m.mean_survival_time:>5.1f}/{m.catch_rate:.0%}/{m.zpd_maintenance_rate:.0%}/{m.zpd_steps:>5.1f} "
+                else:
+                    row += f" {'N/A':>20}"
+            print(row)
+        print("="*100)
+        print("S=Survival time (steps), C=Catch rate (%), Z=ZPD maintenance (%), ZPD=ZPD steps (S×Z)\n")
     else:
         print("\nNo results to save (all tests were skipped).")
 

@@ -162,7 +162,7 @@ class RehabilitationEnv(gym.Env):
         self.reward_hand_catch = 30
         self.reward_robot_caught = -40
         self.reward_arm_hit = -20
-        self.reward_bound = -50
+        self.reward_bound = -80
         self.reward_step = -0.2 if training_mode == 'hand' else 0.2
         # self.reward_survival = 10
         
@@ -477,7 +477,7 @@ class RehabilitationEnv(gym.Env):
         # ========================================================
         # 2. 物理约束 I：一阶惯性低通滤波 (Muscle Inertia)
         # ========================================================
-        alpha = 0.3
+        alpha = 0.7
         smoothed_move = alpha * hand_intent + (1.0 - alpha) * self.last_hand_actual_move
 
         # ========================================================
