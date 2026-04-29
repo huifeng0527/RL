@@ -68,7 +68,7 @@ export default function Evaluation() {
       setEvalStatus('complete');
       setCelebrating(true);
       setTimeout(() => setCelebrating(false), 2000);
-      loadSession();
+      setTimeout(() => loadSession(), 100);
     } else if (data.type === 'error') {
       setError(data.message);
       setEvalStatus('idle');

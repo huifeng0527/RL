@@ -207,6 +207,14 @@ class RehabilitationEnv(gym.Env):
         self.last_robot_action = np.zeros(2, dtype=np.float32)
         self._jerk_penalty = 0.0
 
+        # ========================================================
+        # [核心新增]：AlphaStar PFSP 状态变量（基于平均存活回合长度）
+        # ========================================================
+        self.pfsp_stats = {}        # {pool_index: {'total_steps': 0, 'episodes': 0}}
+        self.pfsp_temperature = 1.0  # 控制选择激进程度
+        self.pfsp_min_prob = 0.05   # 最低概率保护
+        self._current_hand_index = None  # 当前对手在 pool 中的索引
+
         # 旁路标志：外部直接控制 hand_position 时跳过物理约束
         self._bypass_hand_physics = False
 
@@ -224,28 +232,78 @@ class RehabilitationEnv(gym.Env):
         for _ in range(self.history_length):
             buffer.append(np.zeros(2, dtype=np.float32))
 
+    def _compute_pfsp_probabilities(self):
+        """
+        AlphaStar PFSP: 基于平均存活回合长度计算选择概率。
+        存活时间越短（Hand 越弱）→ 选择概率越高。
+        """
+        pool_size = len(self.hand_model_pool)
+        scores = np.zeros(pool_size)
+
+        for i in range(pool_size):
+            if i in self.pfsp_stats and self.pfsp_stats[i]['episodes'] >= 3:
+                avg_len = self.pfsp_stats[i]['total_steps'] / self.pfsp_stats[i]['episodes']
+                scores[i] = 1.0 / max(avg_len, 1.0)  # 存活越短，分数越高
+            else:
+                scores[i] = 1.0  # 数据不足时默认选中
+
+        # 归一化为概率
+        raw_probs = scores / scores.sum() if scores.sum() > 0 else np.ones(pool_size) / pool_size
+
+        # 最低概率保护
+        min_prob = self.pfsp_min_prob / pool_size
+        adjusted_probs = np.maximum(raw_probs, min_prob)
+        adjusted_probs = adjusted_probs / adjusted_probs.sum()
+
+        return adjusted_probs
+
+    def get_pfsp_stats(self):
+        """
+        返回当前 PFSP 统计信息的可读格式，方便 debug。
+        Returns dict with pool index -> {avg_steps, episodes, probability}
+        """
+        result = {}
+        pool_size = len(self.hand_model_pool)
+        probs = self._compute_pfsp_probabilities()
+
+        for i in range(pool_size):
+            if i in self.pfsp_stats and self.pfsp_stats[i]['episodes'] > 0:
+                avg_steps = self.pfsp_stats[i]['total_steps'] / self.pfsp_stats[i]['episodes']
+            else:
+                avg_steps = None
+
+            model_name = f"hand_{i}" if i > 0 else "script_hand"
+            result[model_name] = {
+                'pool_index': i,
+                'episodes': self.pfsp_stats[i]['episodes'] if i in self.pfsp_stats else 0,
+                'total_steps': self.pfsp_stats[i]['total_steps'] if i in self.pfsp_stats else 0,
+                'avg_episode_steps': avg_steps,
+                'selection_prob': probs[i] if i < len(probs) else 0,
+            }
+        return result
+
     def _sample_episode_parameters(self):
         # ========================================================
         # PFSP: Priority Fictitious Self-Play (仅在训练 Robot 时使用)
         # 当训练 Hand 时，不需要采样 hand_model
+        # 使用基于存活回合长度的动态概率（AlphaStar 风格）
         # ========================================================
         if self.training_mode == 'robot' and len(self.hand_model_pool) > 0:
             pool_size = len(self.hand_model_pool)
 
             if pool_size == 1:
                 self.hand_model = self.hand_model_pool[0]
+                self._current_hand_index = 0
             else:
-                p = np.zeros(pool_size)
-                p[0] = 0.20   # 20% 打 Script Hand (保底基本功)
-                p[-1] = 0.50  # 50% 打最新 Hand (突破上限)
+                p = self._compute_pfsp_probabilities()
+                chosen_idx = np.random.choice(pool_size, p=p)
+                self.hand_model = self.hand_model_pool[chosen_idx]
+                self._current_hand_index = chosen_idx
 
-                if pool_size > 2:
-                    remaining_prob = (1 - p[0] - p[-1]) / (pool_size - 2)
-                    p[1:-1] = remaining_prob  # 30% 平分给历史模型
-                else:
-                    p[-1] = 1-p[0]  # 只有 script + 1个模型时
-
-                self.hand_model = np.random.choice(self.hand_model_pool, p=p)
+            # Debug: 打印当前 PFSP 选择情况
+            # stats = self.get_pfsp_stats()
+            # selected_name = list(stats.keys())[chosen_idx] if chosen_idx < len(stats) else str(chosen_idx)
+            # print(f"    [PFSP] Selected: {selected_name} (prob={p[chosen_idx]:.3f}) | Stats: {stats}")
 
         self.stride_robot = np.random.uniform(*self.stride_robot_random)
         self.stride_hand = np.random.uniform(*self.stride_hand_random)
@@ -425,6 +483,7 @@ class RehabilitationEnv(gym.Env):
         self.last_robot_action = np.zeros(2, dtype=np.float32)
         self._jerk_penalty = 0.0
         self._bypass_hand_physics = False
+        self._current_hand_index = None  # PFSP 对手索引重置
 
         # Reset biomechanical filter for new episode
         self.biomech_filter.reset()
@@ -548,6 +607,22 @@ class RehabilitationEnv(gym.Env):
 
         if self.steps >= self.max_steps:
             truncated = True
+
+        # ========================================================
+        # [AlphaStar PFSP] 记录回合统计数据（基于存活回合长度）
+        # ========================================================
+        if self.training_mode == 'robot' and self._current_hand_index is not None:
+            pool_idx = self._current_hand_index
+            if pool_idx not in self.pfsp_stats:
+                self.pfsp_stats[pool_idx] = {'total_steps': 0, 'episodes': 0}
+            self.pfsp_stats[pool_idx]['total_steps'] += self.steps
+            self.pfsp_stats[pool_idx]['episodes'] += 1
+
+            # Debug: 每 50 个 episode 打印一次 PFSP 统计
+            total_episodes = sum(s['episodes'] for s in self.pfsp_stats.values())
+            if total_episodes % 1000 == 0:
+                stats = self.get_pfsp_stats()
+                print(f"    [PFSP] Episodes: {total_episodes} | {stats}")
 
         return reward, terminated, truncated, done_reason
 

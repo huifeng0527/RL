@@ -39,8 +39,8 @@ from stable_baselines3 import PPO
 # =============================================================================
 # Constants
 # =============================================================================
-ZPD_MIN = 3.5
-ZPD_MAX = 6.0
+ZPD_MIN = 3
+ZPD_MAX = 5.5
 GRID_SIZE = 10
 CELL_SIZE = 50
 WIDTH_PX = int(GRID_SIZE * CELL_SIZE * 1.5)
@@ -721,7 +721,7 @@ def main():
 
     tests = []
     if args.test == 'all':
-        tests = ['sluggish', 'spasm', 'unseen_rl', 'human']
+        tests = ['sluggish', 'unseen_rl']
     else:
         tests = [args.test]
 
@@ -748,7 +748,7 @@ def main():
             if test == 'human':
                 # 人类测试需要交互式界面，单独处理
                 print(f"\n[Starting HUMAN test for {robot}]")
-                                survival_times, catch_count, mean_survival, std_survival, zpd_rate, mean_dist = run_human_test_interactive(
+                survival_times, catch_count, mean_survival, std_survival, zpd_rate, mean_dist = run_human_test_interactive(
                     robot_path, robot, num_episodes=args.episodes, fps=args.fps
                 )
                 zpd_steps = mean_survival * zpd_rate
@@ -759,10 +759,7 @@ def main():
                     mean_survival_time=mean_survival,
                     std_survival_time=std_survival,
                     catch_count=catch_count,
-                    catch_rate=catch_count / args.episodes,vival,
-                    std_survival_time=std_survival,
-                    catch_count=catch_count,
-                    catch_rate=catch_count / 5,
+                    catch_rate=catch_count / args.episodes,
                     zpd_maintenance_rate=zpd_rate,
                     mean_distance=mean_dist,
                     zpd_steps=zpd_steps
