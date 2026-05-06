@@ -83,7 +83,7 @@ class ReportGenerator:
         # avg_catch_time: 0.8s = best (100), 3.0s = worst (0)
         if results.get('sprint') and results['sprint'].get('catch_times'):
             avg_time = np.mean(results['sprint']['catch_times'])
-            scores['sprint'] = self._normalize_score(avg_time, bound_0=3.0, bound_100=0.8)
+            scores['sprint'] = self._normalize_score(avg_time, bound_0=2, bound_100=0.8)
         else:
             scores['sprint'] = 0
 
@@ -130,7 +130,7 @@ class ReportGenerator:
             # jerk = mean(|diff(vel_list)|), 0.0 = best (100), 3.0 = worst (0)
             vel_list = b.get('vel_list', [])
             mean_jerk = np.mean(np.abs(np.diff(vel_list))) if len(vel_list) > 1 else 3.0
-            jerk_score = self._normalize_score(mean_jerk, bound_0=3.0, bound_100=0.0)
+            jerk_score = self._normalize_score(mean_jerk, bound_0=3.0, bound_100=0.5)
 
             scores['boundary'] = area_score * 0.5 + jerk_score * 0.5
         else:
