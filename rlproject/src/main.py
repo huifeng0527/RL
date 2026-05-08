@@ -4,6 +4,9 @@ import cv2
 import time
 import os
 import sys
+import queue
+import threading
+import dataclasses
 from collections import deque
 from matplotlib import pyplot as plt
 import pygame
@@ -81,6 +84,20 @@ class RealWorldMonitorCallback(BaseCallback):
             self.action_diffs.clear()
             self.zpd_hits.clear()
 
+# ========================================================
+# [新增] 跨线程共享数据结构
+# ========================================================
+@dataclasses.dataclass
+class VisionResult:
+    hand_positions: list
+    robot_trajectory: list
+    fixed_point: list
+    pixel_per_cm: float
+    undistorted_frame: np.ndarray
+    distance_to_object: float
+    timing_ms: float = 0.0  # vision processing time for profiling
+
+
 # 全局共享变量
 pygame.init()
 grid_s, cell_s = 10, 50
@@ -88,7 +105,7 @@ w_env, h_env = 15, 10
 screen = pygame.display.set_mode((int(grid_s * cell_s * 1.5), int(grid_s * cell_s)))
 
 cv_model = YOLO(r'C:\Users\admin\Desktop\huifeng\rlproject\src\runs\detect\train3\weights\best.onnx')
-hand_detector = HandDetection()
+# [移除] hand_detector 现在改为 VisionThread 内部创建，避免跨线程共享 MediaPipe 实例
 cali = CameraCalibration()
 analyzer = PatientTrajectoryAnalyzer()
 render = EnvironmentRenderer(grid_size=10, cell_size=50)
@@ -108,6 +125,89 @@ w,h = undistorted_frame.shape[:2]
 
 
 # ========================================================
+# [新增] Vision Thread - 负责所有视觉处理
+# ========================================================
+class VisionThread(threading.Thread):
+    def __init__(self, vision_queue: queue.Queue, shutdown_event: threading.Event):
+        super().__init__(daemon=True)
+        self.vision_queue = vision_queue
+        self.shutdown_event = shutdown_event
+        # [关键] MediaPipe HandDetection 必须在线程内部创建，禁止跨线程共享
+        self.hand_detector = HandDetection()
+        self.pixel_per_cm = 10.0
+        self.fixed_point = [10, 10]
+        self.trajectory_robot = deque(maxlen=40)
+
+    def run(self):
+        print("[VisionThread] 启动")
+        while not self.shutdown_event.is_set():
+            t_start = time.perf_counter()
+
+            # 1. 读取画面
+            ret, frame = cap.read()
+            if not ret:
+                continue
+
+            # 2. 预处理
+            undistorted_frame = get_workspace(cali.undistort_frame(frame))
+            undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+            # 3. YOLO 推理
+            results = cv_model.predict(undistorted_frame, conf=0.7, save=False, imgsz=640, verbose=False)
+
+            # 4. MediaPipe Hand Detection
+            undistorted_frame, hand_positions = self.hand_detector.process_frame(undistorted_frame)
+
+            # 5. 提取机器人 bbox
+            for r in results:
+                for box in r.boxes:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    if x2 - x1 > 100:
+                        continue
+                    self.trajectory_robot.append([(x1 + x2) // 2, (y1 + y2) // 2])
+                    cv2.rectangle(undistorted_frame, (x1, y1), (x2, y2), (255, 0, 255), 4)
+                    self.pixel_per_cm = ((x2 + y2 - x1 - y1) / 2) / 2
+
+            # 6. HSV 桌面检测
+            hsv = cv2.cvtColor(undistorted_frame, cv2.COLOR_BGR2HSV)
+            mask = cv2.inRange(hsv, np.array([0, 30, 60]), np.array([20, 150, 255]))
+            ys, xs = np.where(mask > 0)
+            try:
+                self.fixed_point = [xs[np.argmax(ys)].item() * w_env / w, h_env]
+            except ValueError:
+                pass
+
+            # 7. 估算距离（临时占位，Control Thread 会用机器人实际位置重算）
+            distance_to_object = 5.0
+
+            timing_ms = (time.perf_counter() - t_start) * 1000
+
+            # 8. 非阻塞放入队列（queue 已满则丢弃旧结果，maxsize=1 保证只有最新帧）
+            vr = VisionResult(
+                hand_positions=hand_positions,
+                robot_trajectory=list(self.trajectory_robot),
+                fixed_point=self.fixed_point,
+                pixel_per_cm=self.pixel_per_cm,
+                undistorted_frame=undistorted_frame,
+                distance_to_object=distance_to_object,
+                timing_ms=timing_ms,
+            )
+            try:
+                self.vision_queue.put_nowait(vr)
+            except queue.Full:
+                pass  # 队列满时丢弃旧帧，保证最新鲜的视觉结果
+
+        print("[VisionThread] 退出")
+
+
+# ========================================================
+# 全局线程控制变量
+# ========================================================
+vision_queue: queue.Queue = queue.Queue(maxsize=1)
+shutdown_event: threading.Event = threading.Event()
+
+
+# ========================================================
 # 2. 真机硬件封装为标准 Gym 环境
 # ========================================================
 class RealWorldRehabEnv(gym.Env):
@@ -117,27 +217,28 @@ class RealWorldRehabEnv(gym.Env):
         self.obs_dim = 10 + self.history_length * 2
         self.observation_space = Box(low=-np.inf, high=np.inf, shape=(self.obs_dim,), dtype=np.float32)
         self.action_space = Box(low=-1, high=1, shape=(2,), dtype=np.float32)
-        
+
         self.stride_robot = 0.6
         self.rx_c, self.ry_c, self.rz_c = 0.193, 0.067, 5.3
-        
-        self.pixel_per_cm = 10.0
-        self.fixed_point =[10, 10]
+
         self.last_hand = np.zeros(2, dtype=np.float32)
-        self.last_action = np.zeros(2, dtype=np.float32) # [新增] 用于计算动作抖动
-        
+        self.last_action = np.zeros(2, dtype=np.float32)  # 用于计算动作抖动
+
         self.hand_history_buffer = deque(maxlen=self.history_length)
         for _ in range(self.history_length): self.hand_history_buffer.append(np.zeros(2))
-        
-        self.trajectory_robot = deque(maxlen=40)
+
         self.trajectory = deque(maxlen=60)
-        
+
         self.start_time = time.perf_counter()
         self.last_control_time = time.time()
         self.ep_steps = 0
-        self.virtual_target_pixel = np.array([w/2, h/2], dtype=np.float64) 
-        
-        self.target_dt = 1.0 / CONTROL_FREQ 
+        self.virtual_target_pixel = np.array([w/2, h/2], dtype=np.float64)
+
+        self.target_dt = 1.0 / CONTROL_FREQ
+
+        # [新增] 缓存最新视觉结果，用于 queue 为空时 graceful degradation
+        self.cached_vision_result: VisionResult = None
+        self.vision_timing_ms = 0.0  # 用于 profiling 
 
     def reset(self, seed=None, options=None):
         # time.sleep(1)
@@ -239,75 +340,62 @@ class RealWorldRehabEnv(gym.Env):
         return obs, reward, terminated, truncated, info
 
     def _get_obs_and_render(self):
-        ret, frame = cap.read()
-        if not ret: return np.zeros(self.obs_dim, dtype=np.float32)
-        
-        undistorted_frame = get_workspace(cali.undistort_frame(frame))
-        undistorted_frame = cv2.rotate(undistorted_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        # [改动] 从 VisionThread 的队列非阻塞获取视觉结果，不做视觉处理
+        try:
+            vr = vision_queue.get_nowait()
+            self.cached_vision_result = vr
+            self.vision_timing_ms = vr.timing_ms
+        except queue.Empty:
+            # 无新帧时用缓存的旧结果（graceful degradation）
+            vr = self.cached_vision_result
 
-        results = cv_model.predict(undistorted_frame, conf=0.7, save=False, imgsz=640, verbose=False)
-        undistorted_frame, hand_positions = hand_detector.process_frame(undistorted_frame)
+        if vr is None:
+            return np.zeros(self.obs_dim, dtype=np.float32)
 
-        for r in results:
-            for box in r.boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                if x2 - x1 > 100: continue
-                self.trajectory_robot.append([(x1 + x2) // 2, (y1 + y2) // 2])
-                cv2.rectangle(undistorted_frame, (x1, y1), (x2, y2), (255, 0, 255), 4)
-                self.pixel_per_cm = ((x2 + y2 - x1 - y1) / 2) / 2
+        hand_positions = vr.hand_positions
+        fixed_point = vr.fixed_point
+        undistorted_frame = vr.undistorted_frame
 
-        position_hand_env = np.array([0,0], dtype=np.float32)
+        # === 手部位置 ===
+        position_hand_env = np.array([0, 0], dtype=np.float32)
         if hand_positions:
             position_hand_env = hand_positions[0] / np.array([w/w_env, h/h_env])
             analyzer.add_point(time.perf_counter() - self.start_time, position_hand_env[0], position_hand_env[1])
 
-        hsv = cv2.cvtColor(undistorted_frame, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, np.array([0, 30, 60]), np.array([20, 150, 255]))
-        ys, xs = np.where(mask > 0)
-        try:
-            self.fixed_point =[xs[np.argmax(ys)].item()*w_env/w, h_env]
-        except ValueError:
-            pass
-
+        # === 机器人位置（实时查询） ===
         *position_robot_world, _, _, _, _ = robot_control.get_robot_pose()
         real_robot_pixel = cali.world_to_pixel(position_robot_world)
         position_robot_env = real_robot_pixel[0]*w_env/w, real_robot_pixel[1]*h_env/h
-        
+
         self.trajectory.append(position_robot_env)
 
         robot_obs = np.array([position_robot_env], dtype=np.float32).flatten()
         hand_obs = np.array([position_hand_env], dtype=np.float32).flatten()
-        
+
         hand_move = hand_obs - self.last_hand
         distance_to_object = np.linalg.norm(robot_obs - hand_obs)
         distance_obs = np.array([distance_to_object], dtype=np.float32)
         boundary_obs = np.array([robot_obs[0], w_env-robot_obs[0], robot_obs[1], h_env-robot_obs[1]])
-        
-        vec_arm = self.fixed_point - hand_obs
+
+        vec_arm = np.array(fixed_point) - hand_obs
         dist_arm = np.linalg.norm(vec_arm)
         to_shoulder = self.safe_normalize(vec_arm)
         blocking_point = hand_obs + to_shoulder * min(1, dist_arm)
-        
+
         self.hand_history_buffer.append(hand_move)
         flat_history = np.array(self.hand_history_buffer).flatten()
 
-        # obs_array = np.concatenate((
-        #     robot_obs, hand_obs, distance_obs, boundary_obs, 
-        #     np.array([self.stride_robot]), np.array(self.fixed_point, dtype=np.float32), 
-        #     blocking_point.flatten(), np.zeros(2).flatten(), flat_history
-        # ))
         obs_array = np.concatenate((
-            robot_obs, hand_obs, distance_obs, boundary_obs, 
+            robot_obs, hand_obs, distance_obs, boundary_obs,
             np.array([self.stride_robot]), flat_history
         ))
-        
+
         self.last_hand = hand_obs
 
-        # === 画面渲染 ===
-        # 当前距离
-        cv2.putText(undistorted_frame, f"Distance: {distance_to_object:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        render.render(obs_array[:2], obs_array[2:4], self.fixed_point, self.trajectory, blocking_point.flatten())
-        cv2.circle(undistorted_frame, (int(real_robot_pixel[0]), int(real_robot_pixel[1])), 20, (0, 255, 0), -1) 
+        # === 画面渲染（仍在主线程，cv2 必须串行） ===
+        cv2.putText(undistorted_frame, f"Dist: {distance_to_object:.2f}  Vision: {self.vision_timing_ms:.1f}ms", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        render.render(obs_array[:2], obs_array[2:4], fixed_point, self.trajectory, blocking_point.flatten())
+        cv2.circle(undistorted_frame, (int(real_robot_pixel[0]), int(real_robot_pixel[1])), 20, (0, 255, 0), -1)
         cv2.imshow('Frame', undistorted_frame)
         cv2.waitKey(1)
 
@@ -337,6 +425,11 @@ if __name__ == '__main__':
         real_env = DummyVecEnv([
         lambda: Monitor(RealWorldRehabEnv())
     ])
+
+        # [新增] 启动 Vision Thread
+        vision_thread = VisionThread(vision_queue, shutdown_event)
+        vision_thread.start()
+        print(f"[主线程] VisionThread 已启动，队列 maxsize=1")
         
         # # ⚠️ 请确保这里的路径是你最新仿真训练出来的 best_model
         # model_path = r"C:\Users\admin\Desktop\huifeng\RL\src\logs\ablation_study_0402_1321\2_MLP_LSTM\best_model.zip"
@@ -452,8 +545,13 @@ if __name__ == '__main__':
         
     finally:
         print("断开机械臂，关闭系统...")
+        # [新增] 优雅关闭 Vision Thread
+        shutdown_event.set()
+        if 'vision_thread' in locals():
+            vision_thread.join(timeout=2.0)
+            print("[主线程] VisionThread 已关闭")
         if 'robot_control' in locals():
-            robot_control.rtde_c.servoStop() # 强制刹车
+            robot_control.rtde_c.servoStop()  # 强制刹车
             time.sleep(0.5)
             robot_control.disconnect()
         if 'cap' in locals(): cap.release()

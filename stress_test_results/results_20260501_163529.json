@@ -1,0 +1,107 @@
+[
+  {
+    "robot_name": "baseline_a",
+    "test_name": "sluggish",
+    "survival_times": [
+      56,
+      1,
+      21,
+      22,
+      6,
+      15,
+      100,
+      3,
+      14,
+      1
+    ],
+    "mean_survival_time": 23.9,
+    "std_survival_time": 29.693265229677923,
+    "catch_count": 9,
+    "catch_rate": 0.9,
+    "zpd_maintenance_rate": 0.46184738955823296,
+    "mean_distance": 3.3249138189788643,
+    "zpd_steps": 11.038152610441767
+  },
+  {
+    "robot_name": "baseline_a",
+    "test_name": "unseen_rl",
+    "survival_times": [],
+    "mean_survival_time": 0,
+    "std_survival_time": 0,
+    "catch_count": 0,
+    "catch_rate": 0,
+    "zpd_maintenance_rate": 0,
+    "mean_distance": 0,
+    "zpd_steps": 0.0
+  },
+  {
+    "robot_name": "baseline_b",
+    "test_name": "sluggish",
+    "survival_times": [
+      10,
+      17,
+      10,
+      15,
+      17,
+      14,
+      35,
+      17,
+      23,
+      10
+    ],
+    "mean_survival_time": 16.8,
+    "std_survival_time": 7.2083285163760396,
+    "catch_count": 10,
+    "catch_rate": 1.0,
+    "zpd_maintenance_rate": 0.5955056179775281,
+    "mean_distance": 4.218092218152786,
+    "zpd_steps": 10.004494382022472
+  },
+  {
+    "robot_name": "baseline_b",
+    "test_name": "unseen_rl",
+    "survival_times": [],
+    "mean_survival_time": 0,
+    "std_survival_time": 0,
+    "catch_count": 0,
+    "catch_rate": 0,
+    "zpd_maintenance_rate": 0,
+    "mean_distance": 0,
+    "zpd_steps": 0.0
+  },
+  {
+    "robot_name": "pfsp",
+    "test_name": "sluggish",
+    "survival_times": [
+      1,
+      1,
+      19,
+      16,
+      70,
+      4,
+      16,
+      19,
+      15,
+      39
+    ],
+    "mean_survival_time": 20.0,
+    "std_survival_time": 19.743353311937668,
+    "catch_count": 10,
+    "catch_rate": 1.0,
+    "zpd_maintenance_rate": 0.4857142857142857,
+    "mean_distance": 3.6299281670471903,
+    "zpd_steps": 9.714285714285714
+  },
+  {
+    "robot_name": "pfsp",
+    "test_name": "unseen_rl",
+    "survival_times": [],
+    "mean_survival_time": 0,
+    "std_survival_time": 0,
+    "catch_count": 0,
+    "catch_rate": 0,
+    "zpd_maintenance_rate": 0,
+    "mean_distance": 0,
+    "zpd_steps": 0.0
+  }
+]

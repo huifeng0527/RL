@@ -51,7 +51,7 @@ BASE_DIR = r"C:\Users\admin\Desktop\科研\RL\logs\dual_iterative_0427_1314"
 MODEL_PATHS = {
     'baseline_a': r"C:\Users\admin\Desktop\科研\RL\logs\ablation_study_0424_1945\2_MLP_LSTM\best_model.zip",
     'baseline_b': os.path.join(BASE_DIR, "baseline_b", "robot", "best_model.zip"),
-    'pfsp': os.path.join(BASE_DIR, "iteration_13", "robot", "robot", "best_model.zip"),
+    'pfsp': r"C:\Users\admin\Desktop\科研\RL\logs\dual_iterative_0428_2245\iteration_10\robot\robot\best_model.zip"
 }
 UNSEEN_HAND_PATH = os.path.join(BASE_DIR, "iteration_13", "hand", "hand", "best_model.zip")
 
