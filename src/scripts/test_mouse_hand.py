@@ -72,7 +72,7 @@ def test_with_mouse(model_path=None, max_steps=1000, fps=60):
 
     while running:
         obs, info = env.reset()
-        env.stride_robot = 0.6
+        env.stride_robot = 0.3
         env.stride_hand = 0.3
         episode_count += 1
         steps = 0
