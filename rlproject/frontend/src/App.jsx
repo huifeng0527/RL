@@ -3,6 +3,7 @@ import Patients from './pages/Patients';
 import PatientDetail from './pages/PatientDetail';
 import Evaluation from './pages/Evaluation';
 import History from './pages/History';
+import Statistics from './pages/Statistics';
 import Layout from './components/Layout';
 
 function App() {
@@ -15,6 +16,7 @@ function App() {
           <Route path="patients/:id" element={<PatientDetail />} />
           <Route path="evaluate/:sessionId" element={<Evaluation />} />
           <Route path="history" element={<History />} />
+          <Route path="statistics" element={<Statistics />} />
         </Route>
       </Routes>
     </BrowserRouter>

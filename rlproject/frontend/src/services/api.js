@@ -26,6 +26,12 @@ export const startEvaluation = (sessionId) => api.post('/eval/start', null, { pa
 export const stopEvaluation = () => api.post('/eval/stop');
 export const getEvalStatus = () => api.get('/eval/status');
 
+// Statistics
+export const getPatientStats = () => api.get('/stats/patients');
+export const getTaskStats = () => api.get('/stats/tasks');
+export const getSinglePatientStats = (id) => api.get(`/stats/patient/${id}`);
+export const exportExcel = () => api.get('/export/excel', { responseType: 'blob' });
+
 // WebSocket for real-time updates
 export const createEvalSocket = (onMessage) => {
   const ws = new WebSocket('ws://localhost:8000/ws/eval');

@@ -1,7 +1,9 @@
 """FastAPI backend for rehabilitation evaluation system."""
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
@@ -9,6 +11,7 @@ import json
 import asyncio
 import threading
 import queue
+import os
 
 from database import (
     get_db, init_db, Patient, Session as EvalSession,
@@ -449,6 +452,220 @@ async def websocket_endpoint(websocket: WebSocket):
 @app.get("/api/health")
 def health_check():
     return {"status": "healthy"}
+
+
+# ========================================================
+# Statistics API - Patient and Task Average Scores
+# ========================================================
+
+class PatientStatsResponse(BaseModel):
+    patient_id: int
+    patient_name: str
+    session_count: int
+    avg_total_score: Optional[float]
+    avg_sprint_score: Optional[float]
+    avg_tracking_score: Optional[float]
+    avg_league_score: Optional[float]
+    avg_boundary_score: Optional[float]
+
+
+class TaskStatsResponse(BaseModel):
+    task: str
+    avg_score: Optional[float]
+    min_score: Optional[float]
+    max_score: Optional[float]
+    session_count: int
+
+
+@app.get("/api/stats/patients", response_model=List[PatientStatsResponse])
+def get_patient_statistics(db: Session = Depends(get_db)):
+    """Get average scores for each patient across all their sessions."""
+    patients = db.query(Patient).all()
+    result = []
+
+    for patient in patients:
+        sessions = db.query(EvalSession).filter(
+            EvalSession.patient_id == patient.id,
+            EvalSession.total_score.isnot(None)
+        ).all()
+
+        if not sessions:
+            result.append(PatientStatsResponse(
+                patient_id=patient.id,
+                patient_name=patient.name,
+                session_count=0,
+                avg_total_score=None,
+                avg_sprint_score=None,
+                avg_tracking_score=None,
+                avg_league_score=None,
+                avg_boundary_score=None,
+            ))
+            continue
+
+        n = len(sessions)
+        result.append(PatientStatsResponse(
+            patient_id=patient.id,
+            patient_name=patient.name,
+            session_count=n,
+            avg_total_score=round(sum(s.total_score for s in sessions) / n, 1),
+            avg_sprint_score=round(sum(s.sprint_score for s in sessions if s.sprint_score is not None) / n, 1) if any(s.sprint_score for s in sessions) else None,
+            avg_tracking_score=round(sum(s.tracking_score for s in sessions if s.tracking_score is not None) / n, 1) if any(s.tracking_score for s in sessions) else None,
+            avg_league_score=round(sum(s.league_score for s in sessions if s.league_score is not None) / n, 1) if any(s.league_score for s in sessions) else None,
+            avg_boundary_score=round(sum(s.boundary_score for s in sessions if s.boundary_score is not None) / n, 1) if any(s.boundary_score for s in sessions) else None,
+        ))
+
+    return result
+
+
+@app.get("/api/stats/tasks", response_model=List[TaskStatsResponse])
+def get_task_statistics(db: Session = Depends(get_db)):
+    """Get average scores for each task across all completed sessions."""
+    sessions = db.query(EvalSession).filter(EvalSession.total_score.isnot(None)).all()
+
+    task_names = ['sprint', 'tracking', 'league', 'boundary']
+    result = []
+
+    for task in task_names:
+        score_attr = f'{task}_score'
+        scores = [getattr(s, score_attr) for s in sessions if getattr(s, score_attr) is not None]
+        n = len(scores)
+
+        if n == 0:
+            result.append(TaskStatsResponse(
+                task=task.capitalize(),
+                avg_score=None,
+                min_score=None,
+                max_score=None,
+                session_count=0,
+            ))
+        else:
+            result.append(TaskStatsResponse(
+                task=task.capitalize(),
+                avg_score=round(sum(scores) / n, 1),
+                min_score=round(min(scores), 1),
+                max_score=round(max(scores), 1),
+                session_count=n,
+            ))
+
+    return result
+
+
+@app.get("/api/stats/patient/{patient_id}", response_model=PatientStatsResponse)
+def get_patient_stats(patient_id: int, db: Session = Depends(get_db)):
+    """Get detailed statistics for a specific patient."""
+    patient = db.query(Patient).filter(Patient.id == patient_id).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+
+    sessions = db.query(EvalSession).filter(
+        EvalSession.patient_id == patient_id,
+        EvalSession.total_score.isnot(None)
+    ).all()
+
+    if not sessions:
+        return PatientStatsResponse(
+            patient_id=patient.id,
+            patient_name=patient.name,
+            session_count=0,
+            avg_total_score=None,
+            avg_sprint_score=None,
+            avg_tracking_score=None,
+            avg_league_score=None,
+            avg_boundary_score=None,
+        )
+
+    n = len(sessions)
+    return PatientStatsResponse(
+        patient_id=patient.id,
+        patient_name=patient.name,
+        session_count=n,
+        avg_total_score=round(sum(s.total_score for s in sessions) / n, 1),
+        avg_sprint_score=round(sum(s.sprint_score for s in sessions if s.sprint_score is not None) / n, 1) if any(s.sprint_score for s in sessions) else None,
+        avg_tracking_score=round(sum(s.tracking_score for s in sessions if s.tracking_score is not None) / n, 1) if any(s.tracking_score for s in sessions) else None,
+        avg_league_score=round(sum(s.league_score for s in sessions if s.league_score is not None) / n, 1) if any(s.league_score for s in sessions) else None,
+        avg_boundary_score=round(sum(s.boundary_score for s in sessions if s.boundary_score is not None) / n, 1) if any(s.boundary_score for s in sessions) else None,
+    )
+
+
+# ========================================================
+# Excel Export
+# ========================================================
+@app.get("/api/export/excel")
+def export_excel(db: Session = Depends(get_db)):
+    """Export all session data as an Excel file."""
+    try:
+        import openpyxl
+    except ImportError:
+        raise HTTPException(status_code=500, detail="openpyxl not installed. Run: pip install openpyxl")
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "M-HECS Sessions"
+
+    # Header
+    headers = [
+        'Session ID', 'Patient Name', 'Date',
+        'Total Score', 'Sprint', 'Tracking', 'League', 'Boundary',
+        'Notes'
+    ]
+    ws.append(headers)
+
+    sessions = db.query(EvalSession).join(Patient).order_by(EvalSession.created_at.desc()).all()
+
+    for s in sessions:
+        ws.append([
+            s.id,
+            s.patient.name,
+            s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '',
+            round(s.total_score, 1) if s.total_score else '',
+            round(s.sprint_score, 1) if s.sprint_score else '',
+            round(s.tracking_score, 1) if s.tracking_score else '',
+            round(s.league_score, 1) if s.league_score else '',
+            round(s.boundary_score, 1) if s.boundary_score else '',
+            s.notes or '',
+        ])
+
+    # Patient Summary sheet
+    ws2 = wb.create_sheet("Patient Summary")
+    ws2.append(['Patient Name', 'Session Count', 'Avg Total', 'Avg Sprint', 'Avg Tracking', 'Avg League', 'Avg Boundary'])
+
+    patients = db.query(Patient).all()
+    for patient in patients:
+        sessions = db.query(EvalSession).filter(
+            EvalSession.patient_id == patient.id,
+            EvalSession.total_score.isnot(None)
+        ).all()
+        if not sessions:
+            continue
+        n = len(sessions)
+        avg_total = round(sum(s.total_score for s in sessions) / n, 1)
+        sprint_scores = [s.sprint_score for s in sessions if s.sprint_score is not None]
+        tracking_scores = [s.tracking_score for s in sessions if s.tracking_score is not None]
+        league_scores = [s.league_score for s in sessions if s.league_score is not None]
+        boundary_scores = [s.boundary_score for s in sessions if s.boundary_score is not None]
+
+        ws2.append([
+            patient.name,
+            n,
+            avg_total,
+            round(sum(sprint_scores) / len(sprint_scores), 1) if sprint_scores else '',
+            round(sum(tracking_scores) / len(tracking_scores), 1) if tracking_scores else '',
+            round(sum(league_scores) / len(league_scores), 1) if league_scores else '',
+            round(sum(boundary_scores) / len(boundary_scores), 1) if boundary_scores else '',
+        ])
+
+    # Save file
+    export_dir = os.path.join(os.path.dirname(__file__), 'exports')
+    os.makedirs(export_dir, exist_ok=True)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filepath = os.path.join(export_dir, f'mhecs_export_{timestamp}.xlsx')
+    wb.save(filepath)
+
+    return FileResponse(
+        filepath,
+        media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        filename=f'mhecs_export_{timestamp}.xlsx'
+    )
 
 
 if __name__ == "__main__":
