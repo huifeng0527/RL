@@ -8,14 +8,19 @@ export default function Statistics() {
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
+    const controller = new AbortController();
     Promise.all([
       getPatientStats().then(r => r.data),
       getTaskStats().then(r => r.data),
     ]).then(([patients, tasks]) => {
       setPatientStats(patients);
       setTaskStats(tasks);
-    }).catch(err => console.error('Failed to load stats:', err))
+    }).catch(err => {
+      if (err.name === 'CanceledError' || err.name === 'AbortError') return;
+      console.error('Failed to load stats:', err);
+    })
       .finally(() => setLoading(false));
+    return () => controller.abort();
   }, []);
 
   const handleExport = async () => {

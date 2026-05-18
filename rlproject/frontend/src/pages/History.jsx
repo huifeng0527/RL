@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { getSessions, getPatients, deleteSession } from '../services/api';
+import { getSessions, getPatients, deleteSession, updateSessionNotes } from '../services/api';
 
 export default function History() {
   const [sessions, setSessions] = useState([]);

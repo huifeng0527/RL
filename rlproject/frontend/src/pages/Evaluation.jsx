@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getSessionDetail, startEvaluation, stopEvaluation, getEvalStatus, createEvalSocket } from '../services/api';
+import { getSessionDetail, startEvaluation, stopEvaluation, createEvalSocket } from '../services/api';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 
 const TASKS = [
@@ -18,7 +18,6 @@ export default function Evaluation() {
   const [evalStatus, setEvalStatus] = useState('idle');
   const [progress, setProgress] = useState({ task: '', progress: 0, message: '' });
   const [currentTaskIndex, setCurrentTaskIndex] = useState(0);
-  const [ws, setWs] = useState(null);
   const [results, setResults] = useState(null);
   const [scores, setScores] = useState(null);
   const [error, setError] = useState(null);
@@ -26,16 +25,33 @@ export default function Evaluation() {
   const [celebrating, setCelebrating] = useState(false);
   const [fps, setFps] = useState(0);
 
+  // Use ref for WebSocket to avoid stale closure issues
+  const wsRef = useRef(null);
+  const abortRef = useRef(null);
+
   useEffect(() => {
-    loadSession();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    loadSession(controller.signal);
+
     return () => {
-      if (ws) ws.close();
+      controller.abort();
+      // Close WebSocket on unmount
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      // Revoke blob URL to prevent memory leak
+      if (frameUrl) {
+        URL.revokeObjectURL(frameUrl);
+      }
     };
   }, [sessionId]);
 
-  const loadSession = async () => {
+  const loadSession = async (signal) => {
     try {
-      const res = await getSessionDetail(sessionId);
+      const res = await getSessionDetail(sessionId, { signal });
       setSession(res.data);
       if (res.data.sprint) {
         setResults(res.data);
@@ -47,6 +63,7 @@ export default function Evaluation() {
         });
       }
     } catch (error) {
+      if (error.name === 'CanceledError' || error.name === 'AbortError') return;
       console.error('Failed to load session:', error);
     } finally {
       setLoading(false);
@@ -61,14 +78,21 @@ export default function Evaluation() {
       const taskIndex = TASKS.findIndex(t => t.name === data.task);
       if (taskIndex >= 0) setCurrentTaskIndex(taskIndex);
     } else if (data.type === 'frame') {
-      const blob = new Blob([Uint8Array.from(atob(data.data), c => c.charCodeAt(0))], { type: 'image/jpeg' });
-      const url = URL.createObjectURL(blob);
-      setFrameUrl(url);
+      // Revoke previous blob URL before creating new one
+      setFrameUrl(prev => {
+        if (prev) URL.revokeObjectURL(prev);
+        const blob = new Blob([Uint8Array.from(atob(data.data), c => c.charCodeAt(0))], { type: 'image/jpeg' });
+        return URL.createObjectURL(blob);
+      });
     } else if (data.type === 'complete') {
       setEvalStatus('complete');
       setCelebrating(true);
       setTimeout(() => setCelebrating(false), 2000);
-      setTimeout(() => loadSession(), 100);
+      setTimeout(() => {
+        if (abortRef.current) {
+          loadSession(abortRef.current.signal);
+        }
+      }, 100);
     } else if (data.type === 'error') {
       setError(data.message);
       setEvalStatus('idle');
@@ -78,8 +102,16 @@ export default function Evaluation() {
   const handleStart = async () => {
     setError(null);
     setEvalStatus('countdown');
+
+    // Close previous WebSocket if exists
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+
     const socket = createEvalSocket(handleWebSocketMessage);
-    setWs(socket);
+    wsRef.current = socket;
+
     try {
       await startEvaluation(sessionId);
     } catch (error) {
@@ -87,6 +119,7 @@ export default function Evaluation() {
       setError('启动评估失败');
       setEvalStatus('idle');
       socket.close();
+      wsRef.current = null;
     }
   };
 
@@ -94,7 +127,10 @@ export default function Evaluation() {
     try {
       await stopEvaluation();
       setEvalStatus('idle');
-      if (ws) ws.close();
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     } catch (error) {
       console.error('Failed to stop evaluation:', error);
     }

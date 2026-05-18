@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getPatient, getSessions, createSession } from '../services/api';
 
@@ -8,21 +8,28 @@ export default function PatientDetail() {
   const [patient, setPatient] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const abortRef = useRef(null);
 
   useEffect(() => {
-    loadData();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    loadData(controller.signal);
+    return () => {
+      controller.abort();
+    };
   }, [id]);
 
-  const loadData = async () => {
+  const loadData = async (signal) => {
     try {
       const [patientRes, sessionsRes] = await Promise.all([
-        getPatient(id),
-        getSessions(id)
+        getPatient(id, { signal }),
+        getSessions(id, { signal })
       ]);
       setPatient(patientRes.data);
       const filteredSessions = sessionsRes.data.filter(s => s.patient_id === parseInt(id));
       setSessions(filteredSessions);
     } catch (error) {
+      if (error.name === 'CanceledError' || error.name === 'AbortError') return;
       console.error('Failed to load patient:', error);
     } finally {
       setLoading(false);

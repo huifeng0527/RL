@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { getPatients, createPatient, deletePatient } from '../services/api';
 
@@ -7,6 +7,7 @@ export default function Patients() {
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
   const [formData, setFormData] = useState({
     name: '',
     gender: '',
@@ -17,11 +18,15 @@ export default function Patients() {
 
   useEffect(() => {
     loadPatients();
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
   }, []);
 
   const showToast = (message, type = 'info') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3000);
   };
 
   const loadPatients = async () => {

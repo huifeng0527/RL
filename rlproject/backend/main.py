@@ -411,6 +411,7 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
             if eval_engine:
                 eval_engine.disconnect()
                 eval_engine = None
+            eval_thread = None
 
     eval_thread = threading.Thread(target=run_evaluation)
     eval_thread.start()
@@ -442,9 +443,14 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            data = await websocket.receive_text()
+            # Use timeout to detect stale connections
+            data = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
             # Handle incoming messages from client if needed
+    except asyncio.TimeoutError:
+        pass  # Client didn't send anything in 60s, disconnect gracefully
     except WebSocketDisconnect:
+        pass
+    finally:
         manager.disconnect(websocket)
 
 

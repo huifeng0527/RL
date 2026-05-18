@@ -60,10 +60,12 @@ tensorboard/
 *.mp4
 *.avi
 
+*.db
+
 # 配置文件（如果包含敏感信息）
 # configs/*.yaml
 
-# 操作系统
+# 操作系统s
 .DS_Store
 Thumbs.db
 

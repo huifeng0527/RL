@@ -61,10 +61,56 @@ eval_results = {
 class VisionResult:
     """Vision Thread 产出的数据结构，Control Thread 消费"""
     hand_positions: list  # [(cx, cy), ...] 像素坐标
+    hand_detected: bool   # 🌟 是否真正检测到手（否则 hand_env 无意义）
     robot_trajectory: list  # [(cx, cy), ...] 机器人轨迹像素坐标
-    hand_env: np.ndarray  # hand 环境坐标 (2,)
+    hand_env: np.ndarray  # hand 环境坐标 (2,) — 仅当 hand_detected=True 时有效
     pixel_per_cm: float
     undistorted_frame: np.ndarray  # 用于渲染的帧
+
+
+class KalmanFilter2D:
+    """
+    2D Hand tracking Kalman filter with constant-velocity model.
+    State: [x, y, vx, vy]
+    Predict: forward by dt seconds
+    Update: with vision observation [x_obs, y_obs] — 仅在真正检测到手时调用！
+    """
+    def __init__(self, init_pos=None, dt=0.04, process_noise=0.5, observation_noise=5.0):
+        # 默认从屏幕中心开始，避免开局从 [0,0] 飞过来的残影
+        if init_pos is None:
+            init_pos = np.array([7.5, 5.0])  # screen center in env coords (w_env/2, h_env/2)
+        self.dt = dt
+        self.F = np.array([[1, 0, dt, 0],
+                           [0, 1, 0, dt],
+                           [0, 0, 1, 0],
+                           [0, 0, 0, 1]])
+        self.H = np.array([[1, 0, 0, 0],
+                           [0, 1, 0, 0]])
+        self.P = np.eye(4) * 100.0
+        self.Q = np.eye(4) * process_noise
+        self.R = np.eye(2) * observation_noise
+        self.x = np.array([init_pos[0], init_pos[1], 0.0, 0.0])  # [x, y, vx, vy]
+        self.last_update_time = None
+
+    def predict(self):
+        """Predict state forward by self.dt."""
+        self.x = self.F @ self.x
+        self.P = self.F @ self.P @ self.F.T + self.Q
+        return self.x[:2]
+
+    def update(self, z):
+        """Update with observation z = [x_obs, y_obs]. 仅在真正检测到手时调用！"""
+        y = z - self.H @ self.x  # innovation
+        S = self.H @ self.P @ self.H.T + self.R
+        K = self.P @ self.H.T @ np.linalg.inv(S)
+        self.x = self.x + K @ y
+        self.P = (np.eye(4) - K @ self.H) @ self.P
+
+    def advance_and_predict(self, dt):
+        """Update F matrix with dt, then predict forward."""
+        self.F[0, 2] = dt
+        self.F[1, 3] = dt
+        return self.predict()
 
 
 # ========================================================
@@ -146,6 +192,7 @@ class VisionThread(threading.Thread):
 
             result = VisionResult(
                 hand_positions=hand_positions,
+                hand_detected=len(hand_positions) > 0,  # 🌟 标记是否真的检测到手
                 robot_trajectory=robot_trajectory,
                 hand_env=hand_env,
                 pixel_per_cm=pixel_per_cm,
@@ -230,6 +277,12 @@ vision_thread = VisionThread(
 vision_thread.start()
 
 # ========================================================
+# 5b. 初始化卡尔曼滤波器（弥补视觉与控制的时间差）
+# ========================================================
+hand_kalman = KalmanFilter2D(dt=1.0 / CONTROL_FREQ, process_noise=0.5, observation_noise=5.0)
+last_vision_time = None
+
+# ========================================================
 # 6. 辅助函数
 # ========================================================
 def safe_normalize(v):
@@ -304,31 +357,59 @@ try:
         t_loop_start = time.perf_counter()
         current_task = EVAL_TASKS[current_task_idx]
 
-        # -------- A. 非阻塞读取最新视觉结果 --------
-        try:
-            cached_vision = vision_queue.get_nowait()
-        except queue.Empty:
-            pass  # 用上一帧缓存，控制频率不被视觉绑架
-
         t_now = time.time()
         task_elapsed = t_now - task_start_time
 
-        # -------- B. 使用缓存的视觉数据 --------
+        # -------- B. 使用缓存的视觉数据 + 卡尔曼滤波 --------
+        # 非阻塞读取最新视觉结果（可能没有新数据）
+        try:
+            cached_vision = vision_queue.get_nowait()
+        except queue.Empty:
+            cached_vision = None
+
         if cached_vision is not None:
-            hand_positions = cached_vision.hand_positions
+            # 如果拿到了新画面，首先进行物理时间推演
+            if last_vision_time is not None:
+                dt_since_last = t_now - last_vision_time
+                hand_kalman.advance_and_predict(dt_since_last)
+
+            # 🌟 [核心修复]：只有在真正检测到手的时候，才进行测量 Update！
+            if cached_vision.hand_detected:
+                hand_kalman.update(cached_vision.hand_env)
+
+            last_vision_time = t_now
+
+            # 更新其他视觉信息
             robot_trajectory = cached_vision.robot_trajectory
             pixel_per_cm = cached_vision.pixel_per_cm
             undistorted_frame = cached_vision.undistorted_frame
 
-            position_hand_env = cached_vision.hand_env
-            inst_vel = 0.0
-            dt_vision = max(t_now - last_control_time, 0.01)
+        elif last_vision_time is not None:
+            # 无新视觉：用卡尔曼预测填补间隔
+            dt_since_vision = t_now - last_vision_time
+            hand_kalman.advance_and_predict(dt_since_vision)
+            last_vision_time = t_now
 
-            if len(hand_positions) > 0:
-                hand_move = position_hand_env - last_hand_env
-                inst_vel = np.linalg.norm(hand_move) / dt_vision
-                hand_history_buffer.append(hand_move)
-                last_hand_env = position_hand_env.copy()
+        # 🌟 从卡尔曼滤波器中提取出【绝对平滑】的当前位置和速度
+        position_hand_env = np.array([hand_kalman.x[0], hand_kalman.x[1]], dtype=np.float32)
+        vel_x, vel_y = hand_kalman.x[2], hand_kalman.x[3]
+
+        # 限制手部预测坐标不要飞出桌子外
+        margin = 0.3
+        position_hand_env[0] = np.clip(position_hand_env[0], margin, w_env - margin)
+        position_hand_env[1] = np.clip(position_hand_env[1], margin, h_env - margin)
+
+        dt_for_vel = max(t_now - (last_vision_time or t_now), 0.001)
+        inst_vel = np.linalg.norm([vel_x, vel_y])
+
+        # 用真实卡尔曼速度更新历史特征
+        hand_history_buffer.append(np.array([vel_x, vel_y]) * (1.0 / CONTROL_FREQ))
+        last_hand_env = position_hand_env.copy()
+
+        hand_positions = cached_vision.hand_positions if cached_vision is not None else []
+        robot_trajectory = cached_vision.robot_trajectory if cached_vision is not None else []
+        pixel_per_cm = cached_vision.pixel_per_cm if cached_vision is not None else 10.0
+        undistorted_frame = cached_vision.undistorted_frame if cached_vision is not None else None
 
         # -------- C. 获取机器人位置 --------
         *position_robot_world, _, _, _, _ = robot_control.get_robot_pose()
