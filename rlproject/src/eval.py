@@ -38,15 +38,19 @@ from camera_calibration.camera_calibration import CameraCalibration
 from robot_control.ur_control import URControl
 from cv.hand_detect import HandDetection
 from cv.get_workspace import get_workspace
+from callbacks.trajectory_debug_callback import TrajectoryDebugCallback
 
 # ========================================================
 # 1. 系统与测评参数配置
 # ========================================================
 w_env, h_env = 15, 10
-CONTROL_FREQ = 25.0
+CONTROL_FREQ = 15
 RX_C, RY_C, RZ_C = 0.193, 0.067, 5.3
 
-EVAL_TASKS = ['Sprint', 'Tracking', 'LeagueGame', 'Boundary']
+STRIDE = 0.3
+
+# EVAL_TASKS = ['Sprint', 'Tracking', 'LeagueGame', 'Boundary']
+EVAL_TASKS = ['LeagueGame']
 current_task_idx = 0
 
 eval_results = {
@@ -85,7 +89,7 @@ class HandTracker:
                    越大 → 速度变化越平滑，但对突然转向响应越慢
                    越小 → 响应快，但速度估计抖动大
         """
-        self.pos = np.array([w_env / 2, h_env / 2], dtype=np.float32)
+        self.pos = np.array([w_env*3/ 4, h_env / 3], dtype=np.float32)
         self.vel = np.zeros(2, dtype=np.float32)
         self.last_vision_time = None
         self.w_env = w_env
@@ -226,14 +230,14 @@ pygame.init()
 screen = pygame.display.set_mode((int(10 * 50 * 1.5), int(10 * 50)))
 
 print("[初始化] 加载视觉模型...")
-cv_model = YOLO(r'C:\Users\admin\Desktop\huifeng\rlproject\src\runs\detect\train3\weights\best.onnx')
+cv_model = YOLO(r'C:\Users\admin\Desktop\huifeng\RL\rlproject\src\runs\detect\train3\weights\best.onnx')
 cali = CameraCalibration()
 
 print("[初始化] 连接机械臂...")
 robot_control = URControl("192.168.1.2")
 
 print("[初始化] 加载 RL 决策模型...")
-rl_model_path = r"C:\Users\admin\Desktop\huifeng\RL\src\logs\ablation_study_0409_0922\2_MLP_LSTM\best_model.zip"
+rl_model_path = r"C:\Users\admin\Desktop\huifeng\RL\src\logs\dual_iterative_0509_0945\iteration_10\robot\robot\best_model.zip"
 try:
     rl_model = PPO.load(rl_model_path, custom_objects={'learning_rate': 0.0, 'optimizer_class': None})
 except Exception as e:
@@ -265,6 +269,15 @@ vision_thread = VisionThread(
     result_queue=vision_queue
 )
 vision_thread.start()
+
+# ========================================================
+# 6.1 初始化轨迹记录 Callback
+# ========================================================
+trajectory_callback = TrajectoryDebugCallback(
+    save_dir=os.path.join(_rl_root, "debug_trajectories"),
+    episode_id=time.strftime("%Y%m%d_%H%M%S")
+)
+trajectory_callback.reset()
 
 # ========================================================
 # 7. 初始化 Dead Reckoning 追踪器
@@ -374,6 +387,12 @@ try:
         ], dtype=np.float32)
         dist_hand_robot = np.linalg.norm(position_robot_env - position_hand_env)
 
+        # -------- B.1 记录轨迹 (Trajectory Debug Callback) --------
+        trajectory_callback.record_step(
+            robot_pos=position_robot_env.copy(),
+            hand_pos=position_hand_env.copy()
+        )
+
         # 固定点检测（只在有新帧时更新）
         if cached_undistorted_frame is not None:
             hsv  = cv2.cvtColor(cached_undistorted_frame, cv2.COLOR_BGR2HSV)
@@ -468,12 +487,20 @@ try:
 
             obs_array = np.concatenate((
                 robot_obs, hand_obs, distance_obs, boundary_obs,
-                np.array([0.6]), last_action, flat_history
+                np.array([STRIDE]), last_action, flat_history
             )).astype(np.float32)
 
             action, _ = rl_model.predict(obs_array, deterministic=True)
             last_action = action.copy()
-            action_pixel = action * np.array([w_px / w_env, h_px / h_env]) * 0.6
+            action_pixel = action * np.array([w_px / w_env, h_px / h_env]) * STRIDE
+
+            # print(f"flatenned obs: {flat_history}")
+            print(obs_array)
+            print(f"action: {action}")
+
+            # dist_arm = np.linalg.norm(vec_arm)
+            # to_shoulder = safe_normalize(vec_arm)
+            # blocking_point = hand_obs + to_shoulder * min(1, dist_arm)
 
             # [Fix] 以 virtual_target_pixel 为基准，不无限累积
             desired_virtual_target = virtual_target_pixel.copy()
@@ -552,12 +579,25 @@ try:
             cv2.circle(cached_undistorted_frame,
                        (int(virtual_target_pixel[0]), int(virtual_target_pixel[1])), 10, (255, 0, 255), 2)
             cv2.imshow('M-HECS Evaluation', cached_undistorted_frame)
+            # render.render(obs_array[:2], obs_array[2:4], fixed_point, cached_robot_trajectory, blocking_point.flatten())
 
         key = cv2.waitKey(1)
         if key == ord('q'):
             break
 
         if task_finished:
+            # 保存轨迹数据
+            extra_info = {
+                "task": current_task,
+                "task_elapsed": task_elapsed,
+                "eval_results": eval_results[current_task].copy()
+            }
+            trajectory_callback.save_episode(extra_info=extra_info)
+
+            # 重置轨迹记录，准备下一回合
+            trajectory_callback.episode_id = time.strftime("%Y%m%d_%H%M%S")
+            trajectory_callback.reset()
+
             current_task_idx += 1
             if current_task_idx < len(EVAL_TASKS):
                 center_p = safe_transition_to_center(EVAL_TASKS[current_task_idx])

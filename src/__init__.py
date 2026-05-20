@@ -10,5 +10,6 @@ __all__ = [
     'render_aesthetic',
     'train_robot',
     'train_hand',
-    'create_vec_env'
+    'create_vec_env',
+
 ]
