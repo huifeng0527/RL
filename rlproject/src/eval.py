@@ -586,18 +586,6 @@ try:
             break
 
         if task_finished:
-            # 保存轨迹数据
-            extra_info = {
-                "task": current_task,
-                "task_elapsed": task_elapsed,
-                "eval_results": eval_results[current_task].copy()
-            }
-            trajectory_callback.save_episode(extra_info=extra_info)
-
-            # 重置轨迹记录，准备下一回合
-            trajectory_callback.episode_id = time.strftime("%Y%m%d_%H%M%S")
-            trajectory_callback.reset()
-
             current_task_idx += 1
             if current_task_idx < len(EVAL_TASKS):
                 center_p = safe_transition_to_center(EVAL_TASKS[current_task_idx])
@@ -617,6 +605,11 @@ except Exception as e:
 
 finally:
     print("\n[系统] 测评结束，正在安全关闭...")
+
+    # 保存轨迹数据（脚本结束时一次性保存）
+    if trajectory_callback.step_count > 0:
+        trajectory_callback.save_episode()
+
     vision_thread.stop()
     vision_thread.join(timeout=2.0)
     if 'robot_control' in locals():
