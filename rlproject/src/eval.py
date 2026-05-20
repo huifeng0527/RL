@@ -44,7 +44,7 @@ from callbacks.trajectory_debug_callback import TrajectoryDebugCallback
 # 1. 系统与测评参数配置
 # ========================================================
 w_env, h_env = 15, 10
-CONTROL_FREQ = 15
+CONTROL_FREQ = 20
 RX_C, RY_C, RZ_C = 0.193, 0.067, 5.3
 
 STRIDE = 0.3
@@ -274,7 +274,6 @@ vision_thread.start()
 # 6.1 初始化轨迹记录 Callback
 # ========================================================
 trajectory_callback = TrajectoryDebugCallback(
-    save_dir=os.path.join(_rl_root, "debug_trajectories"),
     episode_id=time.strftime("%Y%m%d_%H%M%S")
 )
 trajectory_callback.reset()

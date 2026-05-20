@@ -248,7 +248,7 @@ def interactive_playback(data, grid_size=10, cell_size=50):
         if playing[0]:
             current_idx[0] = (current_idx[0] + 1) % n_steps
             update_frame()
-        fig.canvas.callbacks.CallbackRegistry.started = False  # workaround
+        # fig.canvas.callbacks.CallbackRegistry.started = False  # workaround
         try:
             fig.canvas.get_tk_widget().after(50, animate)
         except Exception:
