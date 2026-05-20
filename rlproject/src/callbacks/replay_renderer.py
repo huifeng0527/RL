@@ -218,7 +218,7 @@ def interactive_playback(data, grid_size=10, cell_size=50):
     info_text = ax.text(0.02, 0.95, '', transform=ax.transAxes,
                         fontsize=11, fontfamily='monospace', verticalalignment='top')
 
-    playing = [True]  # mutable so nested function can modify
+    playing = [True]
     current_idx = [0]
 
     def update_frame():
@@ -248,7 +248,11 @@ def interactive_playback(data, grid_size=10, cell_size=50):
         if playing[0]:
             current_idx[0] = (current_idx[0] + 1) % n_steps
             update_frame()
-        fig.canvas_manager.window.after(50, animate)
+        fig.canvas.callbacks.CallbackRegistry.started = False  # workaround
+        try:
+            fig.canvas.get_tk_widget().after(50, animate)
+        except Exception:
+            plt.close()
 
     fig.canvas.mpl_connect('key_press_event', on_key)
     update_frame()
