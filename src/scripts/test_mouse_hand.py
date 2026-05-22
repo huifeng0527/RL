@@ -72,8 +72,8 @@ def test_with_mouse(model_path=None, max_steps=1000, fps=60):
 
     while running:
         obs, info = env.reset()
-        env.stride_robot = 0.3
-        env.stride_hand = 0.3
+        env.stride_robot = 0.6
+        env.stride_hand = 0.1
         episode_count += 1
         steps = 0
         total_reward = 0
@@ -175,9 +175,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Test robot with mouse-controlled hand')
     parser.add_argument('--model', type=str, default=None,
                         help='Path to trained robot model (PPO)')
-    parser.add_argument('--steps', type=int, default=1000,
+    parser.add_argument('--steps', type=int, default=10000,
                         help='Max steps per episode')
-    parser.add_argument('--fps', type=int, default=8,
+    parser.add_argument('--fps', type=int, default=20,
                         help='Target frames per second (default: 60)')
 
     args = parser.parse_args()

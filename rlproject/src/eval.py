@@ -1,16 +1,20 @@
 """
-M-HECS Evaluation System - 2-Thread Decoupled Architecture
+M-HECS Evaluation System - 3-Thread Decoupled Architecture
 =========================================================
-Vision Thread (~10-15fps): cap.read() → undistort → YOLO → MediaPipe → queue
-Control Thread (25Hz):      queue.get_nowait() → PPO → servo_robot → render
+Vision Thread  (~15fps):  cap.read() → undistort → YOLO → MediaPipe → vision_queue
+RL Thread      (~30Hz):   obs_build → PPO.predict → action_queue
+Control Thread (125Hz):   latest_action + task_logic → servo_robot（主线程）
 
 修改记录:
-- [Fix] 用 Dead Reckoning 替换卡尔曼滤波（视觉准确，无需噪声滤波）
-- [Fix] Queue 清旧帧逻辑修复（get 再 put）
-- [Fix] LeagueGame desired_virtual_target 不再无限累积
-- [Fix] obs_array 去掉 last_action，维度与训练保持一致
-- [Fix] Tracking shape_name 在 task_elapsed>=20 时不再未定义
-- [Fix] undistorted_frame 为 None 时跳过 putText 和渲染
+- [Arch] 3线程解耦：RL推理从控制线程分离，控制频率从~50Hz → 125Hz
+- [Arch] HandTracker 加锁保证 Vision/RL 两线程并发安全
+- [Arch] 控制层重复上一帧 action（queue 无新数据时沿用 last_action_pixel）
+- [Arch] 渲染限速至 ~15Hz，不占控制线程时间
+- [Fix]  用 Dead Reckoning 替换卡尔曼滤波
+- [Fix]  Queue 清旧帧逻辑修复（get 再 put）
+- [Fix]  LeagueGame desired_virtual_target 不再无限累积
+- [Fix]  Tracking shape_name 在 task_elapsed>=20 时不再未定义
+- [Fix]  undistorted_frame 为 None 时跳过 putText 和渲染
 """
 import traceback
 import numpy as np
@@ -43,8 +47,10 @@ from callbacks.trajectory_debug_callback import TrajectoryDebugCallback
 # ========================================================
 # 1. 系统与测评参数配置
 # ========================================================
-w_env, h_env = 15, 10
-CONTROL_FREQ = 20
+w_env, h_env  = 15, 10
+CONTROL_FREQ  = 125          # 控制线程目标频率 Hz
+RL_FREQ       = 30           # RL 推理线程目标频率 Hz
+RENDER_EVERY  = 8            # 控制线程每 N 帧渲染一次（125/8 ≈ 15Hz）
 RX_C, RY_C, RZ_C = 0.193, 0.067, 5.3
 
 STRIDE = 0.3
@@ -66,65 +72,60 @@ eval_results = {
 @dataclass
 class VisionResult:
     hand_positions:     list        # [(cx, cy), ...] 像素坐标
-    hand_detected:      bool        # 是否真正检测到手
+    hand_detected:      bool
     robot_trajectory:   list        # [(cx, cy), ...] 机器人轨迹像素坐标
-    hand_env:           np.ndarray  # hand 环境坐标 (2,)，仅 hand_detected=True 时有效
+    hand_env:           np.ndarray  # hand 环境坐标 (2,)
     pixel_per_cm:       float
     undistorted_frame:  np.ndarray
 
 
 # ========================================================
-# 3. Dead Reckoning 手部追踪器
-#    视觉基本准确，只是帧率不够 → 直接信任视觉，帧间匀速外推
+# 3. Dead Reckoning 手部追踪器（线程安全版）
+#    Vision Thread 写（update_vision）
+#    RL Thread     读（predict / velocity）
+#    两处并发 → 加锁
 # ========================================================
 class HandTracker:
-    """
-    Dead Reckoning 手部追踪器。
-    - 有视觉帧：直接用视觉位置，同时估算速度
-    - 无视觉帧：用上一帧速度线性外推当前位置
-    """
     def __init__(self, w_env=15, h_env=10, vel_alpha=0.6):
-        """
-        vel_alpha: 速度低通滤波系数 (0~1)
-                   越大 → 速度变化越平滑，但对突然转向响应越慢
-                   越小 → 响应快，但速度估计抖动大
-        """
-        self.pos = np.array([w_env*3/ 4, h_env / 3], dtype=np.float32)
-        self.vel = np.zeros(2, dtype=np.float32)
+        self._lock = threading.Lock()
+        self.pos  = np.array([w_env * 3 / 4, h_env / 3], dtype=np.float32)
+        self.vel  = np.zeros(2, dtype=np.float32)
         self.last_vision_time = None
-        self.w_env = w_env
-        self.h_env = h_env
+        self.w_env     = w_env
+        self.h_env     = h_env
         self.vel_alpha = vel_alpha
 
     def update_vision(self, new_pos: np.ndarray, t_now: float):
-        """
-        有视觉帧且检测到手时调用。
-        直接信任视觉位置，用相邻帧差分估算速度（带低通滤波）。
-        """
+        """Vision Thread 调用：直接信任视觉位置，差分估算速度（带低通滤波）。"""
         new_pos = np.array(new_pos, dtype=np.float32)
-        if self.last_vision_time is not None:
-            dt = t_now - self.last_vision_time
-            if dt > 1e-3:
-                raw_vel = (new_pos - self.pos) / dt
-                # 低通滤波：平滑速度突变（手突然转向时不让速度估计飞掉）
-                self.vel = self.vel_alpha * self.vel + (1 - self.vel_alpha) * raw_vel
-        self.pos = new_pos.copy()
-        self.last_vision_time = t_now
+        with self._lock:
+            if self.last_vision_time is not None:
+                dt = t_now - self.last_vision_time
+                if dt > 1e-3:
+                    raw_vel = (new_pos - self.pos) / dt
+                    self.vel = self.vel_alpha * self.vel + (1 - self.vel_alpha) * raw_vel
+            self.pos = new_pos.copy()
+            self.last_vision_time = t_now
 
     def predict(self, t_now: float) -> np.ndarray:
-        """
-        每个控制周期都调用，返回当前时刻的手部位置估计。
-        没有视觉帧时：pos + vel * dt（匀速外推）
-        """
-        if self.last_vision_time is None:
-            # 视觉线程还没给过数据，返回初始位置
-            return self.pos.copy()
-        dt = t_now - self.last_vision_time
-        predicted = self.pos + self.vel * dt
-        # 防止外推出边界
+        """RL Thread / Control Thread 调用：匀速外推当前手部位置。"""
+        with self._lock:
+            if self.last_vision_time is None:
+                return self.pos.copy()
+            pos = self.pos.copy()
+            vel = self.vel.copy()
+            lvt = self.last_vision_time
+        # 锁外计算
+        dt        = t_now - lvt
+        predicted = pos + vel * dt
         predicted[0] = np.clip(predicted[0], 0.3, self.w_env - 0.3)
         predicted[1] = np.clip(predicted[1], 0.3, self.h_env - 0.3)
         return predicted.astype(np.float32)
+
+    @property
+    def velocity(self) -> np.ndarray:
+        with self._lock:
+            return self.vel.copy()
 
 
 # ========================================================
@@ -133,18 +134,18 @@ class HandTracker:
 class VisionThread(threading.Thread):
     def __init__(self, cap, cali, cv_model, w_px, h_px, w_env, h_env, result_queue):
         super().__init__(daemon=True)
-        self.cap = cap
-        self.cali = cali
-        self.cv_model = cv_model
-        self.w_px = w_px
-        self.h_px = h_px
-        self.w_env = w_env
-        self.h_env = h_env
-        self.result_queue = result_queue
+        self.cap           = cap
+        self.cali          = cali
+        self.cv_model      = cv_model
+        self.w_px          = w_px
+        self.h_px          = h_px
+        self.w_env         = w_env
+        self.h_env         = h_env
+        self.result_queue  = result_queue
         self.hand_detector = HandDetection()
-        self.running = True
-        self.frame_count = 0
-        self._fps = 0.0
+        self.running       = True
+        self.frame_count   = 0
+        self._fps          = 0.0
         self._last_fps_time = time.perf_counter()
 
     def run(self):
@@ -161,7 +162,7 @@ class VisionThread(threading.Thread):
 
             # YOLO 检测机器人
             robot_trajectory = []
-            pixel_per_cm = 10.0
+            pixel_per_cm     = 10.0
             results = self.cv_model.predict(undistorted_frame, conf=0.7,
                                             save=False, imgsz=640, verbose=False)
             for r in results:
@@ -171,7 +172,7 @@ class VisionThread(threading.Thread):
                         continue
                     cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
                     robot_trajectory.append((int(cx), int(cy)))
-                    pixel_per_cm = ((x2 - x1) + (y2 - y1)) / 2 / 2  # [Fix] 原公式混淆了x/y轴
+                    pixel_per_cm = ((x2 - x1) + (y2 - y1)) / 2 / 2
 
             # MediaPipe 手部检测
             undistorted_frame, hand_positions = self.hand_detector.process_frame(undistorted_frame)
@@ -200,12 +201,12 @@ class VisionThread(threading.Thread):
                 undistorted_frame=undistorted_frame
             )
 
-            # [Fix] 非阻塞写入：队列满时先 get 丢掉旧帧，再 put 新帧
+            # 非阻塞写入：队列满时先 get 丢掉旧帧，再 put 新帧
             try:
                 self.result_queue.put_nowait(result)
             except queue.Full:
-                self.result_queue.get_nowait()       # 取出旧帧丢掉
-                self.result_queue.put_nowait(result) # 放入新帧
+                self.result_queue.get_nowait()
+                self.result_queue.put_nowait(result)
 
             # FPS 统计
             self.frame_count += 1
@@ -224,14 +225,99 @@ class VisionThread(threading.Thread):
 
 
 # ========================================================
-# 5. 硬件与模型初始化
+# 5. RL Inference Thread（新增）
+#    职责：obs 构建 + PPO.predict → action_queue
+#    不发任何 servo 指令
+# ========================================================
+class RLInferenceThread(threading.Thread):
+    def __init__(self, rl_model, hand_tracker, robot_control, cali,
+                 action_queue, w_env, h_env, w_px, h_px):
+        super().__init__(daemon=True)
+        self.rl_model      = rl_model
+        self.hand_tracker  = hand_tracker
+        self.robot_control = robot_control
+        self.cali          = cali
+        self.action_queue  = action_queue
+        self.w_env = w_env
+        self.h_env = h_env
+        self.w_px  = w_px
+        self.h_px  = h_px
+        self.running = True
+
+        # RL 线程自身状态
+        self.last_action         = np.zeros(2, dtype=np.float32)
+        self.hand_history_buffer = deque([np.zeros(2)] * 16, maxlen=16)
+        self._dt = 1.0 / RL_FREQ   # 约 33ms
+
+    def run(self):
+        print("[RLThread] 启动")
+        while self.running:
+            t0    = time.perf_counter()
+            t_now = time.time()
+
+            # 手部位置（Dead Reckoning 预测）
+            position_hand_env = self.hand_tracker.predict(t_now)
+            vel               = self.hand_tracker.velocity
+            self.hand_history_buffer.append(vel * self._dt)
+
+            # 机器人位置（RL 线程自己读，保证 obs 是当前时刻最新值）
+            *pos_world, _, _, _, _ = self.robot_control.get_robot_pose()
+            robot_pixel        = self.cali.world_to_pixel(pos_world)
+            position_robot_env = np.array([
+                robot_pixel[0] * self.w_env / self.w_px,
+                robot_pixel[1] * self.h_env / self.h_px
+            ], dtype=np.float32)
+
+            dist_hand_robot = float(np.linalg.norm(position_robot_env - position_hand_env))
+            boundary_obs    = np.array([
+                position_robot_env[0], self.w_env - position_robot_env[0],
+                position_robot_env[1], self.h_env - position_robot_env[1]
+            ], dtype=np.float32)
+            flat_history = np.array(self.hand_history_buffer).flatten()
+
+            obs_array = np.concatenate((
+                position_robot_env,
+                position_hand_env,
+                [dist_hand_robot],
+                boundary_obs,
+                [STRIDE],
+                self.last_action,
+                flat_history
+            )).astype(np.float32)
+
+            action, _ = self.rl_model.predict(obs_array, deterministic=True)
+            self.last_action = action.copy()
+
+            print(f"[RLThread] obs={obs_array} | action={action}")
+
+            # 非阻塞写入 action_queue（丢弃旧 action）
+            try:
+                self.action_queue.put_nowait(action)
+            except queue.Full:
+                self.action_queue.get_nowait()
+                self.action_queue.put_nowait(action)
+
+            # 频率锁定（目标 RL_FREQ Hz）
+            elapsed    = time.perf_counter() - t0
+            sleep_time = self._dt - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
+        print("[RLThread] 退出")
+
+    def stop(self):
+        self.running = False
+
+
+# ========================================================
+# 6. 硬件与模型初始化
 # ========================================================
 pygame.init()
 screen = pygame.display.set_mode((int(10 * 50 * 1.5), int(10 * 50)))
 
 print("[初始化] 加载视觉模型...")
 cv_model = YOLO(r'C:\Users\admin\Desktop\huifeng\RL\rlproject\src\runs\detect\train3\weights\best.onnx')
-cali = CameraCalibration()
+cali     = CameraCalibration()
 
 print("[初始化] 连接机械臂...")
 robot_control = URControl("192.168.1.2")
@@ -260,9 +346,16 @@ h_px, w_px = undistorted_frame.shape[:2]
 render = EnvironmentRenderer(grid_size=10, cell_size=50)
 
 # ========================================================
-# 6. 启动 Vision Thread
+# 7. 线程间通信队列 & 共享对象
 # ========================================================
-vision_queue = queue.Queue(maxsize=1)
+vision_queue = queue.Queue(maxsize=1)   # VisionThread → Control Thread
+action_queue = queue.Queue(maxsize=1)   # RLThread     → Control Thread
+
+hand_tracker = HandTracker(w_env=w_env, h_env=h_env, vel_alpha=0.6)
+
+# ========================================================
+# 8. 启动子线程（顺序：Vision → 等第一帧 → RL → 等第一个action）
+# ========================================================
 vision_thread = VisionThread(
     cap=cap, cali=cali, cv_model=cv_model,
     w_px=w_px, h_px=h_px, w_env=w_env, h_env=h_env,
@@ -270,8 +363,26 @@ vision_thread = VisionThread(
 )
 vision_thread.start()
 
+print("[初始化] 等待第一帧视觉数据...")
+first_vision = vision_queue.get(timeout=10.0)
+if first_vision.hand_detected:
+    hand_tracker.update_vision(first_vision.hand_env, time.time())
+vision_queue.put_nowait(first_vision)  # 塞回去，控制线程第一帧可用
+
+rl_thread = RLInferenceThread(
+    rl_model=rl_model, hand_tracker=hand_tracker,
+    robot_control=robot_control, cali=cali,
+    action_queue=action_queue,
+    w_env=w_env, h_env=h_env, w_px=w_px, h_px=h_px
+)
+rl_thread.start()
+
+print("[初始化] 等待第一个 RL action...")
+first_action = action_queue.get(timeout=10.0)
+action_queue.put_nowait(first_action)  # 塞回去
+
 # ========================================================
-# 6.1 初始化轨迹记录 Callback
+# 9. 初始化轨迹记录 Callback
 # ========================================================
 trajectory_callback = TrajectoryDebugCallback(
     episode_id=time.strftime("%Y%m%d_%H%M%S")
@@ -279,12 +390,7 @@ trajectory_callback = TrajectoryDebugCallback(
 trajectory_callback.reset()
 
 # ========================================================
-# 7. 初始化 Dead Reckoning 追踪器
-# ========================================================
-hand_tracker = HandTracker(w_env=w_env, h_env=h_env, vel_alpha=0.6)
-
-# ========================================================
-# 8. 辅助函数
+# 10. 辅助函数
 # ========================================================
 def safe_normalize(v):
     norm = np.linalg.norm(v)
@@ -300,7 +406,7 @@ def safe_transition_to_center(task_name):
     robot_control.rtde_c.servoStop()
     center_pixel = np.array([w_px / 2, h_px / 2])
     center_world = cali.pixel_to_world(center_pixel.astype(int))
-    target_pose = [center_world[0], center_world[1], 0.116, RX_C, RY_C, RZ_C]
+    target_pose  = [center_world[0], center_world[1], 0.116, RX_C, RY_C, RZ_C]
     robot_control.rtde_c.moveL(target_pose, 0.2, 0.2, asynchronous=False)
     for i in range(3, 0, -1):
         print(f">>> 请受试者准备，{i} 秒后开始...")
@@ -323,76 +429,71 @@ ideal_trajectories = {
 }
 
 # ========================================================
-# 9. 主控制循环 (25Hz)
+# 11. 主控制循环 (125Hz) —— 精简版，只负责 servo 指令
+#     RL 推理已移至 RLInferenceThread，控制层重复上一帧 action
 # ========================================================
 try:
     center_pixel = safe_transition_to_center(EVAL_TASKS[current_task_idx])
 
-    virtual_target_pixel  = center_pixel.copy()
+    virtual_target_pixel   = center_pixel.copy()
     desired_virtual_target = center_pixel.copy()
     MAX_SAFE_STRIDE = 0.6
 
-    hand_history_buffer = deque([np.zeros(2)] * 16, maxlen=16)
-    fixed_point = [10, 10]
-
-    task_start_time  = time.time()
+    fixed_point    = [10, 10]
+    task_start_time   = time.time()
     last_control_time = time.time()
-    task_elapsed = 0.0
+    task_elapsed   = 0.0
 
-    sprint_target_env    = np.array([3.0, 3.0])
-    sprint_catch_count   = 0
+    sprint_target_env        = np.array([3.0, 3.0])
+    sprint_catch_count       = 0
     sprint_target_spawn_time = time.time()
-    last_action = np.zeros(2, dtype=np.float32)  # 上一次 RL 输出的 action
 
-    # 渲染用缓存帧（避免无新帧时 imshow 崩溃）
+    # 渲染缓存
     cached_undistorted_frame = None
     cached_robot_trajectory  = []
     cached_pixel_per_cm      = 10.0
+    render_counter           = 0
+
+    # ← 控制层核心：记住上一帧 action，queue 无新数据时沿用
+    last_action_pixel = np.zeros(2, dtype=np.float32)
 
     while current_task_idx < len(EVAL_TASKS):
         t_loop_start = time.perf_counter()
         current_task = EVAL_TASKS[current_task_idx]
-        t_now = time.time()
+        t_now        = time.time()
         task_elapsed = t_now - task_start_time
 
         # -------- A. 非阻塞读取最新视觉结果 --------
         try:
             new_vision = vision_queue.get_nowait()
-        except queue.Empty:
-            new_vision = None
-
-        if new_vision is not None:
-            # [Dead Reckoning] 有新帧且检测到手 → 直接信任，更新位置和速度
             if new_vision.hand_detected:
                 hand_tracker.update_vision(new_vision.hand_env, t_now)
-            # 更新渲染缓存
             cached_undistorted_frame = new_vision.undistorted_frame
             cached_robot_trajectory  = new_vision.robot_trajectory
             cached_pixel_per_cm      = new_vision.pixel_per_cm
+        except queue.Empty:
+            pass
 
-        # [Dead Reckoning] 无论有没有新帧，每个控制周期都调用 predict 外推当前位置
+        # Dead Reckoning：每个控制周期都调用 predict 外推手部位置
         position_hand_env = hand_tracker.predict(t_now)
-        inst_vel = float(np.linalg.norm(hand_tracker.vel))
+        inst_vel = float(np.linalg.norm(hand_tracker.velocity))
 
-        # 用卡尔曼速度更新历史特征（位移向量 = vel * dt）
-        hand_history_buffer.append(hand_tracker.vel * (1.0 / CONTROL_FREQ))
-
-        # -------- B. 获取机器人位置 --------
+        # -------- B. 获取机器人位置（用于抓取判断 & 渲染） --------
         *position_robot_world, _, _, _, _ = robot_control.get_robot_pose()
-        real_robot_pixel  = cali.world_to_pixel(position_robot_world)
+        real_robot_pixel   = cali.world_to_pixel(position_robot_world)
         position_robot_env = np.array([
             real_robot_pixel[0] * w_env / w_px,
             real_robot_pixel[1] * h_env / h_px
         ], dtype=np.float32)
         dist_hand_robot = np.linalg.norm(position_robot_env - position_hand_env)
 
-        # -------- B.1 记录轨迹 (Trajectory Debug Callback) --------
+        # -------- B.1 记录轨迹 --------
         trajectory_callback.record_step(
             robot_pos=position_robot_env.copy(),
             hand_pos=position_hand_env.copy()
         )
 
-        # 固定点检测（只在有新帧时更新）
+        # 固定点检测
         if cached_undistorted_frame is not None:
             hsv  = cv2.cvtColor(cached_undistorted_frame, cv2.COLOR_BGR2HSV)
             mask = cv2.inRange(hsv, np.array([0, 30, 60]), np.array([20, 150, 255]))
@@ -440,7 +541,7 @@ try:
         elif current_task == 'Tracking':
             time_left = 20 - task_elapsed
 
-            # [Fix] 先确定 shape_name，再做 putText，避免 >= 20s 时未定义
+            # [Fix] 先确定 shape_name，再做 putText
             if task_elapsed < 10.0:
                 shape_name = 'Circle'
                 t_c = task_elapsed * 1.2
@@ -450,7 +551,7 @@ try:
                 shape_name = 'Figure-8'
                 t_8 = (task_elapsed - 10.0) * 1.2
                 target_x = w_env / 2 + (w_env / 3) * math.sin(t_8)
-                target_y = h_env / 2 + (h_env / 3) * math.sin(t_8) * math.cos(t_8)
+                target_y = h_env / 2 + (w_env / 3) * math.sin(t_8) * math.cos(t_8)
 
             if cached_undistorted_frame is not None:
                 cv2.putText(cached_undistorted_frame,
@@ -460,10 +561,9 @@ try:
             desired_virtual_target[0] = target_x * w_px / w_env
             desired_virtual_target[1] = target_y * h_px / h_env
 
-            path_points = ideal_trajectories[shape_name]
+            path_points       = ideal_trajectories[shape_name]
             distances_to_path = np.linalg.norm(path_points - position_hand_env, axis=1)
             cross_track_error = float(np.min(distances_to_path))
-
             eval_results['Tracking']['rmse_list'].append(cross_track_error)
             eval_results['Tracking']['jerk_list'].append(inst_vel)
 
@@ -477,33 +577,18 @@ try:
                             f"Task 3: Catching ({30 - task_elapsed:.1f}s)",
                             (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 165, 255), 3)
 
-            robot_obs    = position_robot_env
-            hand_obs     = position_hand_env
-            distance_obs = np.array([dist_hand_robot], dtype=np.float32)
-            boundary_obs = np.array([robot_obs[0], w_env - robot_obs[0],
-                                     robot_obs[1], h_env - robot_obs[1]], dtype=np.float32)
-            flat_history = np.array(hand_history_buffer).flatten()
-
-            obs_array = np.concatenate((
-                robot_obs, hand_obs, distance_obs, boundary_obs,
-                np.array([STRIDE]), last_action, flat_history
-            )).astype(np.float32)
-
-            action, _ = rl_model.predict(obs_array, deterministic=True)
-            last_action = action.copy()
-            action_pixel = action * np.array([w_px / w_env, h_px / h_env]) * STRIDE
-
-            # print(f"flatenned obs: {flat_history}")
-            print(obs_array)
-            print(f"action: {action}")
-
-            # dist_arm = np.linalg.norm(vec_arm)
-            # to_shoulder = safe_normalize(vec_arm)
-            # blocking_point = hand_obs + to_shoulder * min(1, dist_arm)
+            # 非阻塞读取最新 RL action
+            # queue 有新数据 → 更新 last_action_pixel
+            # queue 空       → 沿用上一帧 last_action_pixel（重复上一帧）
+            try:
+                new_action = action_queue.get_nowait()
+                last_action_pixel = new_action * np.array([w_px / w_env, h_px / h_env]) * STRIDE
+            except queue.Empty:
+                pass  # last_action_pixel 保持不变
 
             # [Fix] 以 virtual_target_pixel 为基准，不无限累积
-            desired_virtual_target = virtual_target_pixel.copy()
-            desired_virtual_target += action_pixel
+            desired_virtual_target  = virtual_target_pixel.copy()
+            desired_virtual_target += last_action_pixel
 
             eval_results['LeagueGame']['dist_list'].append(float(dist_hand_robot))
 
@@ -556,7 +641,6 @@ try:
         max_pixel_step = MAX_SAFE_STRIDE * (w_px / w_env)
         diff_vec   = desired_virtual_target - virtual_target_pixel
         dist_pixel = np.linalg.norm(diff_vec)
-
         if dist_pixel > max_pixel_step:
             virtual_target_pixel += (diff_vec / dist_pixel) * max_pixel_step
         else:
@@ -566,33 +650,35 @@ try:
         target_pose = [target_position_world[0], target_position_world[1], 0.116, RX_C, RY_C, RZ_C]
 
         actual_dt = time.time() - last_control_time
-        safe_dt   = np.clip(actual_dt, 0.01, 0.2)
+        safe_dt   = np.clip(actual_dt, 0.005, 0.1)
         last_control_time = time.time()
 
         robot_control.servo_robot(target_pose, dt=safe_dt)
 
-        # -------- E. 渲染 --------
-        if cached_undistorted_frame is not None:
-            cv2.circle(cached_undistorted_frame,
+        # -------- E. 渲染（限速 ~15Hz，避免 imshow 拖慢控制线程） --------
+        render_counter += 1
+        if render_counter >= RENDER_EVERY and cached_undistorted_frame is not None:
+            render_counter = 0
+            frame_to_show  = cached_undistorted_frame.copy()
+            cv2.circle(frame_to_show,
                        (int(real_robot_pixel[0]), int(real_robot_pixel[1])), 20, (0, 255, 0), -1)
-            cv2.circle(cached_undistorted_frame,
+            cv2.circle(frame_to_show,
                        (int(virtual_target_pixel[0]), int(virtual_target_pixel[1])), 10, (255, 0, 255), 2)
-            cv2.imshow('M-HECS Evaluation', cached_undistorted_frame)
-            # render.render(obs_array[:2], obs_array[2:4], fixed_point, cached_robot_trajectory, blocking_point.flatten())
+            cv2.imshow('M-HECS Evaluation', frame_to_show)
+            if cv2.waitKey(1) == ord('q'):
+                break
 
-        key = cv2.waitKey(1)
-        if key == ord('q'):
-            break
-
+        # -------- F. 任务切换 --------
         if task_finished:
             current_task_idx += 1
             if current_task_idx < len(EVAL_TASKS):
                 center_p = safe_transition_to_center(EVAL_TASKS[current_task_idx])
                 virtual_target_pixel   = center_p.copy()
                 desired_virtual_target = center_p.copy()
-                task_start_time = time.time()
+                last_action_pixel      = np.zeros(2, dtype=np.float32)  # 重置 action
+                task_start_time        = time.time()
 
-        # -------- F. 25Hz 频率锁定 --------
+        # -------- G. 125Hz 频率锁定 --------
         elapsed    = time.perf_counter() - t_loop_start
         sleep_time = (1.0 / CONTROL_FREQ) - elapsed
         if sleep_time > 0:
@@ -605,23 +691,31 @@ except Exception as e:
 finally:
     print("\n[系统] 测评结束，正在安全关闭...")
 
-    # 保存轨迹数据（脚本结束时一次性保存）
+    # 保存轨迹数据
     if trajectory_callback.step_count > 0:
         trajectory_callback.save_episode()
 
-    vision_thread.stop()
-    vision_thread.join(timeout=2.0)
+    # 停止顺序：先停 servo → 停 RL → 停 Vision → 断开硬件
     if 'robot_control' in locals():
         robot_control.rtde_c.servoStop()
         time.sleep(0.5)
+
+    rl_thread.stop()
+    rl_thread.join(timeout=2.0)
+
+    vision_thread.stop()
+    vision_thread.join(timeout=2.0)
+
+    if 'robot_control' in locals():
         robot_control.disconnect()
+
     cap.release()
     cv2.destroyAllWindows()
     pygame.quit()
 
 
 # ========================================================
-# 10. 报告生成
+# 12. 报告生成
 # ========================================================
 import matplotlib.gridspec as gridspec
 
@@ -640,9 +734,9 @@ def generate_radar_report(results):
     avg_rmse = np.mean(results['Tracking']['rmse_list']) if results['Tracking']['rmse_list'] else 2.5
     score_tracking = normalize_score(avg_rmse, bound_0=2, bound_100=0.0)
 
-    survival_t     = results['LeagueGame']['survival_time']
-    dist_list      = results['LeagueGame']['dist_list']
-    avg_game_dist  = np.mean(dist_list) if dist_list else 10.0
+    survival_t    = results['LeagueGame']['survival_time']
+    dist_list     = results['LeagueGame']['dist_list']
+    avg_game_dist = np.mean(dist_list) if dist_list else 10.0
     time_score_normalized = normalize_score(survival_t, bound_0=10, bound_100=2.0)
     dist_score_normalized = normalize_score(avg_game_dist, bound_0=8.0, bound_100=3)
     score_catching = (time_score_normalized * 0.6) + (dist_score_normalized * 0.4)
