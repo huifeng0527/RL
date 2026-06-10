@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { getSessions, getPatients, deleteSession, updateSessionNotes } from '../services/api';
 
@@ -11,11 +11,7 @@ export default function History() {
   const [selectedSession, setSelectedSession] = useState(null);
   const [notesText, setNotesText] = useState('');
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [sessionsRes, patientsRes] = await Promise.all([
         getSessions(),
@@ -30,7 +26,12 @@ export default function History() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => loadData(), 0);
+    return () => clearTimeout(timer);
+  }, [loadData]);
 
   const handleDelete = async (sessionId) => {
     if (!confirm('确定要删除这次评估记录吗？关联的录像也会一并删除。')) return;
@@ -77,15 +78,8 @@ export default function History() {
     });
   };
 
-  const getScoreColor = (score) => {
-    if (score === null) return 'text-slate-400';
-    if (score >= 70) return 'text-emerald-600';
-    if (score >= 40) return 'text-amber-600';
-    return 'text-red-600';
-  };
-
   const getScoreBg = (score) => {
-    if (score === null) return 'bg-slate-100 text-slate-500';
+    if (score == null) return 'bg-slate-100 text-slate-500';
     if (score >= 70) return 'bg-emerald-50 text-emerald-700 border border-emerald-200';
     if (score >= 40) return 'bg-amber-50 text-amber-700 border border-amber-200';
     return 'bg-red-50 text-red-700 border border-red-200';
@@ -166,7 +160,7 @@ export default function History() {
                       <p className="text-sm text-slate-500">{formatDate(session.created_at)}</p>
                     </div>
                   </div>
-                  {session.total_score !== null ? (
+                  {session.total_score != null ? (
                     <div className={`px-3 py-1.5 rounded-xl text-sm font-bold ${getScoreBg(session.total_score)}`}>
                       {session.total_score.toFixed(1)}
                     </div>

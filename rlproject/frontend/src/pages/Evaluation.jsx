@@ -1,18 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { getSessionDetail, startEvaluation, stopEvaluation, createEvalSocket } from '../services/api';
+import { EVALUATION_TASKS as TASKS, getTaskScore } from '../constants/evaluationTasks';
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 
-const TASKS = [
-  { id: 'sprint', name: 'Sprint', subtitle: '反应与爆发力', icon: 'M13 10V3L4 14h7v7l9-11h-7z', color: 'blue', gradient: 'from-blue-500 to-blue-600' },
-  { id: 'tracking', name: 'Tracking', subtitle: '多轨迹追踪', icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z', color: 'emerald', gradient: 'from-emerald-500 to-emerald-600' },
-  { id: 'league', name: 'LeagueGame', subtitle: '对抗与安全距离', icon: 'M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z', color: 'orange', gradient: 'from-orange-500 to-orange-600' },
-  { id: 'boundary', name: 'Boundary', subtitle: '活动范围与稳定性', icon: 'M4 5a1 1 0 011-1h14a1 1 0 011 1v14a1 1 0 01-1 1H5a1 1 0 01-1-1V5z M4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6z M16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z', color: 'purple', gradient: 'from-purple-500 to-purple-600' },
-];
+const buildScores = (source) => {
+  const nextScores = Object.fromEntries(TASKS.map((task) => [task.id, getTaskScore(source, task.id, 0)]));
+  nextScores.total = source?.total ?? source?.total_score ?? 0;
+  return nextScores;
+};
 
 export default function Evaluation() {
   const { sessionId } = useParams();
-  const navigate = useNavigate();
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [evalStatus, setEvalStatus] = useState('idle');
@@ -28,99 +27,113 @@ export default function Evaluation() {
   // Use ref for WebSocket to avoid stale closure issues
   const wsRef = useRef(null);
   const abortRef = useRef(null);
+  const frameUrlRef = useRef(null);
+  const timersRef = useRef([]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    loadSession(controller.signal);
-
-    return () => {
-      controller.abort();
-      // Close WebSocket on unmount
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-      // Revoke blob URL to prevent memory leak
-      if (frameUrl) {
-        URL.revokeObjectURL(frameUrl);
-      }
-    };
-  }, [sessionId]);
-
-  const loadSession = async (signal) => {
+  const loadSession = useCallback(async (signal) => {
     try {
       const res = await getSessionDetail(sessionId, { signal });
       setSession(res.data);
-      if (res.data.sprint) {
+      if (res.data.total_score != null || TASKS.some((task) => res.data[task.id])) {
         setResults(res.data);
-        setScores({
-          sprint: res.data.sprint_score || 0,
-          tracking: res.data.tracking_score || 0,
-          league: res.data.league_score || 0,
-          boundary: res.data.boundary_score || 0,
-        });
+        setScores(buildScores(res.data));
       }
     } catch (error) {
       if (error.name === 'CanceledError' || error.name === 'AbortError') return;
       console.error('Failed to load session:', error);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
-  };
+  }, [sessionId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const timer = setTimeout(() => loadSession(controller.signal), 0);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
+      if (frameUrlRef.current) {
+        URL.revokeObjectURL(frameUrlRef.current);
+        frameUrlRef.current = null;
+      }
+    };
+  }, [loadSession]);
 
   const handleWebSocketMessage = useCallback((data) => {
     if (data.type === 'progress') {
       setEvalStatus('running');
       setProgress({ task: data.task, progress: data.progress, message: data.message });
       if (data.fps !== undefined) setFps(data.fps);
-      const taskIndex = TASKS.findIndex(t => t.name === data.task);
+      const taskIndex = Number.isInteger(data.task_index)
+        ? data.task_index - 1
+        : TASKS.findIndex(t => t.name === data.task || t.id === data.task);
       if (taskIndex >= 0) setCurrentTaskIndex(taskIndex);
     } else if (data.type === 'frame') {
-      // Revoke previous blob URL before creating new one
-      setFrameUrl(prev => {
-        if (prev) URL.revokeObjectURL(prev);
-        const blob = new Blob([Uint8Array.from(atob(data.data), c => c.charCodeAt(0))], { type: 'image/jpeg' });
-        return URL.createObjectURL(blob);
-      });
+      if (frameUrlRef.current) URL.revokeObjectURL(frameUrlRef.current);
+      const blob = new Blob([Uint8Array.from(atob(data.data), c => c.charCodeAt(0))], { type: 'image/jpeg' });
+      const nextUrl = URL.createObjectURL(blob);
+      frameUrlRef.current = nextUrl;
+      setFrameUrl(nextUrl);
     } else if (data.type === 'complete') {
       setEvalStatus('complete');
       setCelebrating(true);
-      setTimeout(() => setCelebrating(false), 2000);
-      setTimeout(() => {
+      if (data.scores) {
+        setScores(buildScores(data.scores));
+      }
+      timersRef.current.push(setTimeout(() => setCelebrating(false), 2000));
+      timersRef.current.push(setTimeout(() => {
         if (abortRef.current) {
           loadSession(abortRef.current.signal);
         }
-      }, 100);
+      }, 100));
     } else if (data.type === 'error') {
       setError(data.message);
       setEvalStatus('idle');
     }
-  }, []);
+  }, [loadSession]);
 
   const handleStart = async () => {
     setError(null);
     setEvalStatus('countdown');
 
-    // Close previous WebSocket if exists
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
 
-    const socket = createEvalSocket(handleWebSocketMessage);
+    const socket = createEvalSocket({
+      onMessage: handleWebSocketMessage,
+      onOpen: async () => {
+        try {
+          await startEvaluation(sessionId);
+        } catch (error) {
+          console.error('Failed to start evaluation:', error);
+          setError(error.response?.data?.detail || '启动评估失败');
+          setEvalStatus('idle');
+          socket.close();
+          wsRef.current = null;
+        }
+      },
+      onClose: () => {
+        if (wsRef.current === socket) {
+          wsRef.current = null;
+        }
+      },
+      onError: (error) => {
+        console.error('WebSocket error:', error);
+        setError('实时连接失败');
+        setEvalStatus('idle');
+      },
+    });
     wsRef.current = socket;
-
-    try {
-      await startEvaluation(sessionId);
-    } catch (error) {
-      console.error('Failed to start evaluation:', error);
-      setError('启动评估失败');
-      setEvalStatus('idle');
-      socket.close();
-      wsRef.current = null;
-    }
   };
 
   const handleStop = async () => {
@@ -138,15 +151,52 @@ export default function Evaluation() {
 
   const getRadarData = () => {
     if (!scores) return [];
-    return TASKS.map((t, i) => ({
+    return TASKS.map((t) => ({
       subject: t.name,
-      score: scores[t.id] || 0,
+      score: scores[t.id] ?? 0,
       fullMark: 100
     }));
   };
 
   const getTotalScore = () => {
-    return session?.total_score?.toFixed(1) || '0.0';
+    return (scores?.total ?? session?.total_score ?? 0).toFixed(1);
+  };
+
+  const renderTaskDetails = (task, data) => {
+    if (!data) return null;
+    const entries = Object.entries(data).filter(([, value]) => value !== null && value !== undefined);
+    const numericSummaries = entries
+      .filter(([, value]) => typeof value === 'number' || typeof value === 'boolean')
+      .slice(0, 4);
+    const chartEntry = entries.find(([, value]) => Array.isArray(value) && value.length > 1 && value.every((item) => typeof item === 'number'));
+
+    return (
+      <div key={task.id} className="card-elevated p-6 animate-fade-in-up">
+        <h3 className="text-lg font-bold text-slate-800 mb-4">{task.name} 详情</h3>
+        {numericSummaries.length > 0 && (
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            {numericSummaries.map(([key, value]) => (
+              <div key={key} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                <p className="text-xs text-slate-500 mb-1">{key}</p>
+                <p className="text-lg font-bold text-slate-700">{typeof value === 'boolean' ? (value ? '是' : '否') : value.toFixed(2)}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        {chartEntry ? (
+          <ResponsiveContainer width="100%" height={150}>
+            <LineChart data={chartEntry[1].map((v, i) => ({ t: i + 1, value: v }))}>
+              <XAxis dataKey="t" stroke="#94a3b8" fontSize={10} />
+              <YAxis stroke="#94a3b8" fontSize={10} />
+              <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }} />
+              <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={1.5} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <p className="text-sm text-slate-500">暂无可绘制的时序数据</p>
+        )}
+      </div>
+    );
   };
 
   if (loading) {
@@ -221,7 +271,7 @@ export default function Evaluation() {
                 <div key={task.id} className="flex items-center gap-4">
                   <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center transition-all duration-500 ${
                     isCompleted ? 'bg-emerald-500 text-white' :
-                    isActive ? `bg-gradient-to-br ${task.gradient} text-white shadow-lg shadow-${task.color}-200` :
+                    isActive ? `bg-gradient-to-br ${task.gradient} text-white shadow-lg ${task.shadow}` :
                     'bg-slate-100 text-slate-400'
                   }`}>
                     {isCompleted ? (
@@ -297,12 +347,12 @@ export default function Evaluation() {
                       <span className={`font-semibold text-slate-700`}>{task.name}</span>
                       <span className="text-xs text-slate-400">({task.subtitle})</span>
                     </div>
-                    <span className="font-bold text-slate-800">{(scores[task.id] || 0).toFixed(1)}</span>
+                    <span className="font-bold text-slate-800">{(scores[task.id] ?? 0).toFixed(1)}</span>
                   </div>
                   <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full bg-gradient-to-r ${task.gradient} transition-all duration-700 ease-out`}
-                      style={{ width: `${scores[task.id] || 0}%` }}
+                      style={{ width: `${scores[task.id] ?? 0}%` }}
                     />
                   </div>
                 </div>
@@ -310,106 +360,8 @@ export default function Evaluation() {
             </div>
           </div>
 
-          {/* Sprint Details */}
-          {results?.sprint && (
-            <div className="card-elevated p-6 animate-fade-in-up" style={{ animationDelay: '150ms' }}>
-              <h3 className="text-lg font-bold text-slate-800 mb-4">Sprint 详情</h3>
-              <div className="grid grid-cols-5 gap-3">
-                {results.sprint.catch_times.map((time, i) => (
-                  <div key={i} className="bg-blue-50 rounded-xl p-3 text-center border border-blue-100">
-                    <p className="text-xs text-blue-500 mb-1">第{i + 1}次</p>
-                    <p className="text-lg font-bold text-blue-600">{time.toFixed(2)}s</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Tracking Details */}
-          {results?.tracking && (
-            <div className="card-elevated p-6 animate-fade-in-up" style={{ animationDelay: '200ms' }}>
-              <h3 className="text-lg font-bold text-slate-800 mb-4">Tracking 详情</h3>
-              <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={results.tracking.rmse_list.map((v, i) => ({ t: i + 1, rmse: v }))}>
-                  <XAxis dataKey="t" stroke="#94a3b8" fontSize={12} />
-                  <YAxis stroke="#94a3b8" fontSize={12} />
-                  <Tooltip
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}
-                  />
-                  <Line type="monotone" dataKey="rmse" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 6 }} />
-                </LineChart>
-              </ResponsiveContainer>
-              <div className="mt-3 text-center p-3 bg-emerald-50 rounded-xl">
-                <p className="text-sm text-emerald-600">平均 RMSE: <span className="font-bold">{(results.tracking.rmse_list.reduce((a, b) => a + b, 0) / results.tracking.rmse_list.length).toFixed(3)}</span></p>
-              </div>
-            </div>
-          )}
-
-          {/* League Details */}
-          {results?.league && (
-            <div className="card-elevated p-6 animate-fade-in-up" style={{ animationDelay: '250ms' }}>
-              <h3 className="text-lg font-bold text-slate-800 mb-4">LeagueGame 详情</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className={`rounded-xl p-4 ${results.league.is_caught ? 'bg-red-50 border border-red-100' : 'bg-emerald-50 border border-emerald-100'}`}>
-                  <p className="text-xs text-slate-500 mb-2">结果</p>
-                  <p className={`text-xl font-bold ${results.league.is_caught ? 'text-red-600' : 'text-emerald-600'}`}>
-                    {results.league.is_caught ? '被抓到' : '成功躲避'}
-                  </p>
-                </div>
-                <div className="bg-orange-50 rounded-xl p-4 border border-orange-100">
-                  <p className="text-xs text-slate-500 mb-2">生存时间</p>
-                  <p className="text-xl font-bold text-orange-600">{results.league.survival_time.toFixed(1)}s</p>
-                </div>
-              </div>
-              {results.league.dist_list && results.league.dist_list.length > 0 && (
-                <div className="mt-4 p-4 bg-slate-50 rounded-xl">
-                  <p className="text-xs text-slate-500 mb-2">距离变化</p>
-                  <ResponsiveContainer width="100%" height={100}>
-                    <LineChart data={results.league.dist_list.map((v, i) => ({ t: i + 1, d: v }))}>
-                      <XAxis dataKey="t" hide />
-                      <YAxis stroke="#94a3b8" fontSize={10} width={30} />
-                      <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }} />
-                      <Line type="monotone" dataKey="d" stroke="#f97316" strokeWidth={1.5} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Boundary Details */}
-          {results?.boundary && (
-            <div className="card-elevated p-6 animate-fade-in-up" style={{ animationDelay: '300ms' }}>
-              <h3 className="text-lg font-bold text-slate-800 mb-4">Boundary 详情</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
-                  <p className="text-xs text-slate-500 mb-2">X 轴范围</p>
-                  <p className="text-lg font-bold text-purple-600">
-                    {results.boundary.min_x.toFixed(1)} ~ {results.boundary.max_x.toFixed(1)}
-                  </p>
-                </div>
-                <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
-                  <p className="text-xs text-slate-500 mb-2">Y 轴范围</p>
-                  <p className="text-lg font-bold text-purple-600">
-                    {results.boundary.min_y.toFixed(1)} ~ {results.boundary.max_y.toFixed(1)}
-                  </p>
-                </div>
-              </div>
-              {results.boundary.vel_list && results.boundary.vel_list.length > 0 && (
-                <div className="mt-4 p-4 bg-slate-50 rounded-xl">
-                  <p className="text-xs text-slate-500 mb-2">速度曲线</p>
-                  <ResponsiveContainer width="100%" height={100}>
-                    <LineChart data={results.boundary.vel_list.map((v, i) => ({ t: i + 1, v: v }))}>
-                      <XAxis dataKey="t" hide />
-                      <YAxis stroke="#94a3b8" fontSize={10} width={30} />
-                      <Tooltip contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }} />
-                      <Line type="monotone" dataKey="v" stroke="#a855f7" strokeWidth={1.5} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
-          )}
+          {TASKS.map((task) => renderTaskDetails(task, results?.[task.id]))}
+          {results?.legacy_league && renderTaskDetails({ id: 'legacy_league', name: 'Legacy LeagueGame' }, results.legacy_league)}
         </div>
       )}
 
@@ -423,7 +375,7 @@ export default function Evaluation() {
           </div>
           <h3 className="text-2xl font-bold text-slate-800 mb-3">准备开始评估</h3>
           <p className="text-slate-500 mb-8 max-w-md mx-auto">
-            将依次进行 4 个评估任务：Sprint、Tracking、LeagueGame、Boundary，每个任务将全面评估患者的康复情况
+            将依次进行 {TASKS.length} 个评估任务：{TASKS.map((task) => task.name).join('、')}，每个任务将全面评估患者的康复情况
           </p>
           <button
             onClick={handleStart}

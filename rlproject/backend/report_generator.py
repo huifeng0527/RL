@@ -31,13 +31,15 @@ class ReportGenerator:
         os.makedirs(self.output_dir, exist_ok=True)
 
     def _generate_radar_chart(self, scores: Dict[str, float], output_path: str):
-        """Generate radar chart for 4 evaluation dimensions."""
-        categories = ['Sprint\n(反应)', 'Tracking\n(追踪)', 'League\n(对抗)', 'Boundary\n(边界)']
+        """Generate radar chart for 6 evaluation dimensions."""
+        categories = ['Rapid\nReach', 'Tracking', 'Interception', 'Boundary', 'Rhythm', 'Mirror']
         values = [
-            scores.get('sprint', 0),
-            scores.get('tracking', 0),
-            scores.get('league', 0),
-            scores.get('boundary', 0)
+            scores.get('rapid_reach', scores.get('sprint', 0)),
+            scores.get('continuous_tracking', scores.get('tracking', 0)),
+            scores.get('moving_target_interception', 0),
+            scores.get('adaptive_boundary_challenge', scores.get('boundary', 0)),
+            scores.get('rhythmic_switching', 0),
+            scores.get('mirror_mapping_reach', 0),
         ]
         values += values[:1]  # Close the polygon
 
@@ -69,81 +71,120 @@ class ReportGenerator:
         return max(0.0, min(100.0, score))
 
     def _calculate_scores(self, results: Dict) -> Dict[str, float]:
-        """Calculate normalized scores (0-100) for each task using clinical standard min-max normalization.
-
-        Clinical Standards (from eval.py):
-        - Sprint: avg_catch_time [0.8s, 3.0s] - faster is better
-        - Tracking: avg_rmse [0.0, 2.0] - lower is better
-        - LeagueGame: survival_time [2.0s, 10.0s] (60%) + avg_dist [3.0, 8.0] (40%)
-        - Boundary: area_score (50%) + jerk_score (50%)
-        """
+        """Calculate normalized scores (0-100) for the six-task assessment."""
         scores = {}
 
-        # Task 1: Sprint (Reaction & Explosive Power)
-        # avg_catch_time: 0.8s = best (100), 3.0s = worst (0)
-        if results.get('sprint') and results['sprint'].get('catch_times'):
-            avg_time = np.mean(results['sprint']['catch_times'])
-            scores['sprint'] = self._normalize_score(avg_time, bound_0=2, bound_100=0.8)
+        rapid = results.get('rapid_reach') or results.get('sprint')
+        if rapid:
+            success_rate = np.mean(rapid.get('successes', [])) if rapid.get('successes') else (1.0 if rapid.get('catch_times') else 0.0)
+            avg_move_time = np.mean(rapid.get('movement_times') or rapid.get('catch_times') or [6.0])
+            avg_error = np.mean(rapid.get('endpoint_errors') or [3.0])
+            scores['rapid_reach'] = (
+                self._normalize_score(success_rate, 0.0, 1.0) * 0.45 +
+                self._normalize_score(avg_move_time, 5.0, 1.0) * 0.35 +
+                self._normalize_score(avg_error, 3.0, 0.0) * 0.20
+            )
         else:
-            scores['sprint'] = 0
+            scores['rapid_reach'] = 0
 
-        # Task 2: Tracking (Multi-trajectory Smooth Tracking)
-        # avg_rmse: 0.0 = best (100), 2.0 = worst (0)
-        if results.get('tracking') and results['tracking'].get('rmse_list'):
-            avg_rmse = np.mean(results['tracking']['rmse_list'])
-            scores['tracking'] = self._normalize_score(avg_rmse, bound_0=2.0, bound_100=0.0)
+        tracking = results.get('continuous_tracking') or results.get('tracking')
+        if tracking:
+            rmse = tracking.get('rmse_list', [])
+            avg_rmse = np.mean(rmse) if rmse else tracking.get('mean_error', 2.0) or 2.0
+            loss_rate = tracking.get('target_loss_rate')
+            if loss_rate is None:
+                loss_rate = np.mean(np.array(rmse) > 1.5) if rmse else 1.0
+            jerk_list = tracking.get('jerk_list', [])
+            mean_jerk = np.mean(jerk_list) if jerk_list else 3.0
+            scores['continuous_tracking'] = (
+                self._normalize_score(avg_rmse, 2.0, 0.0) * 0.55 +
+                self._normalize_score(loss_rate, 1.0, 0.0) * 0.25 +
+                self._normalize_score(mean_jerk, 3.0, 0.3) * 0.20
+            )
         else:
-            scores['tracking'] = 0
+            scores['continuous_tracking'] = 0
 
-        # Task 3: LeagueGame (Competition & Cognitive Interception)
-        # Two sub-indicators: survival_time (60%) + avg_dist (40%)
-        if results.get('league'):
-            survival_t = results['league'].get('survival_time', 0)
-            dist_list = results['league'].get('dist_list', [])
-            avg_dist = np.mean(dist_list) if dist_list else 8.0
-
-            # Sub-indicator 3a: survival time (60%)
-            # 2.0s = best (100), 10.0s = worst (0) - faster caught = better
-            time_score = self._normalize_score(survival_t, bound_0=10.0, bound_100=2.0)
-
-            # Sub-indicator 3b: avg distance (40%)
-            # 3.0 = best (100), 8.0 = worst (0) - closer to robot = better
-            dist_score = self._normalize_score(avg_dist, bound_0=8.0, bound_100=4)
-
-            scores['league'] = time_score * 0.6 + dist_score * 0.4
+        interception = results.get('moving_target_interception')
+        if interception:
+            successes = interception.get('successes', [])
+            success_rate = np.mean(successes) if successes else 0.0
+            timing_errors = [abs(e) for e in interception.get('timing_errors', []) if e is not None]
+            spatial_errors = interception.get('spatial_errors', [])
+            avg_timing = np.mean(timing_errors) if timing_errors else 1.0
+            avg_spatial = np.mean(spatial_errors) if spatial_errors else 3.0
+            scores['moving_target_interception'] = (
+                self._normalize_score(success_rate, 0.0, 1.0) * 0.50 +
+                self._normalize_score(avg_timing, 1.0, 0.0) * 0.25 +
+                self._normalize_score(avg_spatial, 3.0, 0.0) * 0.25
+            )
         else:
-            scores['league'] = 0
+            scores['moving_target_interception'] = 0
 
-        # Task 4: Boundary (Range of Motion & Stability)
-        # Two sub-indicators: area_score (50%) + jerk_score (50%)
-        if results.get('boundary'):
-            b = results['boundary']
-            # Area = (max_x - min_x) * (max_y - min_y)
-            area = max(0, b['max_x'] - b['min_x']) * max(0, b['max_y'] - b['min_y'])
-            max_area = (15 - 4) * (10 - 4)  # (w_env - 4) * (h_env - 4)
-
-            # Sub-indicator 4a: area coverage (50%)
-            # 0 = worst (0), max_area = best (100)
-            area_score = self._normalize_score(area, bound_0=0.0, bound_100=max_area)
-
-            # Sub-indicator 4b: motion jerk (50%)
-            # jerk = mean(|diff(vel_list)|), 0.0 = best (100), 3.0 = worst (0)
-            vel_list = b.get('vel_list', [])
-            mean_jerk = np.mean(np.abs(np.diff(vel_list))) if len(vel_list) > 1 else 3.0
-            jerk_score = self._normalize_score(mean_jerk, bound_0=3.0, bound_100=0.5)
-
-            scores['boundary'] = area_score * 0.5 + jerk_score * 0.5
+        boundary = results.get('adaptive_boundary_challenge') or results.get('boundary')
+        if boundary:
+            if boundary.get('reachable_area') is not None:
+                area = boundary.get('reachable_area') or 0.0
+            else:
+                area = max(0, boundary.get('max_x', 0) - boundary.get('min_x', 0)) * max(0, boundary.get('max_y', 0) - boundary.get('min_y', 0))
+            max_area = (15 - 2) * (10 - 2)
+            asymmetry = boundary.get('directional_asymmetry')
+            if asymmetry is None:
+                asymmetry = 0.5
+            violations = boundary.get('boundary_violation_count', 0)
+            scores['adaptive_boundary_challenge'] = (
+                self._normalize_score(area, 0.0, max_area) * 0.55 +
+                self._normalize_score(asymmetry, 1.0, 0.0) * 0.25 +
+                self._normalize_score(violations, 8.0, 0.0) * 0.20
+            )
         else:
-            scores['boundary'] = 0
+            scores['adaptive_boundary_challenge'] = 0
 
-        # Weighted total (0-100), same as M-HECS formula
-        scores['total'] = (
-            scores['sprint'] * 0.20 +
-            scores['tracking'] * 0.30 +
-            scores['league'] * 0.30 +
-            scores['boundary'] * 0.20
-        )
+        rhythm = results.get('rhythmic_switching')
+        if rhythm:
+            total = max(len(rhythm.get('beat_times', [])), 1)
+            correct_rate = rhythm.get('correct_count', 0) / total
+            miss_rate = rhythm.get('miss_count', 0) / total
+            variability = rhythm.get('rhythm_variability')
+            if variability is None:
+                variability = 1.0
+            scores['rhythmic_switching'] = (
+                self._normalize_score(correct_rate, 0.0, 1.0) * 0.55 +
+                self._normalize_score(miss_rate, 1.0, 0.0) * 0.25 +
+                self._normalize_score(variability, 1.0, 0.0) * 0.20
+            )
+        else:
+            scores['rhythmic_switching'] = 0
 
+        mirror = results.get('mirror_mapping_reach')
+        if mirror:
+            successes = mirror.get('successes', [])
+            success_rate = np.mean(successes) if successes else 0.0
+            wrong_count = mirror.get('wrong_side_count', 0) + mirror.get('wrong_target_count', 0)
+            total = max(len(successes), 1)
+            wrong_rate = wrong_count / total
+            avg_error = np.mean(mirror.get('spatial_errors', []) or [3.0])
+            scores['mirror_mapping_reach'] = (
+                self._normalize_score(success_rate, 0.0, 1.0) * 0.50 +
+                self._normalize_score(wrong_rate, 1.0, 0.0) * 0.25 +
+                self._normalize_score(avg_error, 3.0, 0.0) * 0.25
+            )
+        else:
+            scores['mirror_mapping_reach'] = 0
+
+        task_keys = [
+            'rapid_reach',
+            'continuous_tracking',
+            'moving_target_interception',
+            'adaptive_boundary_challenge',
+            'rhythmic_switching',
+            'mirror_mapping_reach',
+        ]
+        scores['total'] = float(np.mean([scores[key] for key in task_keys]))
+
+        scores['sprint'] = scores['rapid_reach']
+        scores['tracking'] = scores['continuous_tracking']
+        scores['boundary'] = scores['adaptive_boundary_challenge']
+        scores['league'] = 0
         return scores
 
     def _estimate_clinical_scores(self, scores: Dict[str, float]) -> Dict[str, float]:
@@ -154,18 +195,17 @@ class ReportGenerator:
         - FMA-UE (满分66): 侧重协同(Tracking)和范围(ROM)
         - ARAT (满分57): 侧重爆发力(Sprint)和功能抓取(League)
         """
-        s_sprint = scores.get('sprint', 0) / 100.0
-        s_tracking = scores.get('tracking', 0) / 100.0
-        s_league = scores.get('league', 0) / 100.0
-        s_boundary = scores.get('boundary', 0) / 100.0
+        s_reach = scores.get('rapid_reach', scores.get('sprint', 0)) / 100.0
+        s_tracking = scores.get('continuous_tracking', scores.get('tracking', 0)) / 100.0
+        s_interception = scores.get('moving_target_interception', 0) / 100.0
+        s_boundary = scores.get('adaptive_boundary_challenge', scores.get('boundary', 0)) / 100.0
+        s_rhythm = scores.get('rhythmic_switching', 0) / 100.0
+        s_mirror = scores.get('mirror_mapping_reach', 0) / 100.0
 
-        total = 100.0 * (0.20 * s_sprint + 0.30 * s_tracking + 0.30 * s_league + 0.20 * s_boundary)
+        total = scores.get('total', 100.0 * np.mean([s_reach, s_tracking, s_interception, s_boundary, s_rhythm, s_mirror]))
 
-        # FMA-UE (满分66)：侧重协同(Tracking)和范围(ROM)
-        est_fma = 66.0 * (0.10 * s_sprint + 0.45 * s_tracking + 0.05 * s_league + 0.40 * s_boundary)
-
-        # ARAT (满分57)：侧重爆发力(Sprint)和功能抓取(League)
-        est_arat = 57.0 * (0.40 * s_sprint + 0.15 * s_tracking + 0.35 * s_league + 0.10 * s_boundary)
+        est_fma = 66.0 * (0.15 * s_reach + 0.30 * s_tracking + 0.10 * s_interception + 0.30 * s_boundary + 0.10 * s_rhythm + 0.05 * s_mirror)
+        est_arat = 57.0 * (0.30 * s_reach + 0.15 * s_tracking + 0.20 * s_interception + 0.10 * s_boundary + 0.10 * s_rhythm + 0.15 * s_mirror)
 
         return {
             'fma_ue': round(est_fma, 1),

@@ -128,7 +128,7 @@ def test_dual(robot_model_path=None, hand_model_path=None, max_steps=1000, fps=3
             clock.tick(current_fps)
 
             # Check done
-            if terminated or truncated:
+            if terminated:
                 episode_done = True
                 print(f"Episode {episode_count} finished:")
                 print(f"  Steps: {steps}, Reward: {total_reward:.2f}")

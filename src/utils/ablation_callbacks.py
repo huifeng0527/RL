@@ -104,23 +104,55 @@ class PPOAuxTrainingCallback(BaseCallback):
 class SaveMetricsCallback(BaseCallback):
     """Save training metrics to npz file."""
 
-    def __init__(self, save_path, verbose=0):
+    def __init__(self, save_path, zpd_min=4.0, zpd_max=6.0, verbose=0):
         super().__init__(verbose)
         self.save_path = save_path
+        self.zpd_min = zpd_min
+        self.zpd_max = zpd_max
         self.data = {
             "timesteps": [],
             "rewards": [],
-            "ep_lengths": []
+            "ep_lengths": [],
+            "zpd_coverage": [],
+            "avg_distance": [],
+            "too_close_rate": [],
+            "too_far_rate": [],
         }
+        self._episode_distances = None
+
+    def _on_training_start(self) -> None:
+        self._episode_distances = [[] for _ in range(self.training_env.num_envs)]
 
     def _on_step(self) -> bool:
         infos = self.locals.get("infos", [])
 
-        for info in infos:
+        for env_idx, info in enumerate(infos):
+            if "dist" in info and self._episode_distances is not None:
+                self._episode_distances[env_idx].append(float(info["dist"]))
+
             if "episode" in info:
                 self.data["timesteps"].append(self.num_timesteps)
                 self.data["rewards"].append(info["episode"]["r"])
                 self.data["ep_lengths"].append(info["episode"]["l"])
+
+                distances = []
+                if self._episode_distances is not None:
+                    distances = self._episode_distances[env_idx]
+                    self._episode_distances[env_idx] = []
+
+                if distances:
+                    dist_arr = np.asarray(distances, dtype=np.float32)
+                    self.data["zpd_coverage"].append(
+                        np.mean((dist_arr >= self.zpd_min) & (dist_arr <= self.zpd_max))
+                    )
+                    self.data["avg_distance"].append(np.mean(dist_arr))
+                    self.data["too_close_rate"].append(np.mean(dist_arr < self.zpd_min))
+                    self.data["too_far_rate"].append(np.mean(dist_arr > self.zpd_max))
+                else:
+                    self.data["zpd_coverage"].append(np.nan)
+                    self.data["avg_distance"].append(np.nan)
+                    self.data["too_close_rate"].append(np.nan)
+                    self.data["too_far_rate"].append(np.nan)
 
         return True
 
@@ -131,7 +163,11 @@ class SaveMetricsCallback(BaseCallback):
             os.path.join(self.save_path, "metrics.npz"),
             timesteps=np.array(self.data["timesteps"]),
             rewards=np.array(self.data["rewards"]),
-            ep_lengths=np.array(self.data["ep_lengths"])
+            ep_lengths=np.array(self.data["ep_lengths"]),
+            zpd_coverage=np.array(self.data["zpd_coverage"]),
+            avg_distance=np.array(self.data["avg_distance"]),
+            too_close_rate=np.array(self.data["too_close_rate"]),
+            too_far_rate=np.array(self.data["too_far_rate"]),
         )
 
         print(f"Metrics saved to {self.save_path}/metrics.npz")

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getPatient, getSessions, createSession } from '../services/api';
 
@@ -10,16 +10,7 @@ export default function PatientDetail() {
   const [loading, setLoading] = useState(true);
   const abortRef = useRef(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    abortRef.current = controller;
-    loadData(controller.signal);
-    return () => {
-      controller.abort();
-    };
-  }, [id]);
-
-  const loadData = async (signal) => {
+  const loadData = useCallback(async (signal) => {
     try {
       const [patientRes, sessionsRes] = await Promise.all([
         getPatient(id, { signal }),
@@ -32,9 +23,19 @@ export default function PatientDetail() {
       if (error.name === 'CanceledError' || error.name === 'AbortError') return;
       console.error('Failed to load patient:', error);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
-  };
+  }, [id]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => loadData(controller.signal), 0);
+    abortRef.current = controller;
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [loadData]);
 
   const handleNewEval = async () => {
     try {
@@ -51,14 +52,14 @@ export default function PatientDetail() {
   };
 
   const getScoreColor = (score) => {
-    if (score === null) return 'text-slate-400';
+    if (score == null) return 'text-slate-400';
     if (score >= 70) return 'text-emerald-600';
     if (score >= 40) return 'text-amber-600';
     return 'text-red-600';
   };
 
   const getScoreBg = (score) => {
-    if (score === null) return 'bg-slate-100';
+    if (score == null) return 'bg-slate-100';
     if (score >= 70) return 'bg-emerald-50 border-emerald-200';
     if (score >= 40) return 'bg-amber-50 border-amber-200';
     return 'bg-red-50 border-red-200';
@@ -170,7 +171,7 @@ export default function PatientDetail() {
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {sessions.map((session, index) => (
+            {sessions.map((session) => (
               <div
                 key={session.id}
                 className="p-6 hover:bg-slate-50/50 transition-colors group"

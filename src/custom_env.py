@@ -60,8 +60,11 @@ class BiomechanicalFilter:
         # ------------------------------------------------
         # 核心逻辑 1：应用神经传导延迟
         # ------------------------------------------------
-        self.delay_buffer.append(action)
-        delayed_action = self.delay_buffer.popleft()
+        if self.delay_frames <= 0:
+            delayed_action = action
+        else:
+            self.delay_buffer.append(action)
+            delayed_action = self.delay_buffer.popleft()
 
         # ------------------------------------------------
         # 核心逻辑 2：应用周期性震颤与肌肉电噪声
@@ -155,7 +158,7 @@ class RehabilitationEnv(gym.Env):
         self.fixed_point = np.array([self.env_width / 2, self.env_height])
 
         # --- Thresholds ---
-        self.distance_threshold_collision = 2
+        self.distance_threshold_collision = 2.5
         # self.distance_threshold_penalty = 3.0\
         
         # --- Rewards Config ---
@@ -171,7 +174,7 @@ class RehabilitationEnv(gym.Env):
         self.w_effort = 2.0
         
         # --- Movement Params ---
-        self.stride_robot_random = [0.3, 0.6]
+        self.stride_robot_random = [0.3, 0.5]
         # dual: [0.3, 0.4]
 
         self.stride_hand_random = [0.1, 0.2]
@@ -497,8 +500,8 @@ class RehabilitationEnv(gym.Env):
 
     def _get_scripted_hand_move(self):
         """后备的脚本控制（使用更大的步长，比 RL Hand 更激进）"""
-        # Scripted hand 用 0~0.5 的较小步长
-        scripted_stride = random.uniform(0, 0.5)
+        # Scripted hand 用 0.3~0.8 的步长
+        scripted_stride = random.uniform(0.3, 0.6)
         if random.random() < self.hand_move_epsilon:
             move = np.random.uniform(-1, 1, size=2)
             move = self.safe_normalize(move) * scripted_stride
@@ -541,13 +544,14 @@ class RehabilitationEnv(gym.Env):
         # ========================================================
         # 2. 物理约束 I：一阶惯性低通滤波 (Muscle Inertia)
         # ========================================================
-        alpha = 0.7
-        smoothed_move = alpha * hand_intent + (1.0 - alpha) * self.last_hand_actual_move
+        # alpha = 0.7
+        # smoothed_move = alpha * hand_intent + (1.0 - alpha) * self.last_hand_actual_move
+        smoothed_move = hand_intent
 
         # ========================================================
         # 3. 物理约束 II：最大加速度截断 (Acceleration Clipping)
         # ========================================================
-        max_accel = 0.15
+        max_accel = 1
         delta_v = smoothed_move - self.last_hand_actual_move
         accel_magnitude = np.linalg.norm(delta_v)
 

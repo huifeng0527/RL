@@ -1,0 +1,112 @@
+[
+  {
+    "suite": "architecture_zpd",
+    "name": "mlp_only",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_222950\\architecture_zpd\\mlp_only\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:29:50",
+    "finished_at": "2026-06-03T22:29:52",
+    "status": "complete"
+  },
+  {
+    "suite": "architecture_zpd",
+    "name": "mlp_lstm",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_222950\\architecture_zpd\\mlp_lstm\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:29:52",
+    "finished_at": "2026-06-03T22:29:57",
+    "status": "complete"
+  },
+  {
+    "suite": "architecture_zpd",
+    "name": "mlp_lstm_aux",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_222950\\architecture_zpd\\mlp_lstm_aux\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:29:57",
+    "finished_at": "2026-06-03T22:30:02",
+    "status": "complete"
+  },
+  {
+    "suite": "cmd_dr",
+    "name": "no_dr",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_222950\\cmd_dr\\no_dr\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:30:02",
+    "finished_at": "2026-06-03T22:30:07",
+    "status": "complete"
+  },
+  {
+    "suite": "cmd_dr",
+    "name": "intent_only",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_222950\\cmd_dr\\intent_only\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:30:07",
+    "finished_at": "2026-06-03T22:30:13",
+    "status": "complete"
+  },
+  {
+    "suite": "cmd_dr",
+    "name": "motor_only",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_222950\\cmd_dr\\motor_only\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:30:13",
+    "finished_at": "2026-06-03T22:30:18",
+    "status": "complete"
+  },
+  {
+    "suite": "cmd_dr",
+    "name": "full_cmd_dr",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_222950\\cmd_dr\\full_cmd_dr\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:30:18",
+    "finished_at": "2026-06-03T22:30:23",
+    "status": "complete"
+  },
+  {
+    "suite": "league_mechanism",
+    "name": "uniform_pool",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_222950\\league_mechanism\\uniform_pool\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:30:23",
+    "finished_at": "2026-06-03T22:30:23",
+    "status": "failed"
+  },
+  {
+    "suite": "league_mechanism",
+    "name": "prioritized_pool",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_222950\\league_mechanism\\prioritized_pool\\seed_0",
+    "steps": 64,
+    "started_at": "",
+    "finished_at": "",
+    "status": "pending"
+  },
+  {
+    "suite": "league_mechanism",
+    "name": "prioritized_no_anchor",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_222950\\league_mechanism\\prioritized_no_anchor\\seed_0",
+    "steps": 64,
+    "started_at": "",
+    "finished_at": "",
+    "status": "pending"
+  },
+  {
+    "suite": "league_mechanism",
+    "name": "full_league",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_222950\\league_mechanism\\full_league\\seed_0",
+    "steps": 64,
+    "started_at": "",
+    "finished_at": "",
+    "status": "pending"
+  }
+]

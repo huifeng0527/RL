@@ -55,7 +55,7 @@ def detect_marker(frame, model, conf=0.5):
     用 YOLO 检测单目marker，返回像素中心 [cx, cy]。
     如果检测到多个或零个则抛出异常。
     """
-    results = model.predict(frame, conf=conf, save=False, imgsz=frame.shape[1::-1], verbose=False)
+    results = model.predict(frame, conf=conf, save=False, imgsz=640, verbose=False)
     if not results or len(results[0].boxes) == 0:
         raise RuntimeError("YOLO: 未检测到任何 marker")
     if len(results[0].boxes) > 1:
