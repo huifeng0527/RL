@@ -1,0 +1,112 @@
+[
+  {
+    "suite": "architecture_zpd",
+    "name": "mlp_only",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_223049\\architecture_zpd\\mlp_only\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:30:50",
+    "finished_at": "2026-06-03T22:30:52",
+    "status": "complete"
+  },
+  {
+    "suite": "architecture_zpd",
+    "name": "mlp_lstm",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_223049\\architecture_zpd\\mlp_lstm\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:30:52",
+    "finished_at": "2026-06-03T22:30:57",
+    "status": "complete"
+  },
+  {
+    "suite": "architecture_zpd",
+    "name": "mlp_lstm_aux",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_223049\\architecture_zpd\\mlp_lstm_aux\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:30:57",
+    "finished_at": "2026-06-03T22:31:02",
+    "status": "complete"
+  },
+  {
+    "suite": "cmd_dr",
+    "name": "no_dr",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_223049\\cmd_dr\\no_dr\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:31:02",
+    "finished_at": "2026-06-03T22:31:07",
+    "status": "complete"
+  },
+  {
+    "suite": "cmd_dr",
+    "name": "intent_only",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_223049\\cmd_dr\\intent_only\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:31:07",
+    "finished_at": "2026-06-03T22:31:13",
+    "status": "complete"
+  },
+  {
+    "suite": "cmd_dr",
+    "name": "motor_only",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_223049\\cmd_dr\\motor_only\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:31:13",
+    "finished_at": "2026-06-03T22:31:18",
+    "status": "complete"
+  },
+  {
+    "suite": "cmd_dr",
+    "name": "full_cmd_dr",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_223049\\cmd_dr\\full_cmd_dr\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:31:18",
+    "finished_at": "2026-06-03T22:31:23",
+    "status": "complete"
+  },
+  {
+    "suite": "league_mechanism",
+    "name": "uniform_pool",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_223049\\league_mechanism\\uniform_pool\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:31:23",
+    "finished_at": "2026-06-03T22:31:32",
+    "status": "complete"
+  },
+  {
+    "suite": "league_mechanism",
+    "name": "prioritized_pool",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_223049\\league_mechanism\\prioritized_pool\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:31:32",
+    "finished_at": "2026-06-03T22:31:42",
+    "status": "complete"
+  },
+  {
+    "suite": "league_mechanism",
+    "name": "prioritized_no_anchor",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_223049\\league_mechanism\\prioritized_no_anchor\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:31:42",
+    "finished_at": "2026-06-03T22:31:51",
+    "status": "complete"
+  },
+  {
+    "suite": "league_mechanism",
+    "name": "full_league",
+    "seed": 0,
+    "save_path": "C:\\Users\\admin\\Desktop\\research\\RL\\.codex_tmp\\retrain_smoke\\missing_experiments_20260603_223049\\league_mechanism\\full_league\\seed_0",
+    "steps": 64,
+    "started_at": "2026-06-03T22:31:51",
+    "finished_at": "2026-06-03T22:32:00",
+    "status": "complete"
+  }
+]

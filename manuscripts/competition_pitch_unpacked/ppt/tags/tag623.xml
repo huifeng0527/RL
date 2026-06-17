@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<p:tagLst xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:tag name="wpp_generatetext" val="1"/>
+</p:tagLst>

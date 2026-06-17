@@ -1,0 +1,35 @@
+{
+  "reward": {
+    "timestep": 3600000,
+    "reward_mean": 13.197070213507015,
+    "reward_std": 33.03514023132001,
+    "episode_length_mean": 84.54,
+    "episode_length_std": 33.35878295142075,
+    "zpd_coverage_mean": 0.6469911764705882,
+    "zpd_coverage_std": 0.2840057129554782,
+    "workspace_coverage_mean": 0.6752692777984355,
+    "workspace_coverage_std": 0.2804225800630354
+  },
+  "zpd_coverage": {
+    "timestep": 3600000,
+    "reward_mean": 13.197070213507015,
+    "reward_std": 33.03514023132001,
+    "episode_length_mean": 84.54,
+    "episode_length_std": 33.35878295142075,
+    "zpd_coverage_mean": 0.6469911764705882,
+    "zpd_coverage_std": 0.2840057129554782,
+    "workspace_coverage_mean": 0.6752692777984355,
+    "workspace_coverage_std": 0.2804225800630354
+  },
+  "workspace_coverage": {
+    "timestep": 3200000,
+    "reward_mean": 12.733313740417918,
+    "reward_std": 30.28564276182833,
+    "episode_length_mean": 90.88,
+    "episode_length_std": 27.49519230701979,
+    "zpd_coverage_mean": 0.6135333333333334,
+    "zpd_coverage_std": 0.27391353866989976,
+    "workspace_coverage_mean": 0.7153093737839495,
+    "workspace_coverage_std": 0.225436204674049
+  }
+}

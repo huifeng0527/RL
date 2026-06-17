@@ -1,0 +1,2016 @@
+<?xml version="1.0" encoding="utf-8"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr>
+        <p:cNvPr id="1" name=""/>
+        <p:cNvGrpSpPr/>
+        <p:nvPr/>
+      </p:nvGrpSpPr>
+      <p:grpSpPr/>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="文本占位符 1"/>
+          <p:cNvSpPr>
+            <a:spLocks noGrp="1"/>
+          </p:cNvSpPr>
+          <p:nvPr>
+            <p:ph type="body" idx="13"/>
+          </p:nvPr>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="711835" y="584200"/>
+            <a:ext cx="8229600" cy="547370"/>
+          </a:xfrm>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr>
+            <a:noAutofit/>
+          </a:bodyPr>
+          <a:p>
+            <a:r>
+              <a:rPr lang="zh-CN" altLang="en-US" sz="2300">
+                <a:latin typeface="思源黑体 CN Bold" panose="020B0800000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Bold" panose="020B0800000000000000" charset="-122"/>
+                <a:cs typeface="思源黑体 CN Bold" panose="020B0800000000000000" charset="-122"/>
+              </a:rPr>
+              <a:t>端到端智能康复系统架构</a:t>
+            </a:r>
+            <a:r>
+              <a:rPr lang="en-US" altLang="zh-CN" sz="2300">
+                <a:latin typeface="思源黑体 CN Bold" panose="020B0800000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Bold" panose="020B0800000000000000" charset="-122"/>
+                <a:cs typeface="思源黑体 CN Bold" panose="020B0800000000000000" charset="-122"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr lang="zh-CN" altLang="en-US" sz="2300">
+                <a:latin typeface="思源黑体 CN Bold" panose="020B0800000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Bold" panose="020B0800000000000000" charset="-122"/>
+                <a:cs typeface="思源黑体 CN Bold" panose="020B0800000000000000" charset="-122"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:endParaRPr lang="zh-CN" altLang="en-US" sz="2300">
+              <a:latin typeface="思源黑体 CN Bold" panose="020B0800000000000000" charset="-122"/>
+              <a:ea typeface="思源黑体 CN Bold" panose="020B0800000000000000" charset="-122"/>
+              <a:cs typeface="思源黑体 CN Bold" panose="020B0800000000000000" charset="-122"/>
+            </a:endParaRPr>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="4" name="圆角矩形 20"/>
+          <p:cNvSpPr/>
+          <p:nvPr>
+            <p:custDataLst>
+              <p:tags r:id="rId2"/>
+            </p:custDataLst>
+          </p:nvPr>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="690265" y="1595120"/>
+            <a:ext cx="5587197" cy="4624738"/>
+          </a:xfrm>
+          <a:prstGeom prst="roundRect">
+            <a:avLst>
+              <a:gd name="adj" fmla="val 3631"/>
+            </a:avLst>
+          </a:prstGeom>
+          <a:solidFill>
+            <a:srgbClr val="FFFFFF"/>
+          </a:solidFill>
+          <a:ln>
+            <a:noFill/>
+          </a:ln>
+          <a:effectLst>
+            <a:outerShdw blurRad="208026" dist="34671" dir="2700001" algn="tl" rotWithShape="0">
+              <a:schemeClr val="accent1">
+                <a:alpha val="30000"/>
+              </a:schemeClr>
+            </a:outerShdw>
+          </a:effectLst>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="2">
+            <a:schemeClr val="accent1">
+              <a:shade val="50000"/>
+            </a:schemeClr>
+          </a:lnRef>
+          <a:fillRef idx="1">
+            <a:schemeClr val="accent1"/>
+          </a:fillRef>
+          <a:effectRef idx="0">
+            <a:schemeClr val="accent1"/>
+          </a:effectRef>
+          <a:fontRef idx="minor">
+            <a:schemeClr val="lt1"/>
+          </a:fontRef>
+        </p:style>
+        <p:txBody>
+          <a:bodyPr lIns="83210" tIns="41605" rIns="83210" bIns="41605" rtlCol="0" anchor="ctr"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="ctr" defTabSz="914400" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="100000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="0"/>
+              </a:spcBef>
+              <a:spcAft>
+                <a:spcPts val="0"/>
+              </a:spcAft>
+              <a:buClrTx/>
+              <a:buSzTx/>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr/>
+            </a:pPr>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" altLang="zh-CN" sz="1640" b="0" i="0" u="none" strike="noStrike" kern="1200" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:prstClr val="white"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>c</a:t>
+            </a:r>
+            <a:endParaRPr kumimoji="0" lang="en-US" altLang="zh-CN" sz="1640" b="0" i="0" u="none" strike="noStrike" kern="1200" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+              <a:ln>
+                <a:noFill/>
+              </a:ln>
+              <a:solidFill>
+                <a:prstClr val="white"/>
+              </a:solidFill>
+              <a:effectLst/>
+              <a:uLnTx/>
+              <a:uFillTx/>
+              <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:cs typeface="+mn-cs"/>
+            </a:endParaRPr>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:graphicFrame>
+        <p:nvGraphicFramePr>
+          <p:cNvPr id="5" name="图表 4"/>
+          <p:cNvGraphicFramePr/>
+          <p:nvPr/>
+        </p:nvGraphicFramePr>
+        <p:xfrm>
+          <a:off x="1215371" y="1799693"/>
+          <a:ext cx="4550156" cy="4330275"/>
+        </p:xfrm>
+        <a:graphic>
+          <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">
+            <c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId1"/>
+          </a:graphicData>
+        </a:graphic>
+      </p:graphicFrame>
+      <p:grpSp>
+        <p:nvGrpSpPr>
+          <p:cNvPr id="10" name="组合 9"/>
+          <p:cNvGrpSpPr/>
+          <p:nvPr>
+            <p:custDataLst>
+              <p:tags r:id="rId3"/>
+            </p:custDataLst>
+          </p:nvPr>
+        </p:nvGrpSpPr>
+        <p:grpSpPr>
+          <a:xfrm>
+            <a:off x="6802568" y="1637133"/>
+            <a:ext cx="4475181" cy="1328724"/>
+            <a:chOff x="6567213" y="1650734"/>
+            <a:chExt cx="4475181" cy="1715103"/>
+          </a:xfrm>
+        </p:grpSpPr>
+        <p:sp>
+          <p:nvSpPr>
+            <p:cNvPr id="11" name="矩形 10"/>
+            <p:cNvSpPr/>
+            <p:nvPr>
+              <p:custDataLst>
+                <p:tags r:id="rId4"/>
+              </p:custDataLst>
+            </p:nvPr>
+          </p:nvSpPr>
+          <p:spPr>
+            <a:xfrm>
+              <a:off x="6589027" y="1650734"/>
+              <a:ext cx="4453367" cy="1696462"/>
+            </a:xfrm>
+            <a:prstGeom prst="rect">
+              <a:avLst/>
+            </a:prstGeom>
+            <a:solidFill>
+              <a:sysClr val="window" lastClr="FFFFFF"/>
+            </a:solidFill>
+            <a:ln w="12700" cap="flat" cmpd="sng" algn="ctr">
+              <a:noFill/>
+              <a:prstDash val="solid"/>
+              <a:miter lim="800000"/>
+            </a:ln>
+            <a:effectLst>
+              <a:outerShdw blurRad="46228" dist="34671" dir="2700001" algn="tl" rotWithShape="0">
+                <a:schemeClr val="accent1">
+                  <a:alpha val="25000"/>
+                </a:schemeClr>
+              </a:outerShdw>
+            </a:effectLst>
+          </p:spPr>
+          <p:txBody>
+            <a:bodyPr lIns="83210" tIns="41605" rIns="83210" bIns="41605" rtlCol="0" anchor="ctr"/>
+            <a:lstStyle/>
+            <a:p>
+              <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="ctr" defTabSz="914400" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+                <a:lnSpc>
+                  <a:spcPct val="100000"/>
+                </a:lnSpc>
+                <a:spcBef>
+                  <a:spcPts val="0"/>
+                </a:spcBef>
+                <a:spcAft>
+                  <a:spcPts val="0"/>
+                </a:spcAft>
+                <a:buClrTx/>
+                <a:buSzTx/>
+                <a:buFontTx/>
+                <a:buNone/>
+                <a:defRPr/>
+              </a:pPr>
+              <a:endParaRPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1640" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:prstClr val="white"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:endParaRPr>
+            </a:p>
+          </p:txBody>
+        </p:sp>
+        <p:sp>
+          <p:nvSpPr>
+            <p:cNvPr id="12" name="矩形 11"/>
+            <p:cNvSpPr/>
+            <p:nvPr>
+              <p:custDataLst>
+                <p:tags r:id="rId5"/>
+              </p:custDataLst>
+            </p:nvPr>
+          </p:nvSpPr>
+          <p:spPr>
+            <a:xfrm rot="10800000">
+              <a:off x="6567213" y="1669375"/>
+              <a:ext cx="81865" cy="1696462"/>
+            </a:xfrm>
+            <a:prstGeom prst="rect">
+              <a:avLst/>
+            </a:prstGeom>
+            <a:solidFill>
+              <a:schemeClr val="accent1"/>
+            </a:solidFill>
+            <a:ln w="12700" cap="flat" cmpd="sng" algn="ctr">
+              <a:noFill/>
+              <a:prstDash val="solid"/>
+              <a:miter lim="800000"/>
+            </a:ln>
+            <a:effectLst/>
+          </p:spPr>
+          <p:txBody>
+            <a:bodyPr lIns="83210" tIns="41605" rIns="83210" bIns="41605" rtlCol="0" anchor="ctr"/>
+            <a:lstStyle/>
+            <a:p>
+              <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="ctr" defTabSz="914400" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+                <a:lnSpc>
+                  <a:spcPct val="100000"/>
+                </a:lnSpc>
+                <a:spcBef>
+                  <a:spcPts val="0"/>
+                </a:spcBef>
+                <a:spcAft>
+                  <a:spcPts val="0"/>
+                </a:spcAft>
+                <a:buClrTx/>
+                <a:buSzTx/>
+                <a:buFontTx/>
+                <a:buNone/>
+                <a:defRPr/>
+              </a:pPr>
+              <a:endParaRPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1640" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:prstClr val="white"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:endParaRPr>
+            </a:p>
+          </p:txBody>
+        </p:sp>
+      </p:grpSp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="13" name="文本框 12"/>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr>
+            <p:custDataLst>
+              <p:tags r:id="rId6"/>
+            </p:custDataLst>
+          </p:nvPr>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="6946238" y="1768365"/>
+            <a:ext cx="3096230" cy="361950"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+          <a:effectLst/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square" lIns="83210" tIns="41605" rIns="83210" bIns="41605" rtlCol="0">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="100000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="0"/>
+              </a:spcBef>
+              <a:spcAft>
+                <a:spcPts val="0"/>
+              </a:spcAft>
+              <a:buClrTx/>
+              <a:buSzTx/>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr/>
+            </a:pPr>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1820" b="1" i="0" u="none" strike="noStrike" kern="1200" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="accent3"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>感知层</a:t>
+            </a:r>
+            <a:endParaRPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1820" b="1" i="0" u="none" strike="noStrike" kern="1200" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+              <a:ln>
+                <a:noFill/>
+              </a:ln>
+              <a:solidFill>
+                <a:schemeClr val="accent3"/>
+              </a:solidFill>
+              <a:effectLst/>
+              <a:uLnTx/>
+              <a:uFillTx/>
+              <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:cs typeface="+mn-cs"/>
+            </a:endParaRPr>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="14" name="内容占位符 11"/>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr>
+            <p:custDataLst>
+              <p:tags r:id="rId7"/>
+            </p:custDataLst>
+          </p:nvPr>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="6946265" y="2064385"/>
+            <a:ext cx="4191000" cy="1189990"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:effectLst/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr vert="horz" wrap="square" lIns="83210" tIns="41605" rIns="83210" bIns="41605" rtlCol="0">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle>
+            <a:lvl1pPr marL="0" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="1000"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl1pPr>
+            <a:lvl2pPr marL="457200" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl2pPr>
+            <a:lvl3pPr marL="914400" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl3pPr>
+            <a:lvl4pPr marL="1371600" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl4pPr>
+            <a:lvl5pPr marL="1828800" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl5pPr>
+            <a:lvl6pPr marL="2514600" indent="-228600" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="90000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              <a:buChar char="•"/>
+              <a:defRPr sz="1800" kern="1200">
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:latin typeface="+mn-lt"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:defRPr>
+            </a:lvl6pPr>
+            <a:lvl7pPr marL="2971800" indent="-228600" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="90000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              <a:buChar char="•"/>
+              <a:defRPr sz="1800" kern="1200">
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:latin typeface="+mn-lt"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:defRPr>
+            </a:lvl7pPr>
+            <a:lvl8pPr marL="3429000" indent="-228600" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="90000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              <a:buChar char="•"/>
+              <a:defRPr sz="1800" kern="1200">
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:latin typeface="+mn-lt"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:defRPr>
+            </a:lvl8pPr>
+            <a:lvl9pPr marL="3886200" indent="-228600" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="90000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              <a:buChar char="•"/>
+              <a:defRPr sz="1800" kern="1200">
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:latin typeface="+mn-lt"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:defRPr>
+            </a:lvl9pPr>
+          </a:lstStyle>
+          <a:p>
+            <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="just" defTabSz="914400" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="1000"/>
+              </a:spcBef>
+              <a:spcAft>
+                <a:spcPts val="0"/>
+              </a:spcAft>
+              <a:buClrTx/>
+              <a:buSzTx/>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr/>
+            </a:pPr>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t>摄像头以10-15fps采集桌面图像，YOLO检测磁性微机器人位置，MediaPipe追踪患者手部关键点，双目视觉融合实现亚毫米级定位精度。</a:t>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" altLang="zh-CN" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" altLang="zh-CN" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" altLang="zh-CN" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:endParaRPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+              <a:ln>
+                <a:noFill/>
+              </a:ln>
+              <a:solidFill>
+                <a:schemeClr val="tx1"/>
+              </a:solidFill>
+              <a:effectLst/>
+              <a:uLnTx/>
+              <a:uFillTx/>
+              <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:cs typeface="+mn-ea"/>
+              <a:sym typeface="+mn-lt"/>
+            </a:endParaRPr>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:grpSp>
+        <p:nvGrpSpPr>
+          <p:cNvPr id="15" name="组合 14"/>
+          <p:cNvGrpSpPr/>
+          <p:nvPr>
+            <p:custDataLst>
+              <p:tags r:id="rId8"/>
+            </p:custDataLst>
+          </p:nvPr>
+        </p:nvGrpSpPr>
+        <p:grpSpPr>
+          <a:xfrm>
+            <a:off x="6802568" y="3235022"/>
+            <a:ext cx="4475181" cy="1328723"/>
+            <a:chOff x="6567213" y="1446746"/>
+            <a:chExt cx="4475181" cy="1715098"/>
+          </a:xfrm>
+        </p:grpSpPr>
+        <p:sp>
+          <p:nvSpPr>
+            <p:cNvPr id="16" name="矩形 15"/>
+            <p:cNvSpPr/>
+            <p:nvPr>
+              <p:custDataLst>
+                <p:tags r:id="rId9"/>
+              </p:custDataLst>
+            </p:nvPr>
+          </p:nvSpPr>
+          <p:spPr>
+            <a:xfrm>
+              <a:off x="6589027" y="1446746"/>
+              <a:ext cx="4453367" cy="1696460"/>
+            </a:xfrm>
+            <a:prstGeom prst="rect">
+              <a:avLst/>
+            </a:prstGeom>
+            <a:solidFill>
+              <a:sysClr val="window" lastClr="FFFFFF"/>
+            </a:solidFill>
+            <a:ln w="12700" cap="flat" cmpd="sng" algn="ctr">
+              <a:noFill/>
+              <a:prstDash val="solid"/>
+              <a:miter lim="800000"/>
+            </a:ln>
+            <a:effectLst>
+              <a:outerShdw blurRad="46228" dist="34671" dir="2700001" algn="tl" rotWithShape="0">
+                <a:schemeClr val="accent1">
+                  <a:alpha val="25000"/>
+                </a:schemeClr>
+              </a:outerShdw>
+            </a:effectLst>
+          </p:spPr>
+          <p:txBody>
+            <a:bodyPr lIns="83210" tIns="41605" rIns="83210" bIns="41605" rtlCol="0" anchor="ctr"/>
+            <a:lstStyle/>
+            <a:p>
+              <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="ctr" defTabSz="914400" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+                <a:lnSpc>
+                  <a:spcPct val="100000"/>
+                </a:lnSpc>
+                <a:spcBef>
+                  <a:spcPts val="0"/>
+                </a:spcBef>
+                <a:spcAft>
+                  <a:spcPts val="0"/>
+                </a:spcAft>
+                <a:buClrTx/>
+                <a:buSzTx/>
+                <a:buFontTx/>
+                <a:buNone/>
+                <a:defRPr/>
+              </a:pPr>
+              <a:endParaRPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1640" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:prstClr val="white"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:endParaRPr>
+            </a:p>
+          </p:txBody>
+        </p:sp>
+        <p:sp>
+          <p:nvSpPr>
+            <p:cNvPr id="24" name="矩形 23"/>
+            <p:cNvSpPr/>
+            <p:nvPr>
+              <p:custDataLst>
+                <p:tags r:id="rId10"/>
+              </p:custDataLst>
+            </p:nvPr>
+          </p:nvSpPr>
+          <p:spPr>
+            <a:xfrm rot="10800000">
+              <a:off x="6567213" y="1465385"/>
+              <a:ext cx="81865" cy="1696459"/>
+            </a:xfrm>
+            <a:prstGeom prst="rect">
+              <a:avLst/>
+            </a:prstGeom>
+            <a:solidFill>
+              <a:schemeClr val="accent2"/>
+            </a:solidFill>
+            <a:ln w="12700" cap="flat" cmpd="sng" algn="ctr">
+              <a:noFill/>
+              <a:prstDash val="solid"/>
+              <a:miter lim="800000"/>
+            </a:ln>
+            <a:effectLst/>
+          </p:spPr>
+          <p:txBody>
+            <a:bodyPr lIns="83210" tIns="41605" rIns="83210" bIns="41605" rtlCol="0" anchor="ctr"/>
+            <a:lstStyle/>
+            <a:p>
+              <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="ctr" defTabSz="914400" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+                <a:lnSpc>
+                  <a:spcPct val="100000"/>
+                </a:lnSpc>
+                <a:spcBef>
+                  <a:spcPts val="0"/>
+                </a:spcBef>
+                <a:spcAft>
+                  <a:spcPts val="0"/>
+                </a:spcAft>
+                <a:buClrTx/>
+                <a:buSzTx/>
+                <a:buFontTx/>
+                <a:buNone/>
+                <a:defRPr/>
+              </a:pPr>
+              <a:endParaRPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1640" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:prstClr val="white"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:endParaRPr>
+            </a:p>
+          </p:txBody>
+        </p:sp>
+      </p:grpSp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="25" name="文本框 24"/>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr>
+            <p:custDataLst>
+              <p:tags r:id="rId11"/>
+            </p:custDataLst>
+          </p:nvPr>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="6946238" y="3366254"/>
+            <a:ext cx="3096230" cy="361950"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+          <a:effectLst/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square" lIns="83210" tIns="41605" rIns="83210" bIns="41605" rtlCol="0">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="100000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="0"/>
+              </a:spcBef>
+              <a:spcAft>
+                <a:spcPts val="0"/>
+              </a:spcAft>
+              <a:buClrTx/>
+              <a:buSzTx/>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr/>
+            </a:pPr>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1820" b="1" i="0" u="none" strike="noStrike" kern="1200" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="accent3"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>决策层</a:t>
+            </a:r>
+            <a:endParaRPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1820" b="1" i="0" u="none" strike="noStrike" kern="1200" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+              <a:ln>
+                <a:noFill/>
+              </a:ln>
+              <a:solidFill>
+                <a:schemeClr val="accent3"/>
+              </a:solidFill>
+              <a:effectLst/>
+              <a:uLnTx/>
+              <a:uFillTx/>
+              <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:cs typeface="+mn-cs"/>
+            </a:endParaRPr>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="26" name="内容占位符 11"/>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr>
+            <p:custDataLst>
+              <p:tags r:id="rId12"/>
+            </p:custDataLst>
+          </p:nvPr>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="6946265" y="3662680"/>
+            <a:ext cx="4191000" cy="821055"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:effectLst/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr vert="horz" wrap="square" lIns="83210" tIns="41605" rIns="83210" bIns="41605" rtlCol="0">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle>
+            <a:lvl1pPr marL="0" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="1000"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl1pPr>
+            <a:lvl2pPr marL="457200" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl2pPr>
+            <a:lvl3pPr marL="914400" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl3pPr>
+            <a:lvl4pPr marL="1371600" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl4pPr>
+            <a:lvl5pPr marL="1828800" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl5pPr>
+            <a:lvl6pPr marL="2514600" indent="-228600" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="90000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              <a:buChar char="•"/>
+              <a:defRPr sz="1800" kern="1200">
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:latin typeface="+mn-lt"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:defRPr>
+            </a:lvl6pPr>
+            <a:lvl7pPr marL="2971800" indent="-228600" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="90000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              <a:buChar char="•"/>
+              <a:defRPr sz="1800" kern="1200">
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:latin typeface="+mn-lt"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:defRPr>
+            </a:lvl7pPr>
+            <a:lvl8pPr marL="3429000" indent="-228600" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="90000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              <a:buChar char="•"/>
+              <a:defRPr sz="1800" kern="1200">
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:latin typeface="+mn-lt"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:defRPr>
+            </a:lvl8pPr>
+            <a:lvl9pPr marL="3886200" indent="-228600" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="90000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              <a:buChar char="•"/>
+              <a:defRPr sz="1800" kern="1200">
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:latin typeface="+mn-lt"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:defRPr>
+            </a:lvl9pPr>
+          </a:lstStyle>
+          <a:p>
+            <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="just" defTabSz="914400" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="1000"/>
+              </a:spcBef>
+              <a:spcAft>
+                <a:spcPts val="0"/>
+              </a:spcAft>
+              <a:buClrTx/>
+              <a:buSzTx/>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr/>
+            </a:pPr>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" altLang="zh-CN" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t>PPO策略网络以20Hz频率推理，44维观测向量包含12维空间状态和32维时序位移历史，输出UR10末端执行器的运动指令。</a:t>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" altLang="zh-CN" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" altLang="zh-CN" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:endParaRPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+              <a:ln>
+                <a:noFill/>
+              </a:ln>
+              <a:solidFill>
+                <a:schemeClr val="tx1"/>
+              </a:solidFill>
+              <a:effectLst/>
+              <a:uLnTx/>
+              <a:uFillTx/>
+              <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:cs typeface="+mn-ea"/>
+              <a:sym typeface="+mn-lt"/>
+            </a:endParaRPr>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:grpSp>
+        <p:nvGrpSpPr>
+          <p:cNvPr id="27" name="组合 26"/>
+          <p:cNvGrpSpPr/>
+          <p:nvPr>
+            <p:custDataLst>
+              <p:tags r:id="rId13"/>
+            </p:custDataLst>
+          </p:nvPr>
+        </p:nvGrpSpPr>
+        <p:grpSpPr>
+          <a:xfrm>
+            <a:off x="6802568" y="4832909"/>
+            <a:ext cx="4475181" cy="1328724"/>
+            <a:chOff x="6567213" y="1242765"/>
+            <a:chExt cx="4475181" cy="1715101"/>
+          </a:xfrm>
+        </p:grpSpPr>
+        <p:sp>
+          <p:nvSpPr>
+            <p:cNvPr id="28" name="矩形 27"/>
+            <p:cNvSpPr/>
+            <p:nvPr>
+              <p:custDataLst>
+                <p:tags r:id="rId14"/>
+              </p:custDataLst>
+            </p:nvPr>
+          </p:nvSpPr>
+          <p:spPr>
+            <a:xfrm>
+              <a:off x="6589027" y="1242765"/>
+              <a:ext cx="4453367" cy="1696461"/>
+            </a:xfrm>
+            <a:prstGeom prst="rect">
+              <a:avLst/>
+            </a:prstGeom>
+            <a:solidFill>
+              <a:sysClr val="window" lastClr="FFFFFF"/>
+            </a:solidFill>
+            <a:ln w="12700" cap="flat" cmpd="sng" algn="ctr">
+              <a:noFill/>
+              <a:prstDash val="solid"/>
+              <a:miter lim="800000"/>
+            </a:ln>
+            <a:effectLst>
+              <a:outerShdw blurRad="46228" dist="34671" dir="2700001" algn="tl" rotWithShape="0">
+                <a:schemeClr val="accent1">
+                  <a:alpha val="25000"/>
+                </a:schemeClr>
+              </a:outerShdw>
+            </a:effectLst>
+          </p:spPr>
+          <p:txBody>
+            <a:bodyPr lIns="83210" tIns="41605" rIns="83210" bIns="41605" rtlCol="0" anchor="ctr"/>
+            <a:lstStyle/>
+            <a:p>
+              <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="ctr" defTabSz="914400" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+                <a:lnSpc>
+                  <a:spcPct val="100000"/>
+                </a:lnSpc>
+                <a:spcBef>
+                  <a:spcPts val="0"/>
+                </a:spcBef>
+                <a:spcAft>
+                  <a:spcPts val="0"/>
+                </a:spcAft>
+                <a:buClrTx/>
+                <a:buSzTx/>
+                <a:buFontTx/>
+                <a:buNone/>
+                <a:defRPr/>
+              </a:pPr>
+              <a:endParaRPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1640" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:prstClr val="white"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:endParaRPr>
+            </a:p>
+          </p:txBody>
+        </p:sp>
+        <p:sp>
+          <p:nvSpPr>
+            <p:cNvPr id="29" name="矩形 28"/>
+            <p:cNvSpPr/>
+            <p:nvPr>
+              <p:custDataLst>
+                <p:tags r:id="rId15"/>
+              </p:custDataLst>
+            </p:nvPr>
+          </p:nvSpPr>
+          <p:spPr>
+            <a:xfrm rot="10800000">
+              <a:off x="6567213" y="1261406"/>
+              <a:ext cx="81865" cy="1696460"/>
+            </a:xfrm>
+            <a:prstGeom prst="rect">
+              <a:avLst/>
+            </a:prstGeom>
+            <a:solidFill>
+              <a:schemeClr val="accent1"/>
+            </a:solidFill>
+            <a:ln w="12700" cap="flat" cmpd="sng" algn="ctr">
+              <a:noFill/>
+              <a:prstDash val="solid"/>
+              <a:miter lim="800000"/>
+            </a:ln>
+            <a:effectLst/>
+          </p:spPr>
+          <p:txBody>
+            <a:bodyPr lIns="83210" tIns="41605" rIns="83210" bIns="41605" rtlCol="0" anchor="ctr"/>
+            <a:lstStyle/>
+            <a:p>
+              <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="ctr" defTabSz="914400" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+                <a:lnSpc>
+                  <a:spcPct val="100000"/>
+                </a:lnSpc>
+                <a:spcBef>
+                  <a:spcPts val="0"/>
+                </a:spcBef>
+                <a:spcAft>
+                  <a:spcPts val="0"/>
+                </a:spcAft>
+                <a:buClrTx/>
+                <a:buSzTx/>
+                <a:buFontTx/>
+                <a:buNone/>
+                <a:defRPr/>
+              </a:pPr>
+              <a:endParaRPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1640" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:prstClr val="white"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:endParaRPr>
+            </a:p>
+          </p:txBody>
+        </p:sp>
+      </p:grpSp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="30" name="文本框 29"/>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr>
+            <p:custDataLst>
+              <p:tags r:id="rId16"/>
+            </p:custDataLst>
+          </p:nvPr>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="6946238" y="4964141"/>
+            <a:ext cx="3096230" cy="361950"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+          <a:effectLst/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square" lIns="83210" tIns="41605" rIns="83210" bIns="41605" rtlCol="0">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="100000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="0"/>
+              </a:spcBef>
+              <a:spcAft>
+                <a:spcPts val="0"/>
+              </a:spcAft>
+              <a:buClrTx/>
+              <a:buSzTx/>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr/>
+            </a:pPr>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1820" b="1" i="0" u="none" strike="noStrike" kern="1200" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="accent3"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>执行层</a:t>
+            </a:r>
+            <a:endParaRPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1820" b="1" i="0" u="none" strike="noStrike" kern="1200" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+              <a:ln>
+                <a:noFill/>
+              </a:ln>
+              <a:solidFill>
+                <a:schemeClr val="accent3"/>
+              </a:solidFill>
+              <a:effectLst/>
+              <a:uLnTx/>
+              <a:uFillTx/>
+              <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:cs typeface="+mn-cs"/>
+            </a:endParaRPr>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="31" name="内容占位符 11"/>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr>
+            <p:custDataLst>
+              <p:tags r:id="rId17"/>
+            </p:custDataLst>
+          </p:nvPr>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="6946265" y="5260340"/>
+            <a:ext cx="4191000" cy="821055"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:effectLst/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr vert="horz" wrap="square" lIns="83210" tIns="41605" rIns="83210" bIns="41605" rtlCol="0">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle>
+            <a:lvl1pPr marL="0" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="1000"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl1pPr>
+            <a:lvl2pPr marL="457200" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl2pPr>
+            <a:lvl3pPr marL="914400" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl3pPr>
+            <a:lvl4pPr marL="1371600" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl4pPr>
+            <a:lvl5pPr marL="1828800" indent="0" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr sz="1800" kern="0" spc="100" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="bg1">
+                    <a:lumMod val="95000"/>
+                  </a:schemeClr>
+                </a:solidFill>
+                <a:latin typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:ea typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:sym typeface="微软雅黑 Light" panose="020B0502040204020203" pitchFamily="34" charset="-122"/>
+              </a:defRPr>
+            </a:lvl5pPr>
+            <a:lvl6pPr marL="2514600" indent="-228600" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="90000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              <a:buChar char="•"/>
+              <a:defRPr sz="1800" kern="1200">
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:latin typeface="+mn-lt"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:defRPr>
+            </a:lvl6pPr>
+            <a:lvl7pPr marL="2971800" indent="-228600" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="90000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              <a:buChar char="•"/>
+              <a:defRPr sz="1800" kern="1200">
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:latin typeface="+mn-lt"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:defRPr>
+            </a:lvl7pPr>
+            <a:lvl8pPr marL="3429000" indent="-228600" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="90000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              <a:buChar char="•"/>
+              <a:defRPr sz="1800" kern="1200">
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:latin typeface="+mn-lt"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:defRPr>
+            </a:lvl8pPr>
+            <a:lvl9pPr marL="3886200" indent="-228600" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="90000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="500"/>
+              </a:spcBef>
+              <a:buFont typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              <a:buChar char="•"/>
+              <a:defRPr sz="1800" kern="1200">
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:latin typeface="+mn-lt"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:defRPr>
+            </a:lvl9pPr>
+          </a:lstStyle>
+          <a:p>
+            <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="just" defTabSz="914400" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="150000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="1000"/>
+              </a:spcBef>
+              <a:spcAft>
+                <a:spcPts val="0"/>
+              </a:spcAft>
+              <a:buClrTx/>
+              <a:buSzTx/>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:defRPr/>
+            </a:pPr>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t>UR10协作机器人通过RTDE接口接收控制指令，驱动磁性微机器人在桌面移动；视觉间隙由低通滤波速度的航位推算填补。</a:t>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" altLang="zh-CN" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" altLang="zh-CN" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" altLang="zh-CN" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" altLang="zh-CN" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:schemeClr val="tx1"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+                <a:cs typeface="+mn-ea"/>
+                <a:sym typeface="+mn-lt"/>
+              </a:rPr>
+              <a:t/>
+            </a:r>
+            <a:endParaRPr kumimoji="0" lang="zh-CN" altLang="en-US" sz="1600" b="0" i="0" u="none" strike="noStrike" kern="0" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+              <a:ln>
+                <a:noFill/>
+              </a:ln>
+              <a:solidFill>
+                <a:schemeClr val="tx1"/>
+              </a:solidFill>
+              <a:effectLst/>
+              <a:uLnTx/>
+              <a:uFillTx/>
+              <a:latin typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:ea typeface="思源黑体 CN Medium" panose="020B0600000000000000" charset="-122"/>
+              <a:cs typeface="+mn-ea"/>
+              <a:sym typeface="+mn-lt"/>
+            </a:endParaRPr>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+    <p:custDataLst>
+      <p:tags r:id="rId18"/>
+    </p:custDataLst>
+  </p:cSld>
+  <p:clrMapOvr>
+    <a:masterClrMapping/>
+  </p:clrMapOvr>
+</p:sld>
