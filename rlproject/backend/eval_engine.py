@@ -120,7 +120,7 @@ class EvalEngine:
         self._frame_callback: Optional[Callable] = None
         self._frame_broadcast_callback: Optional[Callable] = None
 
-        self.RX_C, self.RY_C, self.RZ_C, self.z = 0.193, 0.067, 5.3, 0.115
+        self.RX_C, self.RY_C, self.RZ_C, self.z = 0.107, 0.049, 4.747, 0.112
 
         self._fps = 0.0
         self._frame_count = 0
@@ -221,6 +221,7 @@ class EvalEngine:
             from camera_calibration.camera_calibration import CameraCalibration
 
             self.robot_control = URControl(self.robot_ip)
+            
 
             print("[EvalEngine] Loading hand detector...")
             self.hand_detector = HandDetection()
@@ -355,7 +356,7 @@ class EvalEngine:
         if self.simulate:
             self._sim_robot_pos = np.array([self.w_env / 2, self.h_env / 2])
             return
-
+        print(22222222222222222)
         if not self.cap:
             return
 
@@ -405,8 +406,8 @@ class EvalEngine:
     def _generate_target_position(self, current_pos: np.ndarray, min_dist: float = 3.0) -> np.ndarray:
         while True:
             target = np.array([
-                np.random.uniform(2.0, self.w_env - 2.0),
-                np.random.uniform(2.0, self.h_env - 2.0)
+                np.random.uniform(2, self.w_env - 2),
+                np.random.uniform(3, self.h_env - 3)
             ])
             if np.linalg.norm(target - current_pos) >= min_dist:
                 return target
@@ -445,8 +446,9 @@ class EvalEngine:
         self._running = True
 
         trial_count = 8
-        target_radius = 1.5
+        target_radius = 2.0
         max_trial_time = 6.0
+        loop_dt = 1.0 / 20
         results = {
             'catch_times': [],
             'peak_vels': [],
@@ -529,7 +531,7 @@ class EvalEngine:
 
             last_hand_env = hand_env
             last_control_time = t_now
-            sleep_time = self.target_dt - (time.time() - loop_start)
+            sleep_time = loop_dt - (time.time() - loop_start)
             if sleep_time > 0:
                 time.sleep(sleep_time)
 
@@ -752,8 +754,9 @@ class EvalEngine:
 
         beat_interval = 1.5
         beat_count = 16
-        target_radius = 1.0
+        target_radius = 1.5
         time_window = 0.4
+        loop_dt = 1.0 / 20
         left_target = np.array([self.w_env / 2 - 3.0, self.h_env / 2], dtype=np.float64)
         center_target = np.array([self.w_env / 2, self.h_env / 2], dtype=np.float64)
         right_target = np.array([self.w_env / 2 + 3.0, self.h_env / 2], dtype=np.float64)
@@ -820,6 +823,7 @@ class EvalEngine:
                     if response_time is None and last_response_target != target_name and np.linalg.norm(hand_env - target) <= target_radius:
                         response_time = elapsed
                         last_response_target = target_name
+                        break
 
                 virtual_target_pixel = self._step_virtual_target(virtual_target_pixel, target, w_px, h_px)
                 control_now = time.time()
@@ -827,7 +831,7 @@ class EvalEngine:
                 last_control_time = control_now
                 self._update_progress("Rhythmic Synchronization", 4, (beat_idx + min((elapsed - beat_time) / beat_interval, 1.0)) / beat_count, f"节律同步 {beat_idx + 1}/{beat_count} -> {target_name}")
 
-                sleep_time = self.target_dt - (time.time() - loop_start)
+                sleep_time = loop_dt - (time.time() - loop_start)
                 if sleep_time > 0:
                     time.sleep(sleep_time)
 
@@ -862,28 +866,25 @@ class EvalEngine:
 
         Returns (start_env, end_env, path_pixels, success).
         """
-        import cv2 as _cv2
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(hsv, np.array([0, 0, 0]), np.array([180, 255, 60]))
 
-        hsv = _cv2.cvtColor(frame, _cv2.COLOR_BGR2HSV)
-        mask = _cv2.inRange(hsv, np.array([0, 0, 0]), np.array([180, 255, 60]))
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
 
-        kernel = _cv2.getStructuringElement(_cv2.MORPH_ELLIPSE, (5, 5))
-        mask = _cv2.morphologyEx(mask, _cv2.MORPH_CLOSE, kernel, iterations=2)
-        mask = _cv2.morphologyEx(mask, _cv2.MORPH_OPEN, kernel, iterations=1)
-
-        contours, _ = _cv2.findContours(mask, _cv2.RETR_EXTERNAL, _cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return None, None, None, False
 
-        line_contour = max(contours, key=_cv2.contourArea)
-        if _cv2.contourArea(line_contour) < 500:
+        line_contour = max(contours, key=cv2.contourArea)
+        if cv2.contourArea(line_contour) < 500:
             return None, None, None, False
 
         points = line_contour.reshape(-1, 2).astype(np.float64)
         if len(points) < 2:
             return None, None, None, False
 
-        dists = _cv2.distanceTransform(mask, _cv2.DIST_L2, 5)
         idx_start = int(np.argmax(points[:, 0]))
         idx_end = int(np.argmin(points[:, 0]))
         p1 = points[idx_start]
@@ -967,6 +968,17 @@ class EvalEngine:
             'end': end_env.tolist(),
             'tolerance': tolerance,
         })
+
+        # Draw detected line on frame for visualization
+        vis_frame = undist if not self.simulate else self._generate_sim_frame()
+        p1 = self._env_to_pixel(start_env, w_px, h_px).astype(int)
+        p2 = self._env_to_pixel(end_env, w_px, h_px).astype(int)
+        cv2.line(vis_frame, tuple(p1), tuple(p2), (0, 255, 0), 3)
+        cv2.circle(vis_frame, tuple(p1), 8, (0, 0, 255), -1)
+        cv2.circle(vis_frame, tuple(p2), 8, (0, 0, 255), -1)
+        cv2.putText(vis_frame, "Detected Line", (p1[0], p1[1] - 15),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        self._broadcast_frame(vis_frame)
 
         self._countdown()
 
@@ -1087,6 +1099,8 @@ class EvalEngine:
             self._start_video_recording(session_id)
 
         self._move_to_center()
+        print("\n[系统] 正在将机器人复位至桌面中心...")
+        # time.sleep(30)
 
         task_map = {
             'rapid_reach': self.run_rapid_reach,

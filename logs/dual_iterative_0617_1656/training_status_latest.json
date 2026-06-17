@@ -1,70 +1,8 @@
 {
-  "event": "phase_progress",
-  "phase": "robot",
+  "event": "run_completed",
+  "phase": "complete",
   "iteration": 3,
-  "timesteps": 240000,
-  "total_timesteps": 2000000,
-  "progress": 0.12,
-  "recent_episode_count": 200,
-  "recent_tis_mean": 0.05534999999999989,
-  "recent_zpd_coverage_mean": 0.21615696066993678,
-  "recent_episode_length_mean": 13.815,
-  "recent_too_close_rate_mean": 0.6142123635241384,
-  "recent_too_far_rate_mean": 0.16963067580592486,
-  "done_reason_counts": {
-    "Robot Caught": 16851,
-    "Robot Out": 1898
-  },
-  "latest_episode": {
-    "training_mode": "robot",
-    "episode_length": 5,
-    "max_steps": 100,
-    "reward": -40.97580400331398,
-    "terminated": true,
-    "truncated": false,
-    "done_reason": "Robot Caught",
-    "zpd_min": 4.0,
-    "zpd_max": 6.0,
-    "tis": 0.02,
-    "zpd_coverage": 0.4,
-    "too_close_rate": 0.4,
-    "too_far_rate": 0.2,
-    "avg_distance": 3.899820768565475,
-    "min_distance": 1.2842645136468593,
-    "max_distance": 6.160829122322297,
-    "mean_bio_cost": 0.0,
-    "mean_jerk": 0.35678034541615344,
-    "selected_opponent_index": 1,
-    "opponent_id": 1,
-    "opponent_id_dim": 0,
-    "include_opponent_id": false,
-    "selected_opponent_name": "iteration_1",
-    "selected_opponent_prob": 0.22361775598870548,
-    "pfsp_probs": [
-      0.2,
-      0.22361775598870548,
-      0.5763822440112946
-    ],
-    "pfsp_pool_size": 3,
-    "pfsp_update_interval": 20,
-    "pfsp_pending_episodes": 8,
-    "event": "episode_completed",
-    "phase": "robot",
-    "iteration": 3,
-    "env_idx": 1,
-    "global_timestep": 239992
-  },
-  "logger": {},
-  "pfsp": {
-    "selected_opponent_index": 1,
-    "selected_opponent_name": "iteration_1",
-    "selected_opponent_prob": 0.22361775598870548,
-    "pfsp_probs": [
-      0.2,
-      0.22361775598870548,
-      0.5763822440112946
-    ],
-    "pfsp_pool_size": 3
-  },
-  "timestamp": "2026-06-17T12:14:01.269293+00:00"
+  "final_robot_path": "logs/dual_iterative_0617_1656\\iteration_3\\robot\\robot\\best_model.zip",
+  "total_opponents": 3,
+  "timestamp": "2026-06-17T13:43:05.635069+00:00"
 }

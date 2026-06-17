@@ -5,7 +5,11 @@ import { EVALUATION_TASKS as TASKS, getTaskScore } from '../constants/evaluation
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 
 const buildScores = (source) => {
-  const nextScores = Object.fromEntries(TASKS.map((task) => [task.id, getTaskScore(source, task.id, 0)]));
+  if (!source) return {};
+  const nextScores = Object.fromEntries(TASKS.map((task) => {
+    const val = source[`${task.id}_score`] ?? source[task.id];
+    return [task.id, typeof val === 'number' ? val : 0];
+  }));
   nextScores.total = source?.total ?? source?.total_score ?? 0;
   return nextScores;
 };
