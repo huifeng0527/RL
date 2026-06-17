@@ -16,8 +16,8 @@ import os
 from database import (
     get_db, init_db, Patient, Session as EvalSession,
     EvalSprint, EvalTracking, EvalLeague, EvalBoundary,
-    EvalRapidReach, EvalContinuousTracking, EvalMovingTargetInterception,
-    EvalAdaptiveBoundaryChallenge, EvalRhythmicSwitching, EvalMirrorMappingReach
+    EvalRapidReach, EvalContinuousTracking,
+    EvalWorkspaceExploration, EvalRhythmicSynchronization, EvalConstrainedLineTracing
 )
 from eval_engine import EvalEngine, TaskProgress, EvalResult
 from report_generator import ReportGenerator
@@ -102,11 +102,9 @@ class SessionNotesUpdate(BaseModel):
 class EvalResultCreate(BaseModel):
     rapid_reach: Optional[dict] = None
     continuous_tracking: Optional[dict] = None
-    moving_target_interception: Optional[dict] = None
-    adaptive_boundary_challenge: Optional[dict] = None
-    rhythmic_switching: Optional[dict] = None
-    mirror_mapping_reach: Optional[dict] = None
-    legacy_league: Optional[dict] = None
+    workspace_exploration: Optional[dict] = None
+    rhythmic_synchronization: Optional[dict] = None
+    constrained_line_tracing: Optional[dict] = None
 
 
 def _parse_birth_date(value: Optional[str]) -> Optional[datetime]:
@@ -189,21 +187,7 @@ def _serialize_continuous_tracking(result: Optional[EvalContinuousTracking]) -> 
     }
 
 
-def _serialize_moving_target_interception(result: Optional[EvalMovingTargetInterception]) -> Optional[dict]:
-    if not result:
-        return None
-    return {
-        "total_trials": result.total_trials,
-        "successes": result.successes,
-        "timing_errors": result.timing_errors,
-        "spatial_errors": result.spatial_errors,
-        "early_count": result.early_count,
-        "late_count": result.late_count,
-        "reaction_times": result.reaction_times,
-    }
-
-
-def _serialize_adaptive_boundary_challenge(result: Optional[EvalAdaptiveBoundaryChallenge]) -> Optional[dict]:
+def _serialize_workspace_exploration(result: Optional[EvalWorkspaceExploration]) -> Optional[dict]:
     if not result:
         return None
     return {
@@ -221,12 +205,13 @@ def _serialize_adaptive_boundary_challenge(result: Optional[EvalAdaptiveBoundary
     }
 
 
-def _serialize_rhythmic_switching(result: Optional[EvalRhythmicSwitching]) -> Optional[dict]:
+def _serialize_rhythmic_synchronization(result: Optional[EvalRhythmicSynchronization]) -> Optional[dict]:
     if not result:
         return None
     return {
         "beat_times": result.beat_times,
         "target_sequence": result.target_sequence,
+        "target_positions": result.target_positions,
         "response_times": result.response_times,
         "timing_errors": result.timing_errors,
         "correct_count": result.correct_count,
@@ -237,20 +222,19 @@ def _serialize_rhythmic_switching(result: Optional[EvalRhythmicSwitching]) -> Op
     }
 
 
-def _serialize_mirror_mapping_reach(result: Optional[EvalMirrorMappingReach]) -> Optional[dict]:
+def _serialize_constrained_line_tracing(result: Optional[EvalConstrainedLineTracing]) -> Optional[dict]:
     if not result:
         return None
     return {
-        "cue_zones": result.cue_zones,
-        "response_zones": result.response_zones,
+        "line_specs": result.line_specs,
         "successes": result.successes,
-        "wrong_side_count": result.wrong_side_count,
-        "wrong_target_count": result.wrong_target_count,
-        "timeouts": result.timeouts,
-        "reaction_times": result.reaction_times,
-        "movement_times": result.movement_times,
-        "spatial_errors": result.spatial_errors,
-        "path_efficiencies": result.path_efficiencies,
+        "completion_times": result.completion_times,
+        "mean_lateral_errors": result.mean_lateral_errors,
+        "max_lateral_errors": result.max_lateral_errors,
+        "off_line_rates": result.off_line_rates,
+        "path_smoothness": result.path_smoothness,
+        "path_lengths": result.path_lengths,
+        "speed_accuracy_scores": result.speed_accuracy_scores,
     }
 
 
@@ -385,7 +369,7 @@ def get_session_detail(session_id: int, db: Session = Depends(get_db)):
 
     rapid_reach = _serialize_rapid_reach(session.rapid_reach) or _serialize_sprint(session.sprint)
     continuous_tracking = _serialize_continuous_tracking(session.continuous_tracking) or _serialize_tracking(session.tracking)
-    adaptive_boundary = _serialize_adaptive_boundary_challenge(session.adaptive_boundary_challenge) or _serialize_boundary(session.boundary)
+    workspace_exploration = _serialize_workspace_exploration(session.workspace_exploration) or _serialize_boundary(session.boundary)
 
     return {
         "id": session.id,
@@ -394,26 +378,19 @@ def get_session_detail(session_id: int, db: Session = Depends(get_db)):
         "total_score": session.total_score,
         "rapid_reach_score": session.rapid_reach_score if session.rapid_reach_score is not None else session.sprint_score,
         "continuous_tracking_score": session.continuous_tracking_score if session.continuous_tracking_score is not None else session.tracking_score,
-        "moving_target_interception_score": session.moving_target_interception_score,
-        "adaptive_boundary_challenge_score": session.adaptive_boundary_challenge_score if session.adaptive_boundary_challenge_score is not None else session.boundary_score,
-        "rhythmic_switching_score": session.rhythmic_switching_score,
-        "mirror_mapping_reach_score": session.mirror_mapping_reach_score,
-        "sprint_score": session.sprint_score,
-        "tracking_score": session.tracking_score,
-        "league_score": session.league_score,
-        "boundary_score": session.boundary_score,
+        "workspace_exploration_score": session.workspace_exploration_score if session.workspace_exploration_score is not None else session.boundary_score,
+        "rhythmic_synchronization_score": session.rhythmic_synchronization_score,
+        "constrained_line_tracing_score": session.constrained_line_tracing_score,
         "notes": session.notes,
         "video_path": session.video_path,
         "rapid_reach": rapid_reach,
         "continuous_tracking": continuous_tracking,
-        "moving_target_interception": _serialize_moving_target_interception(session.moving_target_interception),
-        "adaptive_boundary_challenge": adaptive_boundary,
-        "rhythmic_switching": _serialize_rhythmic_switching(session.rhythmic_switching),
-        "mirror_mapping_reach": _serialize_mirror_mapping_reach(session.mirror_mapping_reach),
-        "legacy_league": _serialize_league(session.league),
+        "workspace_exploration": workspace_exploration,
+        "rhythmic_synchronization": _serialize_rhythmic_synchronization(session.rhythmic_synchronization),
+        "constrained_line_tracing": _serialize_constrained_line_tracing(session.constrained_line_tracing),
+        # Legacy fallbacks for reading old session data
         "sprint": _serialize_sprint(session.sprint),
         "tracking": _serialize_tracking(session.tracking),
-        "league": _serialize_league(session.league),
         "boundary": _serialize_boundary(session.boundary),
     }
 
@@ -468,13 +445,11 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
         session.total_score is not None,
         session.rapid_reach,
         session.continuous_tracking,
-        session.moving_target_interception,
-        session.adaptive_boundary_challenge,
-        session.rhythmic_switching,
-        session.mirror_mapping_reach,
+        session.workspace_exploration,
+        session.rhythmic_synchronization,
+        session.constrained_line_tracing,
         session.sprint,
         session.tracking,
-        session.league,
         session.boundary,
     ])
     if has_results:
@@ -541,61 +516,49 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
                         trajectory_names=result.continuous_tracking.get('trajectory_names', []),
                     ))
 
-                if result.moving_target_interception:
-                    db_local.add(EvalMovingTargetInterception(
+                if result.workspace_exploration:
+                    db_local.add(EvalWorkspaceExploration(
                         session_id=session_id,
-                        total_trials=result.moving_target_interception.get('total_trials', 0),
-                        successes=result.moving_target_interception.get('successes', []),
-                        timing_errors=result.moving_target_interception.get('timing_errors', []),
-                        spatial_errors=result.moving_target_interception.get('spatial_errors', []),
-                        early_count=result.moving_target_interception.get('early_count', 0),
-                        late_count=result.moving_target_interception.get('late_count', 0),
-                        reaction_times=result.moving_target_interception.get('reaction_times', []),
+                        reachable_radii=result.workspace_exploration.get('reachable_radii', []),
+                        reachable_area=result.workspace_exploration.get('reachable_area'),
+                        directional_asymmetry=result.workspace_exploration.get('directional_asymmetry'),
+                        boundary_control_times=result.workspace_exploration.get('boundary_control_times', []),
+                        boundary_violation_count=result.workspace_exploration.get('boundary_violation_count', 0),
+                        recovery_times=result.workspace_exploration.get('recovery_times', []),
+                        min_x=result.workspace_exploration.get('min_x'),
+                        max_x=result.workspace_exploration.get('max_x'),
+                        min_y=result.workspace_exploration.get('min_y'),
+                        max_y=result.workspace_exploration.get('max_y'),
+                        vel_list=result.workspace_exploration.get('vel_list', []),
                     ))
 
-                if result.adaptive_boundary_challenge:
-                    db_local.add(EvalAdaptiveBoundaryChallenge(
+                if result.rhythmic_synchronization:
+                    db_local.add(EvalRhythmicSynchronization(
                         session_id=session_id,
-                        reachable_radii=result.adaptive_boundary_challenge.get('reachable_radii', []),
-                        reachable_area=result.adaptive_boundary_challenge.get('reachable_area'),
-                        directional_asymmetry=result.adaptive_boundary_challenge.get('directional_asymmetry'),
-                        boundary_control_times=result.adaptive_boundary_challenge.get('boundary_control_times', []),
-                        boundary_violation_count=result.adaptive_boundary_challenge.get('boundary_violation_count', 0),
-                        recovery_times=result.adaptive_boundary_challenge.get('recovery_times', []),
-                        min_x=result.adaptive_boundary_challenge.get('min_x'),
-                        max_x=result.adaptive_boundary_challenge.get('max_x'),
-                        min_y=result.adaptive_boundary_challenge.get('min_y'),
-                        max_y=result.adaptive_boundary_challenge.get('max_y'),
-                        vel_list=result.adaptive_boundary_challenge.get('vel_list', []),
+                        beat_times=result.rhythmic_synchronization.get('beat_times', []),
+                        target_sequence=result.rhythmic_synchronization.get('target_sequence', []),
+                        target_positions=result.rhythmic_synchronization.get('target_positions', []),
+                        response_times=result.rhythmic_synchronization.get('response_times', []),
+                        timing_errors=result.rhythmic_synchronization.get('timing_errors', []),
+                        correct_count=result.rhythmic_synchronization.get('correct_count', 0),
+                        early_count=result.rhythmic_synchronization.get('early_count', 0),
+                        late_count=result.rhythmic_synchronization.get('late_count', 0),
+                        miss_count=result.rhythmic_synchronization.get('miss_count', 0),
+                        rhythm_variability=result.rhythmic_synchronization.get('rhythm_variability'),
                     ))
 
-                if result.rhythmic_switching:
-                    db_local.add(EvalRhythmicSwitching(
+                if result.constrained_line_tracing:
+                    db_local.add(EvalConstrainedLineTracing(
                         session_id=session_id,
-                        beat_times=result.rhythmic_switching.get('beat_times', []),
-                        target_sequence=result.rhythmic_switching.get('target_sequence', []),
-                        response_times=result.rhythmic_switching.get('response_times', []),
-                        timing_errors=result.rhythmic_switching.get('timing_errors', []),
-                        correct_count=result.rhythmic_switching.get('correct_count', 0),
-                        early_count=result.rhythmic_switching.get('early_count', 0),
-                        late_count=result.rhythmic_switching.get('late_count', 0),
-                        miss_count=result.rhythmic_switching.get('miss_count', 0),
-                        rhythm_variability=result.rhythmic_switching.get('rhythm_variability'),
-                    ))
-
-                if result.mirror_mapping_reach:
-                    db_local.add(EvalMirrorMappingReach(
-                        session_id=session_id,
-                        cue_zones=result.mirror_mapping_reach.get('cue_zones', []),
-                        response_zones=result.mirror_mapping_reach.get('response_zones', []),
-                        successes=result.mirror_mapping_reach.get('successes', []),
-                        wrong_side_count=result.mirror_mapping_reach.get('wrong_side_count', 0),
-                        wrong_target_count=result.mirror_mapping_reach.get('wrong_target_count', 0),
-                        timeouts=result.mirror_mapping_reach.get('timeouts', 0),
-                        reaction_times=result.mirror_mapping_reach.get('reaction_times', []),
-                        movement_times=result.mirror_mapping_reach.get('movement_times', []),
-                        spatial_errors=result.mirror_mapping_reach.get('spatial_errors', []),
-                        path_efficiencies=result.mirror_mapping_reach.get('path_efficiencies', []),
+                        line_specs=result.constrained_line_tracing.get('line_specs', []),
+                        successes=result.constrained_line_tracing.get('successes', []),
+                        completion_times=result.constrained_line_tracing.get('completion_times', []),
+                        mean_lateral_errors=result.constrained_line_tracing.get('mean_lateral_errors', []),
+                        max_lateral_errors=result.constrained_line_tracing.get('max_lateral_errors', []),
+                        off_line_rates=result.constrained_line_tracing.get('off_line_rates', []),
+                        path_smoothness=result.constrained_line_tracing.get('path_smoothness', []),
+                        path_lengths=result.constrained_line_tracing.get('path_lengths', []),
+                        speed_accuracy_scores=result.constrained_line_tracing.get('speed_accuracy_scores', []),
                     ))
 
                 results = result.to_dict()
@@ -603,14 +566,13 @@ async def start_evaluation(session_id: int, db: Session = Depends(get_db)):
                 db_session.total_score = scores['total']
                 db_session.rapid_reach_score = scores['rapid_reach']
                 db_session.continuous_tracking_score = scores['continuous_tracking']
-                db_session.moving_target_interception_score = scores['moving_target_interception']
-                db_session.adaptive_boundary_challenge_score = scores['adaptive_boundary_challenge']
-                db_session.rhythmic_switching_score = scores['rhythmic_switching']
-                db_session.mirror_mapping_reach_score = scores['mirror_mapping_reach']
+                db_session.workspace_exploration_score = scores['workspace_exploration']
+                db_session.rhythmic_synchronization_score = scores['rhythmic_synchronization']
+                db_session.constrained_line_tracing_score = scores['constrained_line_tracing']
+                # Legacy aliases
                 db_session.sprint_score = scores['rapid_reach']
                 db_session.tracking_score = scores['continuous_tracking']
-                db_session.league_score = None
-                db_session.boundary_score = scores['adaptive_boundary_challenge']
+                db_session.boundary_score = scores['workspace_exploration']
                 db_local.commit()
             finally:
                 db_local.close()
@@ -695,14 +657,9 @@ class PatientStatsResponse(BaseModel):
     avg_total_score: Optional[float]
     avg_rapid_reach_score: Optional[float]
     avg_continuous_tracking_score: Optional[float]
-    avg_moving_target_interception_score: Optional[float]
-    avg_adaptive_boundary_challenge_score: Optional[float]
-    avg_rhythmic_switching_score: Optional[float]
-    avg_mirror_mapping_reach_score: Optional[float]
-    avg_sprint_score: Optional[float]
-    avg_tracking_score: Optional[float]
-    avg_league_score: Optional[float]
-    avg_boundary_score: Optional[float]
+    avg_workspace_exploration_score: Optional[float]
+    avg_rhythmic_synchronization_score: Optional[float]
+    avg_constrained_line_tracing_score: Optional[float]
 
 
 class TaskStatsResponse(BaseModel):
@@ -733,14 +690,9 @@ def get_patient_statistics(db: Session = Depends(get_db)):
                 avg_total_score=None,
                 avg_rapid_reach_score=None,
                 avg_continuous_tracking_score=None,
-                avg_moving_target_interception_score=None,
-                avg_adaptive_boundary_challenge_score=None,
-                avg_rhythmic_switching_score=None,
-                avg_mirror_mapping_reach_score=None,
-                avg_sprint_score=None,
-                avg_tracking_score=None,
-                avg_league_score=None,
-                avg_boundary_score=None,
+                avg_workspace_exploration_score=None,
+                avg_rhythmic_synchronization_score=None,
+                avg_constrained_line_tracing_score=None,
             ))
             continue
 
@@ -752,14 +704,9 @@ def get_patient_statistics(db: Session = Depends(get_db)):
             avg_total_score=_mean_score(s.total_score for s in sessions),
             avg_rapid_reach_score=_mean_score(_score_value(s, 'rapid_reach_score', 'sprint_score') for s in sessions),
             avg_continuous_tracking_score=_mean_score(_score_value(s, 'continuous_tracking_score', 'tracking_score') for s in sessions),
-            avg_moving_target_interception_score=_mean_score(s.moving_target_interception_score for s in sessions),
-            avg_adaptive_boundary_challenge_score=_mean_score(_score_value(s, 'adaptive_boundary_challenge_score', 'boundary_score') for s in sessions),
-            avg_rhythmic_switching_score=_mean_score(s.rhythmic_switching_score for s in sessions),
-            avg_mirror_mapping_reach_score=_mean_score(s.mirror_mapping_reach_score for s in sessions),
-            avg_sprint_score=_mean_score(s.sprint_score for s in sessions),
-            avg_tracking_score=_mean_score(s.tracking_score for s in sessions),
-            avg_league_score=_mean_score(s.league_score for s in sessions),
-            avg_boundary_score=_mean_score(s.boundary_score for s in sessions),
+            avg_workspace_exploration_score=_mean_score(_score_value(s, 'workspace_exploration_score', 'boundary_score') for s in sessions),
+            avg_rhythmic_synchronization_score=_mean_score(s.rhythmic_synchronization_score for s in sessions),
+            avg_constrained_line_tracing_score=_mean_score(s.constrained_line_tracing_score for s in sessions),
         ))
 
     return result
@@ -773,10 +720,9 @@ def get_task_statistics(db: Session = Depends(get_db)):
     tasks = [
         ('rapid_reach', 'Rapid Reach', 'sprint_score'),
         ('continuous_tracking', 'Continuous Tracking', 'tracking_score'),
-        ('moving_target_interception', 'Moving Target Interception', None),
-        ('adaptive_boundary_challenge', 'Adaptive Boundary Challenge', 'boundary_score'),
-        ('rhythmic_switching', 'Rhythmic Switching', None),
-        ('mirror_mapping_reach', 'Mirror Mapping Reach', None),
+        ('workspace_exploration', 'Workspace Exploration', 'boundary_score'),
+        ('rhythmic_synchronization', 'Rhythmic Synchronization', None),
+        ('constrained_line_tracing', 'Constrained Line Tracing', None),
     ]
     result = []
 
@@ -826,14 +772,9 @@ def get_patient_stats(patient_id: int, db: Session = Depends(get_db)):
             avg_total_score=None,
             avg_rapid_reach_score=None,
             avg_continuous_tracking_score=None,
-            avg_moving_target_interception_score=None,
-            avg_adaptive_boundary_challenge_score=None,
-            avg_rhythmic_switching_score=None,
-            avg_mirror_mapping_reach_score=None,
-            avg_sprint_score=None,
-            avg_tracking_score=None,
-            avg_league_score=None,
-            avg_boundary_score=None,
+            avg_workspace_exploration_score=None,
+            avg_rhythmic_synchronization_score=None,
+            avg_constrained_line_tracing_score=None,
         )
 
     n = len(sessions)
@@ -844,14 +785,9 @@ def get_patient_stats(patient_id: int, db: Session = Depends(get_db)):
         avg_total_score=_mean_score(s.total_score for s in sessions),
         avg_rapid_reach_score=_mean_score(_score_value(s, 'rapid_reach_score', 'sprint_score') for s in sessions),
         avg_continuous_tracking_score=_mean_score(_score_value(s, 'continuous_tracking_score', 'tracking_score') for s in sessions),
-        avg_moving_target_interception_score=_mean_score(s.moving_target_interception_score for s in sessions),
-        avg_adaptive_boundary_challenge_score=_mean_score(_score_value(s, 'adaptive_boundary_challenge_score', 'boundary_score') for s in sessions),
-        avg_rhythmic_switching_score=_mean_score(s.rhythmic_switching_score for s in sessions),
-        avg_mirror_mapping_reach_score=_mean_score(s.mirror_mapping_reach_score for s in sessions),
-        avg_sprint_score=_mean_score(s.sprint_score for s in sessions),
-        avg_tracking_score=_mean_score(s.tracking_score for s in sessions),
-        avg_league_score=_mean_score(s.league_score for s in sessions),
-        avg_boundary_score=_mean_score(s.boundary_score for s in sessions),
+        avg_workspace_exploration_score=_mean_score(_score_value(s, 'workspace_exploration_score', 'boundary_score') for s in sessions),
+        avg_rhythmic_synchronization_score=_mean_score(s.rhythmic_synchronization_score for s in sessions),
+        avg_constrained_line_tracing_score=_mean_score(s.constrained_line_tracing_score for s in sessions),
     )
 
 
@@ -873,8 +809,8 @@ def export_excel(db: Session = Depends(get_db)):
     # Header
     headers = [
         'Session ID', 'Patient Name', 'Date', 'Total Score',
-        'Rapid Reach', 'Continuous Tracking', 'Moving Target Interception',
-        'Adaptive Boundary Challenge', 'Rhythmic Switching', 'Mirror Mapping Reach',
+        'Rapid Reach', 'Continuous Tracking', 'Workspace Exploration',
+        'Rhythmic Synchronization', 'Constrained Line Tracing',
         'Notes'
     ]
     ws.append(headers)
@@ -889,10 +825,9 @@ def export_excel(db: Session = Depends(get_db)):
             round(s.total_score, 1) if s.total_score is not None else '',
             round(_score_value(s, 'rapid_reach_score', 'sprint_score'), 1) if _score_value(s, 'rapid_reach_score', 'sprint_score') is not None else '',
             round(_score_value(s, 'continuous_tracking_score', 'tracking_score'), 1) if _score_value(s, 'continuous_tracking_score', 'tracking_score') is not None else '',
-            round(s.moving_target_interception_score, 1) if s.moving_target_interception_score is not None else '',
-            round(_score_value(s, 'adaptive_boundary_challenge_score', 'boundary_score'), 1) if _score_value(s, 'adaptive_boundary_challenge_score', 'boundary_score') is not None else '',
-            round(s.rhythmic_switching_score, 1) if s.rhythmic_switching_score is not None else '',
-            round(s.mirror_mapping_reach_score, 1) if s.mirror_mapping_reach_score is not None else '',
+            round(_score_value(s, 'workspace_exploration_score', 'boundary_score'), 1) if _score_value(s, 'workspace_exploration_score', 'boundary_score') is not None else '',
+            round(s.rhythmic_synchronization_score, 1) if s.rhythmic_synchronization_score is not None else '',
+            round(s.constrained_line_tracing_score, 1) if s.constrained_line_tracing_score is not None else '',
             s.notes or '',
         ])
 
@@ -900,8 +835,8 @@ def export_excel(db: Session = Depends(get_db)):
     ws2 = wb.create_sheet("Patient Summary")
     ws2.append([
         'Patient Name', 'Session Count', 'Avg Total',
-        'Avg Rapid Reach', 'Avg Continuous Tracking', 'Avg Moving Target Interception',
-        'Avg Adaptive Boundary Challenge', 'Avg Rhythmic Switching', 'Avg Mirror Mapping Reach'
+        'Avg Rapid Reach', 'Avg Continuous Tracking', 'Avg Workspace Exploration',
+        'Avg Rhythmic Synchronization', 'Avg Constrained Line Tracing'
     ])
 
     patients = db.query(Patient).all()
@@ -916,17 +851,15 @@ def export_excel(db: Session = Depends(get_db)):
         avg_total = round(sum(s.total_score for s in sessions) / n, 1)
         rapid_scores = [_score_value(s, 'rapid_reach_score', 'sprint_score') for s in sessions]
         tracking_scores = [_score_value(s, 'continuous_tracking_score', 'tracking_score') for s in sessions]
-        interception_scores = [s.moving_target_interception_score for s in sessions]
-        boundary_scores = [_score_value(s, 'adaptive_boundary_challenge_score', 'boundary_score') for s in sessions]
-        rhythm_scores = [s.rhythmic_switching_score for s in sessions]
-        mirror_scores = [s.mirror_mapping_reach_score for s in sessions]
+        workspace_scores = [_score_value(s, 'workspace_exploration_score', 'boundary_score') for s in sessions]
+        rhythm_scores = [s.rhythmic_synchronization_score for s in sessions]
+        line_scores = [s.constrained_line_tracing_score for s in sessions]
 
         rapid_mean = _mean_score(rapid_scores)
         tracking_mean = _mean_score(tracking_scores)
-        interception_mean = _mean_score(interception_scores)
-        boundary_mean = _mean_score(boundary_scores)
+        workspace_mean = _mean_score(workspace_scores)
         rhythm_mean = _mean_score(rhythm_scores)
-        mirror_mean = _mean_score(mirror_scores)
+        line_mean = _mean_score(line_scores)
 
         ws2.append([
             patient.name,
@@ -934,10 +867,9 @@ def export_excel(db: Session = Depends(get_db)):
             avg_total,
             rapid_mean if rapid_mean is not None else '',
             tracking_mean if tracking_mean is not None else '',
-            interception_mean if interception_mean is not None else '',
-            boundary_mean if boundary_mean is not None else '',
+            workspace_mean if workspace_mean is not None else '',
             rhythm_mean if rhythm_mean is not None else '',
-            mirror_mean if mirror_mean is not None else '',
+            line_mean if line_mean is not None else '',
         ])
 
     # Save file

@@ -77,12 +77,15 @@ def test_dual(robot_model_path=None, hand_model_path=None, max_steps=1000, fps=3
 
     while running:
         obs, info = env.reset()
+
         episode_count += 1
         steps = 0
         total_reward = 0
 
         print(f"\nEpisode {episode_count} started")
         print(f"Robot: {env.robot_position}, Hand: {env.hand_position}")
+        print(f"stride_robot:{env.stride_robot}")
+        print(f"stride_hand:{env.stride_hand}")
 
         episode_done = False
 
@@ -150,7 +153,7 @@ if __name__ == '__main__':
                         help='Path to hand model (PPO)')
     parser.add_argument('--steps', type=int, default=1000,
                         help='Max steps per episode')
-    parser.add_argument('--fps', type=int, default=8,
+    parser.add_argument('--fps', type=int, default=10,
                         help='Target frames per second (default: 30)')
 
     args = parser.parse_args()

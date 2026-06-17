@@ -1,0 +1,524 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>League Training Control Room</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #f5f1e8;
+      --paper: rgba(255, 252, 244, 0.92);
+      --paper-2: rgba(249, 244, 233, 0.98);
+      --line: rgba(57, 78, 70, 0.16);
+      --line-strong: rgba(38, 64, 57, 0.26);
+      --text: #21312c;
+      --muted: #68766f;
+      --green: #277a4c;
+      --cyan: #147d8d;
+      --amber: #b7791f;
+      --red: #c2414b;
+      --blue: #2f66c5;
+      --ink: #16211d;
+      --shadow: 0 20px 60px rgba(64, 52, 35, .13), 0 2px 10px rgba(64, 52, 35, .08);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 14% 10%, rgba(39,122,76,.16), transparent 28%),
+        radial-gradient(circle at 86% 7%, rgba(20,125,141,.13), transparent 32%),
+        linear-gradient(135deg, #fbf7ed 0%, #f4efe3 48%, #e8f1e8 100%);
+      font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: .48;
+      background-image:
+        linear-gradient(rgba(39,122,76,.075) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(20,125,141,.055) 1px, transparent 1px);
+      background-size: 36px 36px;
+      mask-image: radial-gradient(circle at center, black, transparent 80%);
+    }
+
+    .shell { width: min(1680px, calc(100vw - 36px)); margin: 0 auto; padding: 24px 0 36px; }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(320px, 1fr) auto;
+      gap: 18px;
+      align-items: stretch;
+      margin-bottom: 18px;
+    }
+
+    .brand, .runbox, .panel, .tile {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px);
+    }
+
+    .brand {
+      position: relative;
+      padding: 24px 26px;
+      border-radius: 30px 12px 30px 12px;
+      overflow: hidden;
+    }
+    .brand::after {
+      content: "";
+      position: absolute;
+      right: -110px; top: -120px;
+      width: 300px; height: 300px;
+      background: conic-gradient(from 120deg, transparent, rgba(39,122,76,.18), transparent, rgba(20,125,141,.16), transparent);
+      border-radius: 50%;
+      animation: spin 22s linear infinite;
+    }
+    .brand::before {
+      content: "";
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--green), var(--cyan), var(--amber));
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    h1 { margin: 0; font-size: clamp(27px, 3vw, 50px); letter-spacing: -1.7px; line-height: .95; font-weight: 900; color: var(--ink); }
+    .subtitle { margin-top: 13px; color: var(--muted); max-width: 780px; line-height: 1.5; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; }
+    .tagline { display: inline-block; color: var(--green); background: rgba(39,122,76,.08); border: 1px solid rgba(39,122,76,.22); padding: 5px 9px; border-radius: 999px; font: 800 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin-bottom: 13px; }
+
+    .runbox { border-radius: 12px 30px 12px 30px; padding: 18px; min-width: 380px; }
+    label { color: var(--muted); font: 800 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: uppercase; letter-spacing: .12em; }
+    select {
+      width: 100%;
+      margin-top: 8px;
+      background: #fffdf7;
+      color: var(--text);
+      border: 1px solid var(--line-strong);
+      border-radius: 14px;
+      padding: 12px 14px;
+      font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      outline: none;
+    }
+    select:focus { border-color: var(--cyan); box-shadow: 0 0 0 4px rgba(20,125,141,.12); }
+    .heartbeat { margin-top: 14px; display: flex; align-items: center; gap: 10px; color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .dot { width: 9px; height: 9px; border-radius: 99px; background: var(--green); box-shadow: 0 0 14px rgba(39,122,76,.55); animation: pulse 1.6s ease-in-out infinite; }
+    @keyframes pulse { 50% { opacity: .35; transform: scale(.72); } }
+
+    .dashboard { display: grid; grid-template-columns: 1.15fr .85fr; gap: 18px; }
+    .panel { border-radius: 24px; padding: 18px; }
+    .panel h2 { margin: 0 0 12px; font: 900 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: .15em; color: var(--green); text-transform: uppercase; }
+    .panel-note { color: var(--muted); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin-top: -5px; margin-bottom: 14px; }
+
+    .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .tile { border-radius: 20px; padding: 16px; min-height: 124px; position: relative; overflow: hidden; }
+    .tile::after { content: ""; position: absolute; inset: auto -32px -48px auto; width: 112px; height: 112px; border-radius: 50%; background: rgba(39,122,76,.075); }
+    .tile .label { color: var(--muted); font: 800 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: uppercase; letter-spacing: .12em; }
+    .tile .big { margin-top: 10px; font: 950 34px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: -1.8px; }
+    .tile .small { color: var(--muted); font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin-top: 8px; }
+    .big.green { color: var(--green); }
+    .big.cyan { color: var(--cyan); }
+    .big.amber { color: var(--amber); }
+    .big.red { color: var(--red); }
+
+    .progress-track { height: 10px; background: #ede5d5; border: 1px solid rgba(39,122,76,.18); border-radius: 99px; overflow: hidden; margin-top: 12px; }
+    .progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, var(--green), var(--cyan)); box-shadow: 0 0 18px rgba(20,125,141,.24); transition: width .5s ease; }
+
+    .claimbox {
+      border: 1px solid rgba(20,125,141,.20);
+      background: linear-gradient(135deg, rgba(20,125,141,.09), rgba(39,122,76,.055));
+      border-radius: 22px;
+      padding: 17px 18px;
+      margin-bottom: 18px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.55);
+    }
+    .claimbox strong { color: var(--cyan); font-size: 18px; }
+    .claimbox div { color: var(--muted); margin-top: 6px; line-height: 1.5; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+
+    .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .chart-card { min-height: 330px; }
+    .wide { grid-column: 1 / -1; }
+    canvas { width: 100% !important; max-height: 275px; }
+
+    .pfsp-focus { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+    .focus-card { border: 1px solid rgba(39,122,76,.16); border-radius: 16px; padding: 12px; background: rgba(255,255,255,.46); }
+    .focus-card .name { color: var(--green); font: 900 18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .focus-card .desc { color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin-top: 5px; }
+    .prob-list { display: grid; gap: 9px; margin-top: 12px; }
+    .prob-row { display: grid; grid-template-columns: 72px 1fr 58px; gap: 10px; align-items: center; padding: 9px 10px; border: 1px solid rgba(39,122,76,.14); border-radius: 13px; background: rgba(255,255,255,.46); font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .prob-row.selected { border-color: rgba(183,121,31,.55); background: rgba(183,121,31,.10); }
+    .prob-name { font-weight: 900; color: var(--ink); }
+    .prob-bar-track { height: 10px; border-radius: 999px; overflow: hidden; background: #ede5d5; border: 1px solid rgba(39,122,76,.13); }
+    .prob-bar { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, var(--green), var(--cyan)); transition: width .35s ease; }
+    .prob-row.selected .prob-bar { background: linear-gradient(90deg, var(--amber), #d9902f); }
+    .prob-value { text-align: right; font-weight: 900; color: var(--cyan); }
+    .prob-meta { color: var(--muted); font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin-top: 10px; }
+    .muted { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    table { width: 100%; border-collapse: collapse; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    th, td { border-bottom: 1px solid rgba(39,122,76,.12); padding: 8px 8px; text-align: left; white-space: nowrap; }
+    th { color: var(--green); font-weight: 900; position: sticky; top: 0; background: var(--paper-2); }
+    tbody tr:hover { background: rgba(39,122,76,.045); }
+    .table-wrap { max-height: 430px; overflow: auto; border-radius: 14px; border: 1px solid rgba(39,122,76,.13); background: rgba(255,255,255,.35); }
+
+    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; border: 1px solid rgba(39,122,76,.18); background: rgba(39,122,76,.06); }
+    .risk { color: var(--red); }
+    .good { color: var(--green); }
+    .warn { color: var(--amber); }
+
+    @media (max-width: 1100px) {
+      .topbar, .dashboard { grid-template-columns: 1fr; }
+      .tiles { grid-template-columns: repeat(2, 1fr); }
+      .chart-grid { grid-template-columns: 1fr; }
+      .runbox { min-width: 0; }
+    }
+    @media (max-width: 620px) { .tiles, .pfsp-focus { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <section class="topbar">
+    <div class="brand">
+      <span class="tagline">PFSP LEAGUE CONTROL ROOM</span>
+      <h1>Therapeutic RL Training Monitor</h1>
+      <div class="subtitle">Watch whether the robot is actually learning a robust rehabilitation policy: pool-level convergence, PFSP opponent pressure, ZPD occupancy, and failure modes.</div>
+    </div>
+    <div class="runbox">
+      <label for="runSelect">Training run</label>
+      <select id="runSelect"></select>
+      <div class="heartbeat"><span class="dot"></span><span id="lastUpdated">Waiting for status...</span></div>
+    </div>
+  </section>
+
+  <section class="tiles">
+    <div class="tile"><div class="label">Iteration / Phase</div><div id="iteration" class="big green">-</div><div id="phase" class="small">phase unknown</div></div>
+    <div class="tile"><div class="label">Training Progress</div><div id="timesteps" class="big cyan">-</div><div class="progress-track"><div id="progressBar" class="progress-bar"></div></div><div id="progress" class="small"></div></div>
+    <div class="tile"><div class="label">Recent TIS</div><div id="tis" class="big amber">-</div><div id="tisMeaning" class="small">fraction of max episode inside ZPD</div></div>
+    <div class="tile"><div class="label">Convergence Decision</div><div id="convergence" class="big red">-</div><div id="convReason" class="small">waiting for pool eval</div></div>
+    <div class="tile"><div class="label">Avg Episode Length</div><div id="avgEpLen" class="big cyan">-</div><div id="avgEpLenDetail" class="small">-</div></div>
+    <div class="tile"><div class="label">Avg Distance</div><div id="avgDist" class="big amber">-</div><div id="avgDistDetail" class="small">ZPD target: 4-6</div></div>
+    <div class="tile"><div class="label">Top Done Reason</div><div id="topReason" class="big green">-</div><div id="topReasonPct" class="small">-</div></div>
+    <div class="tile"><div class="label">PFSP Pool</div><div id="poolSize" class="big green">-</div><div id="selectedOpponent" class="small">-</div></div>
+  </section>
+
+  <section class="dashboard">
+    <div>
+      <div class="claimbox">
+        <strong id="headlineClaim">No run selected.</strong>
+        <div id="claimDetail">Select or start a run to see whether the policy is improving beyond statistical noise.</div>
+      </div>
+
+      <div class="chart-grid">
+        <div class="panel chart-card wide">
+          <h2>Pool Robustness / Stopping Criterion</h2>
+          <div class="panel-note">Meaning: if PoolScore stops improving beyond the noise band for consecutive iterations, training can stop with a defensible criterion.</div>
+          <canvas id="convChart"></canvas>
+        </div>
+        <div class="panel chart-card">
+          <h2>Therapeutic Occupancy</h2>
+          <div class="panel-note">Meaning: TIS and ZPD coverage show whether the agent spends time in the useful rehabilitation band.</div>
+          <canvas id="tisChart"></canvas>
+        </div>
+        <div class="panel chart-card">
+          <h2>Distance Regime Breakdown</h2>
+          <div class="panel-note">Meaning: separates true ZPD control from unsafe crowding or trivial far-away survival.</div>
+          <canvas id="regimeChart"></canvas>
+        </div>
+        <div class="panel chart-card">
+          <h2>Episode Length Trend</h2>
+          <div class="panel-note">Meaning: longer episodes can mean stable ZPD tracking, but only if accompanied by high TIS. If length rises but TIS drops, the robot is surviving by staying far away.</div>
+          <canvas id="epLenChart"></canvas>
+        </div>
+        <div class="panel chart-card">
+          <h2>Done Reason Distribution</h2>
+          <div class="panel-note">Meaning: 'Robot Caught' means the hand caught the robot (too close). 'Robot Out' means boundary violation. 'max_steps' means the episode ran to completion.</div>
+          <canvas id="doneReasonChart"></canvas>
+        </div>
+        <div class="panel chart-card">
+          <h2>Avg Distance Trend</h2>
+          <div class="panel-note">Meaning: distance should stay near 5 (center of ZPD [4,6]). Too low = crowding, too high = disengagement.</div>
+          <canvas id="distChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <aside>
+      <div class="panel">
+        <h2>PFSP Probability Timeline</h2>
+        <div class="panel-note">Meaning: shows how sampling probabilities evolve across episodes. A collapse to one opponent is a warning sign.</div>
+        <canvas id="pfspTimeChart"></canvas>
+      </div>
+
+      <div class="panel" style="margin-top:16px;">
+        <h2>Latest PFSP Snapshot</h2>
+        <div class="panel-note">Meaning: current probability distribution over opponents. Highlighted row is the opponent sampled for the latest completed robot episode.</div>
+        <div class="pfsp-focus">
+          <div class="focus-card"><div id="pfspSelected" class="name">-</div><div class="desc">latest sampled opponent</div></div>
+          <div class="focus-card"><div id="selectedProb" class="name">-</div><div class="desc">sampling probability</div></div>
+        </div>
+        <canvas id="pfspChart"></canvas>
+        <div id="pfspProbabilityList" class="prob-list"></div>
+        <div id="pfspMeta" class="prob-meta">Waiting for PFSP pool data...</div>
+      </div>
+
+      <div class="panel" style="margin-top:16px;">
+        <h2>Recent Episodes</h2>
+        <div class="panel-note">Meaning: spot crashes, out-of-bound failures, and whether recent episodes are mostly too close, ZPD, or too far.</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Step</th><th>It</th><th>Phase</th><th>Opp</th><th>TIS</th><th>ZPD</th><th>Close</th><th>Far</th><th>Len</th><th>Reason</th></tr></thead>
+            <tbody id="episodesBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </aside>
+  </section>
+</div>
+
+<script>
+Chart.defaults.color = '#21312c';
+Chart.defaults.borderColor = 'rgba(57,78,70,.14)';
+Chart.defaults.font.family = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+
+let selectedRun = null;
+const charts = {};
+const colors = { green:'#a3e635', cyan:'#67e8f9', amber:'#fbbf24', red:'#fb7185', blue:'#60a5fa', muted:'#8a9b8c' };
+
+function fmt(x, digits=3) { return x === null || x === undefined || Number.isNaN(Number(x)) ? '-' : Number(x).toFixed(digits); }
+function pct(x, digits=1) { return x === null || x === undefined ? '-' : `${(Number(x)*100).toFixed(digits)}%`; }
+function setText(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
+function setClassByValue(el, value, good=0.35, warn=0.2) { el.className = value >= good ? 'big green' : value >= warn ? 'big amber' : 'big red'; }
+
+function makeChart(id, type, labels, datasets, options={}) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), {
+    type,
+    data: { labels, datasets },
+    options: Object.assign({
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { usePointStyle: true, boxWidth: 8 } } },
+      scales: {
+        x: { grid: { color: 'rgba(132,204,22,.08)' } },
+        y: { min: 0, grid: { color: 'rgba(132,204,22,.12)' } }
+      }
+    }, options)
+  });
+}
+
+async function loadRuns() {
+  const res = await fetch('/api/runs');
+  const data = await res.json();
+  const select = document.getElementById('runSelect');
+  const previous = select.value || selectedRun;
+  select.innerHTML = '';
+  for (const run of data.runs) {
+    const opt = document.createElement('option'); opt.value = run.id; opt.textContent = `${run.id}${run.has_status ? '' : ' (no live status)'}`; select.appendChild(opt);
+  }
+  if (previous && data.runs.some(r => r.id === previous)) selectedRun = previous;
+  else if (!selectedRun && data.runs.length) selectedRun = data.runs[0].id;
+  select.value = selectedRun || '';
+  select.onchange = () => { selectedRun = select.value; refresh(); };
+}
+
+function updateHeadline(status, convergence) {
+  const latestConv = convergence.length ? convergence[convergence.length - 1] : null;
+  if (latestConv) {
+    const m = latestConv.metrics || {}, d = latestConv.decision || {};
+    if (d.stop) {
+      setText('headlineClaim', `Converged at iteration ${latestConv.iteration}.`);
+      setText('claimDetail', `PoolScore improvement (${fmt(d.delta)}) is within the statistical noise band (${fmt(d.noise_band)}) for the configured patience.`);
+    } else if (d.reason === 'improvement_within_statistical_noise') {
+      setText('headlineClaim', `Possible plateau: improvement is inside noise.`);
+      setText('claimDetail', `PoolScore ${fmt(m.pool_score)}; Δ=${fmt(d.delta)}, noise band=${fmt(d.noise_band)}, stagnant count=${d.stagnant_count}/${d.patience}.`);
+    } else {
+      setText('headlineClaim', `Still improving beyond evaluation noise.`);
+      setText('claimDetail', `PoolScore ${fmt(m.pool_score)}, mean TIS ${fmt(m.mean_tis)}, worst-case TIS ${fmt(m.worst_case_tis)}.`);
+    }
+  } else if (status.event) {
+    setText('headlineClaim', `Current event: ${status.event}`);
+    setText('claimDetail', 'Waiting for the first post-iteration pool evaluation to compute statistical convergence.');
+  }
+}
+
+function opponentLabel(index) {
+  return index === 0 ? 'scripted_hand' : `H${index}`;
+}
+
+function updatePfspSnapshot(lastPfsp, status, latestEpisode) {
+  const probs = lastPfsp?.probs || status.pfsp?.pfsp_probs || latestEpisode.pfsp_probs || [];
+  const selected = lastPfsp?.selected ?? status.pfsp?.selected_opponent_index ?? latestEpisode.selected_opponent_index;
+  const selectedName = status.pfsp?.selected_opponent_name || latestEpisode.selected_opponent_name || (selected !== undefined && selected !== null ? `H${Number(selected) + 1}` : '-');
+  const selectedProb = status.pfsp?.selected_opponent_prob ?? latestEpisode.selected_opponent_prob ?? (selected !== undefined && selected !== null ? probs[selected] : null);
+
+  setText('pfspSelected', selectedName);
+  setText('selectedProb', selectedProb === null || selectedProb === undefined ? '-' : pct(selectedProb, 2));
+
+  const list = document.getElementById('pfspProbabilityList');
+  list.innerHTML = '';
+  probs.forEach((prob, i) => {
+    const row = document.createElement('div');
+    row.className = `prob-row ${i === selected ? 'selected' : ''}`;
+    row.innerHTML = `
+      <div class="prob-name">${opponentLabel(i)}</div>
+      <div class="prob-bar-track"><div class="prob-bar" style="width:${Math.max(0, Math.min(100, Number(prob) * 100))}%"></div></div>
+      <div class="prob-value">${pct(prob, 1)}</div>
+    `;
+    list.appendChild(row);
+  });
+
+  const total = probs.reduce((s, p) => s + Number(p || 0), 0);
+  const maxProb = probs.length ? Math.max(...probs.map(Number)) : null;
+  const minProb = probs.length ? Math.min(...probs.map(Number)) : null;
+  setText('pfspMeta', probs.length ? `pool=${probs.length} · sum=${fmt(total, 4)} · max=${pct(maxProb, 1)} · min=${pct(minProb, 1)} · latest timestep=${lastPfsp?.timestep ?? latestEpisode.global_timestep ?? '-'}` : 'No PFSP probabilities yet. This appears after robot training has at least one hand in the pool.');
+}
+
+async function refresh() {
+  if (!selectedRun) return;
+  const [statusRes, episodeRes, convRes, pfspRes] = await Promise.all([
+    fetch(`/api/runs/${selectedRun}/status`),
+    fetch(`/api/runs/${selectedRun}/episodes?limit=160`),
+    fetch(`/api/runs/${selectedRun}/convergence?limit=60`),
+    fetch(`/api/runs/${selectedRun}/pfsp?limit=160`)
+  ]);
+  const status = (await statusRes.json()).status || {};
+  const episodes = (await episodeRes.json()).episodes || [];
+  const convergence = (await convRes.json()).convergence || [];
+  const pfsp = (await pfspRes.json()).pfsp || [];
+
+  const iterLabel = status.iteration === undefined ? '-' : `#${status.iteration}`;
+  setText('iteration', iterLabel);
+  setText('phase', status.phase || 'phase unknown');
+  setText('timesteps', status.timesteps === undefined ? '-' : `${Number(status.timesteps).toLocaleString()}`);
+  setText('progress', status.total_timesteps ? `${Number(status.total_timesteps).toLocaleString()} target · ${pct(status.progress)}` : 'no target');
+  document.getElementById('progressBar').style.width = `${Math.max(0, Math.min(100, (status.progress || 0) * 100))}%`;
+
+  const tisValue = status.recent_tis_mean;
+  setText('tis', fmt(tisValue));
+  setClassByValue(document.getElementById('tis'), Number(tisValue || 0));
+  setText('tisMeaning', `ZPD ${fmt(status.recent_zpd_coverage_mean)} · too far ${fmt(status.recent_too_far_rate_mean)}`);
+
+  const latestConv = convergence.length ? convergence[convergence.length - 1] : null;
+  setText('convergence', latestConv?.decision?.stop ? 'STOP' : (latestConv?.decision?.reason === 'improvement_within_statistical_noise' ? 'PLATEAU?' : (status.event || '-')));
+  setText('convReason', latestConv ? `PoolScore ${fmt(latestConv.metrics?.pool_score)} · band ${fmt(latestConv.decision?.noise_band)}` : 'waiting for pool eval');
+  setText('lastUpdated', status.timestamp ? `Updated ${new Date(status.timestamp).toLocaleString()}` : 'No live timestamp yet');
+  updateHeadline(status, convergence);
+
+  const latestEpisode = status.latest_episode || episodes[episodes.length - 1] || {};
+  const currentPfsp = status.pfsp || {};
+  setText('selectedOpponent', currentPfsp.selected_opponent_name || latestEpisode.selected_opponent_name || '-');
+  setText('poolSize', currentPfsp.pfsp_pool_size ?? latestEpisode.pfsp_pool_size ?? '-');
+
+  // Summary stats from recent episodes
+  if (episodes.length > 0) {
+    const avgLen = episodes.reduce((s, e) => s + (e.episode_length || 0), 0) / episodes.length;
+    const avgDist = episodes.reduce((s, e) => s + (e.avg_distance || 0), 0) / episodes.length;
+    setText('avgEpLen', fmt(avgLen, 1));
+    setText('avgEpLenDetail', `range ${Math.min(...episodes.map(e => e.episode_length || 0))}-${Math.max(...episodes.map(e => e.episode_length || 0))}`);
+    setText('avgDist', fmt(avgDist, 2));
+    setText('avgDistDetail', `ZPD target: 4-6 | now ${avgDist < 4 ? 'TOO CLOSE' : avgDist > 6 ? 'TOO FAR' : 'IN ZPD'}`);
+
+    const reasonCounts = {};
+    for (const e of episodes) { const r = e.done_reason || 'unknown'; reasonCounts[r] = (reasonCounts[r] || 0) + 1; }
+    const sortedReasons = Object.entries(reasonCounts).sort((a, b) => b[1] - a[1]);
+    const top = sortedReasons[0];
+    setText('topReason', top ? top[0] : '-');
+    setText('topReasonPct', top ? `${pct(top[1] / episodes.length)} of ${episodes.length} episodes` : '-');
+  }
+
+  const labels = episodes.map(e => e.global_timestep ?? '');
+  makeChart('tisChart', 'line', labels, [
+    { label: 'TIS', data: episodes.map(e => e.tis), borderColor: colors.cyan, backgroundColor: 'rgba(103,232,249,.1)', tension: .25, pointRadius: 0 },
+    { label: 'ZPD coverage', data: episodes.map(e => e.zpd_coverage), borderColor: colors.green, backgroundColor: 'rgba(163,230,53,.1)', tension: .25, pointRadius: 0 }
+  ], { scales: { y: { min: 0, max: 1 } } });
+
+  makeChart('regimeChart', 'line', labels, [
+    { label: 'Too close', data: episodes.map(e => e.too_close_rate), borderColor: colors.red, tension: .25, pointRadius: 0 },
+    { label: 'In ZPD', data: episodes.map(e => e.zpd_coverage), borderColor: colors.green, tension: .25, pointRadius: 0 },
+    { label: 'Too far', data: episodes.map(e => e.too_far_rate), borderColor: colors.amber, tension: .25, pointRadius: 0 }
+  ], { scales: { y: { min: 0, max: 1 } } });
+
+  const lastPfsp = pfsp.length ? pfsp[pfsp.length - 1] : null;
+  const snapshotProbs = lastPfsp?.probs || status.pfsp?.pfsp_probs || latestEpisode.pfsp_probs || [];
+  const snapshotSelected = lastPfsp?.selected ?? status.pfsp?.selected_opponent_index ?? latestEpisode.selected_opponent_index;
+  makeChart('pfspChart', 'bar', snapshotProbs.map((_, i) => opponentLabel(i)), [
+    { label: 'PFSP probability', data: snapshotProbs, backgroundColor: snapshotProbs.map((_, i) => i === snapshotSelected ? colors.amber : colors.blue) }
+  ], { scales: { y: { min: 0, max: 1 } } });
+  updatePfspSnapshot(lastPfsp, status, latestEpisode);
+
+  // PFSP probability timeline (stacked area)
+  if (pfsp.length > 1) {
+    const maxPoolSize = Math.max(...pfsp.map(p => p.probs.length));
+    const pfspLabels = pfsp.map((_, i) => i + 1);
+    const pfspDatasets = [];
+    const oppColors = [colors.green, colors.cyan, colors.amber, colors.red, colors.blue, '#a78bfa', '#f472b6', '#34d399', '#fb923c', '#38bdf8'];
+    for (let h = 0; h < maxPoolSize; h++) {
+      pfspDatasets.push({
+        label: opponentLabel(h),
+        data: pfsp.map(p => h < p.probs.length ? p.probs[h] : 0),
+        borderColor: oppColors[h % oppColors.length],
+        backgroundColor: oppColors[h % oppColors.length] + '33',
+        fill: true,
+        tension: .3,
+        pointRadius: 0
+      });
+    }
+    makeChart('pfspTimeChart', 'line', pfspLabels, pfspDatasets, { scales: { y: { min: 0, max: 1, stacked: true }, x: { stacked: true } } });
+  }
+
+  makeChart('convChart', 'line', convergence.map(e => `I${e.iteration}`), [
+    { label: 'PoolScore', data: convergence.map(e => e.metrics?.pool_score), borderColor: colors.cyan, backgroundColor: 'rgba(103,232,249,.08)', tension: .2 },
+    { label: 'Mean TIS', data: convergence.map(e => e.metrics?.mean_tis), borderColor: colors.green, tension: .2 },
+    { label: 'Worst TIS', data: convergence.map(e => e.metrics?.worst_case_tis), borderColor: colors.red, tension: .2 },
+    { label: 'Noise band', data: convergence.map(e => e.decision?.noise_band), borderColor: colors.amber, borderDash: [6,4], tension: .2 }
+  ], { scales: { y: { min: 0, max: 1 } } });
+
+  // Episode Length trend
+  makeChart('epLenChart', 'line', labels, [
+    { label: 'Episode Length', data: episodes.map(e => e.episode_length), borderColor: colors.blue, backgroundColor: 'rgba(47,102,197,.1)', tension: .25, pointRadius: 0 }
+  ], { scales: { y: { min: 0, suggestedMax: 100 } } });
+
+  // Done Reason distribution
+  const reasonCounts = {};
+  for (const e of episodes) {
+    const r = e.done_reason || 'unknown';
+    reasonCounts[r] = (reasonCounts[r] || 0) + 1;
+  }
+  const reasonLabels = Object.keys(reasonCounts);
+  const reasonData = Object.values(reasonCounts);
+  const reasonColors = reasonLabels.map(r => r === 'Robot Caught' ? colors.red : r === 'Robot Out' ? colors.amber : colors.green);
+  makeChart('doneReasonChart', 'doughnut', reasonLabels, [
+    { data: reasonData, backgroundColor: reasonColors, borderWidth: 1 }
+  ], { scales: { x: { display: false }, y: { display: false } }, plugins: { legend: { position: 'right' } } });
+
+  // Avg Distance trend
+  makeChart('distChart', 'line', labels, [
+    { label: 'Avg Distance', data: episodes.map(e => e.avg_distance), borderColor: colors.cyan, backgroundColor: 'rgba(20,125,141,.1)', tension: .25, pointRadius: 0 },
+    { label: 'ZPD min (4)', data: episodes.map(() => 4), borderColor: 'rgba(163,230,53,.4)', borderDash: [4,4], pointRadius: 0 },
+    { label: 'ZPD max (6)', data: episodes.map(() => 6), borderColor: 'rgba(163,230,53,.4)', borderDash: [4,4], pointRadius: 0 }
+  ], { scales: { y: { min: 0, suggestedMax: 14 } } });
+
+  const body = document.getElementById('episodesBody');
+  body.innerHTML = '';
+  for (const e of episodes.slice(-42).reverse()) {
+    const tr = document.createElement('tr');
+    const reasonClass = e.done_reason === 'Robot Caught' ? 'good' : e.done_reason === 'Robot Out' ? 'risk' : 'warn';
+    tr.innerHTML = `<td>${e.global_timestep ?? '-'}</td><td>${e.iteration ?? '-'}</td><td>${e.phase ?? '-'}</td><td>${e.selected_opponent_name ?? '-'}</td><td>${fmt(e.tis)}</td><td>${fmt(e.zpd_coverage)}</td><td class="risk">${fmt(e.too_close_rate)}</td><td class="warn">${fmt(e.too_far_rate)}</td><td>${e.episode_length ?? '-'}</td><td class="${reasonClass}">${e.done_reason ?? '-'}</td>`;
+    body.appendChild(tr);
+  }
+}
+
+loadRuns().then(refresh);
+setInterval(refresh, 2000);
+setInterval(loadRuns, 10000);
+</script>
+</body>
+</html>

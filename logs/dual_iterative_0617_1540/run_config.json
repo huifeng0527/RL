@@ -1,0 +1,13 @@
+{
+  "extractor_name": "strategy_gru_aux",
+  "history_length": 32,
+  "history_mode": "interaction",
+  "future_horizon": 8,
+  "include_opponent_id": false,
+  "scripted_hand_sample_prob": null,
+  "strategy_aux_weights": {
+    "traj": 1.0,
+    "risk": 0.2,
+    "min_dist": 0.1
+  }
+}

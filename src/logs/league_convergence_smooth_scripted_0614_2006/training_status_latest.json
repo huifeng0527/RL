@@ -1,0 +1,8 @@
+{
+  "event": "run_completed",
+  "phase": "complete",
+  "iteration": 4,
+  "final_robot_path": "src/logs/league_convergence_smooth_scripted_0614_2006\\iteration_4\\robot\\robot\\best_model.zip",
+  "total_opponents": 4,
+  "timestamp": "2026-06-15T02:59:05.980203+00:00"
+}

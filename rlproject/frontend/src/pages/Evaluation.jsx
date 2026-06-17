@@ -361,7 +361,6 @@ export default function Evaluation() {
           </div>
 
           {TASKS.map((task) => renderTaskDetails(task, results?.[task.id]))}
-          {results?.legacy_league && renderTaskDetails({ id: 'legacy_league', name: 'Legacy LeagueGame' }, results.legacy_league)}
         </div>
       )}
 

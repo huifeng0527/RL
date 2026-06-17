@@ -21,6 +21,7 @@
   - **`src/`**: Simulation + training (gymnasium environments, PPO, league training)
   - **`rlproject/`**: Real-world deployment (UR10, vision pipeline, FastAPI backend, React frontend)
   - **`manuscripts/`**: IEEE paper drafts
+  - **`memory/`**: Project-specific experimental observations and analysis notes. Check this directory when reasoning about prior experiment results or league-training behavior.
 
   ## Commands
 

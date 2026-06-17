@@ -35,39 +35,41 @@ class Session(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     total_score = Column(Float, nullable=True)
 
-    # Legacy 4-task scores
+    # Legacy 4-task scores (kept for backward compat with old data)
     sprint_score = Column(Float, nullable=True)
     tracking_score = Column(Float, nullable=True)
     league_score = Column(Float, nullable=True)
     boundary_score = Column(Float, nullable=True)
 
-    # Six-task scores
+    # 5-task scores
     rapid_reach_score = Column(Float, nullable=True)
     continuous_tracking_score = Column(Float, nullable=True)
-    moving_target_interception_score = Column(Float, nullable=True)
-    adaptive_boundary_challenge_score = Column(Float, nullable=True)
-    rhythmic_switching_score = Column(Float, nullable=True)
-    mirror_mapping_reach_score = Column(Float, nullable=True)
+    workspace_exploration_score = Column(Float, nullable=True)
+    rhythmic_synchronization_score = Column(Float, nullable=True)
+    constrained_line_tracing_score = Column(Float, nullable=True)
 
-    notes = Column(Text, nullable=True)  # 新增：评估备注
-    video_path = Column(String(500), nullable=True)  # 评估录像路径
+    notes = Column(Text, nullable=True)
+    video_path = Column(String(500), nullable=True)
 
     patient = relationship("Patient", back_populates="sessions")
 
-    # Legacy 4-task relationships
+    # Legacy 4-task relationships (kept for reading old sessions)
     sprint = relationship("EvalSprint", back_populates="session", uselist=False, cascade="all, delete-orphan")
     tracking = relationship("EvalTracking", back_populates="session", uselist=False, cascade="all, delete-orphan")
     league = relationship("EvalLeague", back_populates="session", uselist=False, cascade="all, delete-orphan")
     boundary = relationship("EvalBoundary", back_populates="session", uselist=False, cascade="all, delete-orphan")
 
-    # Six-task relationships
+    # 5-task relationships
     rapid_reach = relationship("EvalRapidReach", back_populates="session", uselist=False, cascade="all, delete-orphan")
     continuous_tracking = relationship("EvalContinuousTracking", back_populates="session", uselist=False, cascade="all, delete-orphan")
-    moving_target_interception = relationship("EvalMovingTargetInterception", back_populates="session", uselist=False, cascade="all, delete-orphan")
-    adaptive_boundary_challenge = relationship("EvalAdaptiveBoundaryChallenge", back_populates="session", uselist=False, cascade="all, delete-orphan")
-    rhythmic_switching = relationship("EvalRhythmicSwitching", back_populates="session", uselist=False, cascade="all, delete-orphan")
-    mirror_mapping_reach = relationship("EvalMirrorMappingReach", back_populates="session", uselist=False, cascade="all, delete-orphan")
+    workspace_exploration = relationship("EvalWorkspaceExploration", back_populates="session", uselist=False, cascade="all, delete-orphan")
+    rhythmic_synchronization = relationship("EvalRhythmicSynchronization", back_populates="session", uselist=False, cascade="all, delete-orphan")
+    constrained_line_tracing = relationship("EvalConstrainedLineTracing", back_populates="session", uselist=False, cascade="all, delete-orphan")
 
+
+# =========================================================================
+# Legacy 4-task tables (kept for reading old sessions)
+# =========================================================================
 
 class EvalSprint(Base):
     __tablename__ = "eval_sprint"
@@ -75,8 +77,8 @@ class EvalSprint(Base):
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), unique=True, nullable=False)
 
-    catch_times = Column(JSON, nullable=False)  # List of 5 catch times
-    peak_vels = Column(JSON, nullable=False)  # List of 5 peak velocities
+    catch_times = Column(JSON, nullable=False)
+    peak_vels = Column(JSON, nullable=False)
 
     session = relationship("Session", back_populates="sprint")
 
@@ -87,8 +89,8 @@ class EvalTracking(Base):
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), unique=True, nullable=False)
 
-    rmse_list = Column(JSON, nullable=False)  # Time series of cross-track errors
-    jerk_list = Column(JSON, nullable=False)  # Time series of jerks
+    rmse_list = Column(JSON, nullable=False)
+    jerk_list = Column(JSON, nullable=False)
 
     session = relationship("Session", back_populates="tracking")
 
@@ -100,8 +102,8 @@ class EvalLeague(Base):
     session_id = Column(Integer, ForeignKey("sessions.id"), unique=True, nullable=False)
 
     is_caught = Column(Boolean, nullable=False)
-    survival_time = Column(Float, nullable=False)  # seconds
-    dist_list = Column(JSON, nullable=False)  # Time series of distances
+    survival_time = Column(Float, nullable=False)
+    dist_list = Column(JSON, nullable=False)
 
     session = relationship("Session", back_populates="league")
 
@@ -116,10 +118,14 @@ class EvalBoundary(Base):
     max_x = Column(Float, nullable=False)
     min_y = Column(Float, nullable=False)
     max_y = Column(Float, nullable=False)
-    vel_list = Column(JSON, nullable=False)  # Time series of velocities
+    vel_list = Column(JSON, nullable=False)
 
     session = relationship("Session", back_populates="boundary")
 
+
+# =========================================================================
+# 5-task tables
+# =========================================================================
 
 class EvalRapidReach(Base):
     __tablename__ = "eval_rapid_reach"
@@ -154,25 +160,8 @@ class EvalContinuousTracking(Base):
     session = relationship("Session", back_populates="continuous_tracking")
 
 
-class EvalMovingTargetInterception(Base):
-    __tablename__ = "eval_moving_target_interception"
-
-    id = Column(Integer, primary_key=True, index=True)
-    session_id = Column(Integer, ForeignKey("sessions.id"), unique=True, nullable=False)
-
-    total_trials = Column(Integer, nullable=False, default=0)
-    successes = Column(JSON, nullable=False, default=list)
-    timing_errors = Column(JSON, nullable=False, default=list)
-    spatial_errors = Column(JSON, nullable=False, default=list)
-    early_count = Column(Integer, nullable=False, default=0)
-    late_count = Column(Integer, nullable=False, default=0)
-    reaction_times = Column(JSON, nullable=False, default=list)
-
-    session = relationship("Session", back_populates="moving_target_interception")
-
-
-class EvalAdaptiveBoundaryChallenge(Base):
-    __tablename__ = "eval_adaptive_boundary_challenge"
+class EvalWorkspaceExploration(Base):
+    __tablename__ = "eval_workspace_exploration"
 
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), unique=True, nullable=False)
@@ -189,17 +178,18 @@ class EvalAdaptiveBoundaryChallenge(Base):
     max_y = Column(Float, nullable=True)
     vel_list = Column(JSON, nullable=False, default=list)
 
-    session = relationship("Session", back_populates="adaptive_boundary_challenge")
+    session = relationship("Session", back_populates="workspace_exploration")
 
 
-class EvalRhythmicSwitching(Base):
-    __tablename__ = "eval_rhythmic_switching"
+class EvalRhythmicSynchronization(Base):
+    __tablename__ = "eval_rhythmic_synchronization"
 
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), unique=True, nullable=False)
 
     beat_times = Column(JSON, nullable=False, default=list)
     target_sequence = Column(JSON, nullable=False, default=list)
+    target_positions = Column(JSON, nullable=False, default=list)
     response_times = Column(JSON, nullable=False, default=list)
     timing_errors = Column(JSON, nullable=False, default=list)
     correct_count = Column(Integer, nullable=False, default=0)
@@ -208,36 +198,34 @@ class EvalRhythmicSwitching(Base):
     miss_count = Column(Integer, nullable=False, default=0)
     rhythm_variability = Column(Float, nullable=True)
 
-    session = relationship("Session", back_populates="rhythmic_switching")
+    session = relationship("Session", back_populates="rhythmic_synchronization")
 
 
-class EvalMirrorMappingReach(Base):
-    __tablename__ = "eval_mirror_mapping_reach"
+class EvalConstrainedLineTracing(Base):
+    __tablename__ = "eval_constrained_line_tracing"
 
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey("sessions.id"), unique=True, nullable=False)
 
-    cue_zones = Column(JSON, nullable=False, default=list)
-    response_zones = Column(JSON, nullable=False, default=list)
+    line_specs = Column(JSON, nullable=False, default=list)
     successes = Column(JSON, nullable=False, default=list)
-    wrong_side_count = Column(Integer, nullable=False, default=0)
-    wrong_target_count = Column(Integer, nullable=False, default=0)
-    timeouts = Column(Integer, nullable=False, default=0)
-    reaction_times = Column(JSON, nullable=False, default=list)
-    movement_times = Column(JSON, nullable=False, default=list)
-    spatial_errors = Column(JSON, nullable=False, default=list)
-    path_efficiencies = Column(JSON, nullable=False, default=list)
+    completion_times = Column(JSON, nullable=False, default=list)
+    mean_lateral_errors = Column(JSON, nullable=False, default=list)
+    max_lateral_errors = Column(JSON, nullable=False, default=list)
+    off_line_rates = Column(JSON, nullable=False, default=list)
+    path_smoothness = Column(JSON, nullable=False, default=list)
+    path_lengths = Column(JSON, nullable=False, default=list)
+    speed_accuracy_scores = Column(JSON, nullable=False, default=list)
 
-    session = relationship("Session", back_populates="mirror_mapping_reach")
+    session = relationship("Session", back_populates="constrained_line_tracing")
 
 
 _SESSION_COLUMNS = {
     "rapid_reach_score": "FLOAT",
     "continuous_tracking_score": "FLOAT",
-    "moving_target_interception_score": "FLOAT",
-    "adaptive_boundary_challenge_score": "FLOAT",
-    "rhythmic_switching_score": "FLOAT",
-    "mirror_mapping_reach_score": "FLOAT",
+    "workspace_exploration_score": "FLOAT",
+    "rhythmic_synchronization_score": "FLOAT",
+    "constrained_line_tracing_score": "FLOAT",
     "video_path": "VARCHAR(500)",
 }
 

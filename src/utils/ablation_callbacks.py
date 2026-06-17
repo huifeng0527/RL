@@ -10,6 +10,17 @@ import torch.nn.functional as F
 from collections import deque
 from stable_baselines3.common.callbacks import BaseCallback
 
+from src.observation_schema import (
+    HISTORY_CHANNELS,
+    INTERACTION_HISTORY_CHANNELS,
+    DEFAULT_HISTORY_LENGTH,
+    OBS_SCALAR_DIM,
+    history_slice,
+)
+
+HISTORY_LENGTH = DEFAULT_HISTORY_LENGTH
+HISTORY_END = OBS_SCALAR_DIM + HISTORY_LENGTH * HISTORY_CHANNELS
+
 
 class AuxTrainingCallback(BaseCallback):
     """Auxiliary task training callback for SAC.
@@ -34,7 +45,7 @@ class AuxTrainingCallback(BaseCallback):
             obs = replay_data.observations
             next_obs = replay_data.next_observations
 
-            true_next_move = next_obs[:, -2:]
+            true_next_move = next_obs[:, HISTORY_END - HISTORY_CHANNELS:HISTORY_END]
             pred_next_move = self.extractor.forward_aux(obs)
 
             loss = F.mse_loss(pred_next_move, true_next_move)
@@ -87,7 +98,7 @@ class PPOAuxTrainingCallback(BaseCallback):
                 batch_obs_tensor = th.tensor(batch_obs, dtype=th.float32).to(device)
                 batch_next_obs_tensor = th.tensor(batch_next_obs, dtype=th.float32).to(device)
 
-                true_next_move = batch_next_obs_tensor[:, -2:]
+                true_next_move = batch_next_obs_tensor[:, HISTORY_END - HISTORY_CHANNELS:HISTORY_END]
                 pred_next_move = self.extractor.forward_aux(batch_obs_tensor)
                 loss = F.mse_loss(pred_next_move, true_next_move)
 
@@ -99,6 +110,140 @@ class PPOAuxTrainingCallback(BaseCallback):
                 epoch_losses.append(loss.item())
 
             self.logger.record("auxiliary/prediction_loss", np.mean(epoch_losses))
+
+
+class PPOFutureAuxTrainingCallback(BaseCallback):
+    """Auxiliary training for strategy inference from recent interaction history.
+
+    The callback samples windows from completed rollout episodes and trains the
+    extractor to predict future hand-motion deltas, future catch risk, and the
+    future minimum robot-hand distance.
+    """
+
+    def __init__(
+        self,
+        history_length=32,
+        history_channels=INTERACTION_HISTORY_CHANNELS,
+        future_horizon=8,
+        batch_size=256,
+        buffer_size=256,
+        aux_epochs=3,
+        lr=5e-5,
+        traj_weight=1.0,
+        risk_weight=0.2,
+        min_dist_weight=0.1,
+        catch_threshold=2.0,
+        verbose=0,
+    ):
+        super().__init__(verbose)
+        self.history_length = int(history_length)
+        self.history_channels = int(history_channels)
+        self.future_horizon = int(future_horizon)
+        self.batch_size = int(batch_size)
+        self.aux_epochs = int(aux_epochs)
+        self.lr = float(lr)
+        self.traj_weight = float(traj_weight)
+        self.risk_weight = float(risk_weight)
+        self.min_dist_weight = float(min_dist_weight)
+        self.catch_threshold = float(catch_threshold)
+        self.episodes = deque(maxlen=buffer_size)
+        self.current_episodes = None
+        self.optimizer = None
+
+    def _on_training_start(self) -> None:
+        self.extractor = self.model.policy.features_extractor
+        self.optimizer = th.optim.Adam(self.extractor.parameters(), lr=self.lr)
+        self.current_episodes = [[] for _ in range(self.training_env.num_envs)]
+
+    def _on_step(self) -> bool:
+        obs_array = self.model._last_obs
+        dones = self.locals.get("dones", [])
+
+        for env_idx in range(obs_array.shape[0]):
+            self.current_episodes[env_idx].append(np.array(obs_array[env_idx], dtype=np.float32))
+            if len(dones) > env_idx and dones[env_idx]:
+                episode = self.current_episodes[env_idx]
+                if len(episode) > self.future_horizon:
+                    self.episodes.append(np.stack(episode, axis=0))
+                self.current_episodes[env_idx] = []
+        return True
+
+    def _sample_batch(self):
+        valid = [ep for ep in self.episodes if len(ep) > self.future_horizon]
+        if not valid:
+            return None
+
+        obs_batch = []
+        future_moves = []
+        risk_targets = []
+        min_dist_targets = []
+        h_slice = history_slice(self.history_length, self.history_channels)
+        latest_step_start = h_slice.stop - self.history_channels
+        hand_delta_start = latest_step_start + self.history_channels - HISTORY_CHANNELS
+
+        for _ in range(self.batch_size):
+            ep = valid[np.random.randint(len(valid))]
+            t = np.random.randint(0, len(ep) - self.future_horizon)
+            future = ep[t + 1:t + 1 + self.future_horizon]
+            obs_batch.append(ep[t])
+            future_moves.append(future[:, hand_delta_start:h_slice.stop])
+            distances = future[:, 4]
+            min_dist = float(np.min(distances))
+            min_dist_targets.append(min_dist)
+            risk_targets.append(1.0 if min_dist < self.catch_threshold else 0.0)
+
+        return (
+            np.asarray(obs_batch, dtype=np.float32),
+            np.asarray(future_moves, dtype=np.float32),
+            np.asarray(risk_targets, dtype=np.float32),
+            np.asarray(min_dist_targets, dtype=np.float32),
+        )
+
+    def _on_rollout_end(self) -> None:
+        if len(self.episodes) == 0:
+            return
+
+        traj_losses = []
+        risk_losses = []
+        min_dist_losses = []
+        total_losses = []
+
+        for _ in range(self.aux_epochs):
+            batch = self._sample_batch()
+            if batch is None:
+                return
+            obs_np, future_moves_np, risk_np, min_dist_np = batch
+
+            device = self.model.device
+            obs = th.tensor(obs_np, dtype=th.float32, device=device)
+            future_moves = th.tensor(future_moves_np, dtype=th.float32, device=device)
+            risk = th.tensor(risk_np, dtype=th.float32, device=device)
+            min_dist = th.tensor(min_dist_np, dtype=th.float32, device=device)
+
+            pred_traj, pred_risk_logit, pred_min_dist = self.extractor.forward_aux_future(obs)
+            traj_loss = F.mse_loss(pred_traj, future_moves)
+            risk_loss = F.binary_cross_entropy_with_logits(pred_risk_logit, risk)
+            min_dist_loss = F.mse_loss(pred_min_dist, min_dist)
+            loss = (
+                self.traj_weight * traj_loss
+                + self.risk_weight * risk_loss
+                + self.min_dist_weight * min_dist_loss
+            )
+
+            self.optimizer.zero_grad()
+            loss.backward()
+            th.nn.utils.clip_grad_norm_(self.extractor.parameters(), max_norm=0.5)
+            self.optimizer.step()
+
+            traj_losses.append(traj_loss.item())
+            risk_losses.append(risk_loss.item())
+            min_dist_losses.append(min_dist_loss.item())
+            total_losses.append(loss.item())
+
+        self.logger.record("strategy_aux/loss", np.mean(total_losses))
+        self.logger.record("strategy_aux/future_traj_loss", np.mean(traj_losses))
+        self.logger.record("strategy_aux/catch_risk_loss", np.mean(risk_losses))
+        self.logger.record("strategy_aux/min_distance_loss", np.mean(min_dist_losses))
 
 
 class SaveMetricsCallback(BaseCallback):

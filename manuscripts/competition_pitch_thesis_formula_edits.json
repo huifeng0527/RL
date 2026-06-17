@@ -1,0 +1,593 @@
+{
+  "$schema": "ppt-edit-spec/v1",
+  "template_slug": "thesis-formula",
+  "selected_slides": [
+    1,
+    4,
+    9,
+    10,
+    11,
+    14,
+    18,
+    19,
+    21,
+    26,
+    27,
+    31,
+    32,
+    34,
+    37
+  ],
+  "edits": [
+    {
+      "slide": 1,
+      "slot_id": "s1_sh4_p0r0",
+      "new_text": "项目概述"
+    },
+    {
+      "slide": 1,
+      "slot_id": "s1_sh5_p0r0",
+      "new_text": "PROJECT OVERVIEW"
+    },
+    {
+      "slide": 4,
+      "slot_id": "s4_sh2_p0r0",
+      "new_text": "上肢康复产业化落地的四个现实痛点"
+    },
+    {
+      "slide": 4,
+      "slot_id": "s4_sh3_p0r0",
+      "new_text": "患者多"
+    },
+    {
+      "slide": 4,
+      "slot_id": "s4_sh4_p0r0",
+      "new_text": "脑卒中与老龄化带来持续增长的上肢康复需求，但优质康复资源集中在大城市医院，基层可及性不足。"
+    },
+    {
+      "slide": 4,
+      "slot_id": "s4_sh5_p0r0",
+      "new_text": "训练难"
+    },
+    {
+      "slide": 4,
+      "slot_id": "s4_sh6_p0r0",
+      "new_text": "传统设备多为固定轨迹或预设模式，难根据患者当天状态动态调难度，个体差异难被真正照顾。"
+    },
+    {
+      "slide": 4,
+      "slot_id": "s4_sh7_p0r0",
+      "new_text": "人手少"
+    },
+    {
+      "slide": 4,
+      "slot_id": "s4_sh8_p0r0",
+      "new_text": "康复治疗师缺口大，重复调参与过程观察高度依赖人工，机构扩容时服务交付效率受限。"
+    },
+    {
+      "slide": 4,
+      "slot_id": "s4_sh9_p0r0",
+      "new_text": "成本高"
+    },
+    {
+      "slide": 4,
+      "slot_id": "s4_sh10_p0r0",
+      "new_text": "进口康复机器人价格高、部署复杂、数据闭环弱，基层医院和康复中心难以规模化引入。"
+    },
+    {
+      "slide": 9,
+      "slot_id": "s9_sh2_p0r0",
+      "new_text": "为什么现在做这件事，窗口已经打开？"
+    },
+    {
+      "slide": 9,
+      "slot_id": "s9_sh30_p0r0",
+      "new_text": "为什么是现在"
+    },
+    {
+      "slide": 9,
+      "slot_id": "s9_sh24_p0r0",
+      "new_text": "评委最关心的不是技术有多新，而是现在做是否顺势。康复需求、政策支持、国产替代和 AI 落地，正在同一时间叠加。"
+    },
+    {
+      "slide": 9,
+      "slot_id": "s9_sh38_p0r0",
+      "new_text": "需求端"
+    },
+    {
+      "slide": 9,
+      "slot_id": "s9_sh42_p0r0",
+      "new_text": "政策端"
+    },
+    {
+      "slide": 9,
+      "slot_id": "s9_sh46_p0r0",
+      "new_text": "供给端"
+    },
+    {
+      "slide": 9,
+      "slot_id": "s9_sh48_p0r0",
+      "new_text": "公开资料普遍显示，中国脑卒中患者规模已达千万级，其中多数伴随不同程度的上肢功能障碍，长期康复需求明确存在。"
+    },
+    {
+      "slide": 9,
+      "slot_id": "s9_sh49_p0r0",
+      "new_text": "康复辅助器具创新持续获得政策鼓励，康复服务纳入支付体系的趋势，也在推动基层机构增强采购动力。"
+    },
+    {
+      "slide": 9,
+      "slot_id": "s9_sh50_p0r0",
+      "new_text": "强化学习、机器人控制和视觉感知的工程化能力正在成熟，使自适应康复训练第一次具备产品化现实基础。"
+    },
+    {
+      "slide": 10,
+      "slot_id": "s10_sh2_p0r0",
+      "new_text": "谁会先为这套系统买单？"
+    },
+    {
+      "slide": 10,
+      "slot_id": "s10_sh16_p0r0",
+      "new_text": "标杆客户"
+    },
+    {
+      "slide": 10,
+      "slot_id": "s10_sh17_p0r0",
+      "new_text": "二级及以上医院康复科、专业康复医院，采购决策相对明确，适合作为首批试点与品牌背书场景。"
+    },
+    {
+      "slide": 10,
+      "slot_id": "s10_sh19_p0r0",
+      "new_text": "增长客户"
+    },
+    {
+      "slide": 10,
+      "slot_id": "s10_sh20_p0r0",
+      "new_text": "康复中心、社区卫生服务中心和基层医疗机构更关注低成本、易部署和远程支持，是放量关键。"
+    },
+    {
+      "slide": 10,
+      "slot_id": "s10_sh22_p0r0",
+      "new_text": "延展场景"
+    },
+    {
+      "slide": 10,
+      "slot_id": "s10_sh23_p0r0",
+      "new_text": "养老机构、居家康复与区域康复网络可在后续通过平台化服务接入，形成长期服务收入。"
+    },
+    {
+      "slide": 10,
+      "slot_id": "s10_sh25_p0r0",
+      "new_text": "切入策略"
+    },
+    {
+      "slide": 10,
+      "slot_id": "s10_sh26_p0r0",
+      "new_text": "先做医院试点和示范案例，再复制到区域渠道和基层机构，最后拓展远程康复生态。"
+    },
+    {
+      "slide": 11,
+      "slot_id": "s11_sh4_p0r0",
+      "new_text": "项目价值"
+    },
+    {
+      "slide": 11,
+      "slot_id": "s11_sh5_p0r0",
+      "new_text": "PROJECT VALUE"
+    },
+    {
+      "slide": 14,
+      "slot_id": "s14_sh2_p0r0",
+      "new_text": "为什么这套产品值得医院和机构买单？"
+    },
+    {
+      "slide": 14,
+      "slot_id": "s14_sh43_p0r0",
+      "new_text": "对患者"
+    },
+    {
+      "slide": 14,
+      "slot_id": "s14_sh45_p0r0",
+      "new_text": "训练难度随能力变化自动调整，更容易把患者维持在“够得着、又有挑战”的有效训练区间，提升参与感和坚持度。"
+    },
+    {
+      "slide": 14,
+      "slot_id": "s14_sh47_p0r0",
+      "new_text": "对治疗师"
+    },
+    {
+      "slide": 14,
+      "slot_id": "s14_sh49_p0r0",
+      "new_text": "减少重复调参与主观判断负担，用量化数据辅助复盘和干预决策，让服务交付更标准化。"
+    },
+    {
+      "slide": 14,
+      "slot_id": "s14_sh51_p0r0",
+      "new_text": "对机构"
+    },
+    {
+      "slide": 14,
+      "slot_id": "s14_sh53_p0r0",
+      "new_text": "以更低门槛引入智能康复能力，同时带来示范展示、科研合作、远程康复和品牌升级的综合价值。"
+    },
+    {
+      "slide": 18,
+      "slot_id": "s18_sh2_p0r0",
+      "new_text": "产品形态：一套可部署、可训练、可评估的系统"
+    },
+    {
+      "slide": 18,
+      "slot_id": "s18_sh41_p0r0",
+      "new_text": "机器人平台"
+    },
+    {
+      "slide": 18,
+      "slot_id": "s18_sh42_p0r0",
+      "new_text": "协作机器人与桌面交互终端构成训练载体，为人机安全交互和动作引导提供基础。"
+    },
+    {
+      "slide": 18,
+      "slot_id": "s18_sh43_p0r0",
+      "new_text": "视觉感知"
+    },
+    {
+      "slide": 18,
+      "slot_id": "s18_sh44_p0r0",
+      "new_text": "通过视觉采集训练状态，持续感知患者表现，为难度调节与过程记录提供输入。"
+    },
+    {
+      "slide": 18,
+      "slot_id": "s18_sh45_p0r0",
+      "new_text": "训练软件"
+    },
+    {
+      "slide": 18,
+      "slot_id": "s18_sh46_p0r0",
+      "new_text": "支持训练流程管理、任务调用、数据沉淀和后续功能扩展，形成持续迭代的软件能力。"
+    },
+    {
+      "slide": 18,
+      "slot_id": "s18_sh47_p0r0",
+      "new_text": "评估报告"
+    },
+    {
+      "slide": 18,
+      "slot_id": "s18_sh48_p0r0",
+      "new_text": "输出轨迹、反应速度、完成度等结果，帮助治疗师与机构把训练过程转化为可解释的数据资产。"
+    },
+    {
+      "slide": 19,
+      "slot_id": "s19_sh2_p0r0",
+      "new_text": "为什么评委会相信我们不是停留在概念？"
+    },
+    {
+      "slide": 19,
+      "slot_id": "s19_sh50_p0r0",
+      "new_text": "阶段证据"
+    },
+    {
+      "slide": 19,
+      "slot_id": "s19_sh51_p0r0",
+      "new_text": "已完成仿真训练框架、关键算法设计和实机平台初步打通，说明项目已跨过纯概念阶段。"
+    },
+    {
+      "slide": 19,
+      "slot_id": "s19_sh53_p0r0",
+      "new_text": "算法验证"
+    },
+    {
+      "slide": 19,
+      "slot_id": "s19_sh54_p0r0",
+      "new_text": "已完成多种模型结构对比与迭代，证明“自适应训练”不是一句口号，而是可以持续优化的技术路线。"
+    },
+    {
+      "slide": 19,
+      "slot_id": "s19_sh56_p0r0",
+      "new_text": "实机部署"
+    },
+    {
+      "slide": 19,
+      "slot_id": "s19_sh57_p0r0",
+      "new_text": "已完成协作机器人、交互终端和视觉感知的系统联调，说明方案具备走向真实场景的可行性。"
+    },
+    {
+      "slide": 19,
+      "slot_id": "s19_sh59_p0r0",
+      "new_text": "下一里程碑"
+    },
+    {
+      "slide": 19,
+      "slot_id": "s19_sh60_p0r0",
+      "new_text": "下一步将联合康复医院开展试点验证，补齐真实患者场景下的安全性与有效性证据。"
+    },
+    {
+      "slide": 19,
+      "slot_id": "s19_sh62_p0r0",
+      "new_text": "转化路径"
+    },
+    {
+      "slide": 19,
+      "slot_id": "s19_sh63_p0r0",
+      "new_text": "后续推进工程化、注册路径与渠道验证，把科研能力逐步转化为可销售产品。"
+    },
+    {
+      "slide": 21,
+      "slot_id": "s21_sh4_p0r0",
+      "new_text": "技术壁垒"
+    },
+    {
+      "slide": 21,
+      "slot_id": "s21_sh5_p0r0",
+      "new_text": "TECHNICAL MOAT"
+    },
+    {
+      "slide": 26,
+      "slot_id": "s26_sh2_p0r0",
+      "new_text": "为什么这套系统短期内不容易被复制？"
+    },
+    {
+      "slide": 26,
+      "slot_id": "s26_sh13_p0r0",
+      "new_text": "难点一"
+    },
+    {
+      "slide": 26,
+      "slot_id": "s26_sh14_p0r0",
+      "new_text": "真正的壁垒不是“机器人能动”，而是系统能持续识别患者能力变化，并把难度控制在合适区间。"
+    },
+    {
+      "slide": 26,
+      "slot_id": "s26_sh25_p0r0",
+      "new_text": "难点二"
+    },
+    {
+      "slide": 26,
+      "slot_id": "s26_sh26_p0r0",
+      "new_text": "要让策略适应不同患者，就需要足够贴近真实能力差异的训练体系，而不是只靠少量实验演示。"
+    },
+    {
+      "slide": 26,
+      "slot_id": "s26_sh30_p0r0",
+      "new_text": "难点三"
+    },
+    {
+      "slide": 26,
+      "slot_id": "s26_sh31_p0r0",
+      "new_text": "从仿真到真实设备的落地，涉及感知、控制、安全和部署成本的协同优化，比单点算法创新更难。"
+    },
+    {
+      "slide": 26,
+      "address": {
+        "shape_id": 4,
+        "paragraph": 0
+      },
+      "new_text": ""
+    },
+    {
+      "slide": 27,
+      "slot_id": "s27_sh2_p0r0",
+      "new_text": "为什么是我们能做，而不是别人很快跟进？"
+    },
+    {
+      "slide": 27,
+      "slot_id": "s27_sh17_p0r0",
+      "new_text": "壁垒不在某个术语，而在于我们已经把训练策略、训练体系和真实落地三件事同时推进，这是后来者最难补齐的地方。"
+    },
+    {
+      "slide": 27,
+      "slot_id": "s27_sh51_p0r0",
+      "new_text": "自适应控制"
+    },
+    {
+      "slide": 27,
+      "slot_id": "s27_sh52_p0r0",
+      "new_text": "根据患者表现动态调难度，让系统逐步替代部分高频人工调参工作，形成真正可卖的训练能力。"
+    },
+    {
+      "slide": 27,
+      "slot_id": "s27_sh53_p0r0",
+      "new_text": "虚拟患者训练"
+    },
+    {
+      "slide": 27,
+      "slot_id": "s27_sh54_p0r0",
+      "new_text": "通过更丰富的仿真训练对象覆盖患者能力谱系，提升系统面对复杂康复场景时的稳定性和泛化能力。"
+    },
+    {
+      "slide": 27,
+      "slot_id": "s27_sh55_p0r0",
+      "new_text": "实机部署能力"
+    },
+    {
+      "slide": 27,
+      "slot_id": "s27_sh56_p0r0",
+      "new_text": "完成从仿真到真实设备的迁移与联调，更接近可交付产品，而不仅是实验室演示结果。"
+    },
+    {
+      "slide": 27,
+      "slot_id": "s27_sh57_p0r0",
+      "new_text": "组合壁垒"
+    },
+    {
+      "slide": 27,
+      "address": {
+        "shape_id": 47,
+        "paragraph": 0
+      },
+      "new_text": ""
+    },
+    {
+      "slide": 27,
+      "address": {
+        "shape_id": 48,
+        "paragraph": 0
+      },
+      "new_text": ""
+    },
+    {
+      "slide": 27,
+      "address": {
+        "shape_id": 49,
+        "paragraph": 0
+      },
+      "new_text": ""
+    },
+    {
+      "slide": 27,
+      "address": {
+        "shape_id": 50,
+        "paragraph": 0
+      },
+      "new_text": ""
+    },
+    {
+      "slide": 31,
+      "slot_id": "s31_sh4_p0r0",
+      "new_text": "商业规划"
+    },
+    {
+      "slide": 31,
+      "slot_id": "s31_sh5_p0r0",
+      "new_text": "BUSINESS PLAN"
+    },
+    {
+      "slide": 32,
+      "slot_id": "s32_sh2_p0r0",
+      "new_text": "凭什么能卖出去？我们的收入逻辑是什么？"
+    },
+    {
+      "slide": 32,
+      "slot_id": "s32_sh57_p0r0",
+      "new_text": "收入一"
+    },
+    {
+      "slide": 32,
+      "slot_id": "s32_sh58_p0r0",
+      "new_text": "硬件销售：整套康复机器人系统，定价约 15–30 万元/台，以国产替代切入"
+    },
+    {
+      "slide": 32,
+      "slot_id": "s32_sh45_p0r0",
+      "new_text": "收入二"
+    },
+    {
+      "slide": 32,
+      "slot_id": "s32_sh46_p0r0",
+      "new_text": "软件订阅：训练算法、数据分析与增值功能按年收费，形成持续复购"
+    },
+    {
+      "slide": 32,
+      "slot_id": "s32_sh33_p0r0",
+      "new_text": "收入三"
+    },
+    {
+      "slide": 32,
+      "slot_id": "s32_sh34_p0r0",
+      "new_text": "培训服务：设备操作培训与康复方案设计培训，增强客户黏性"
+    },
+    {
+      "slide": 32,
+      "slot_id": "s32_sh21_p0r0",
+      "new_text": "收入四"
+    },
+    {
+      "slide": 32,
+      "slot_id": "s32_sh22_p0r0",
+      "new_text": "远程康复与数据服务：打开长期服务收入和科研合作空间"
+    },
+    {
+      "slide": 34,
+      "slot_id": "s34_sh2_p0r0",
+      "new_text": "怎么卖出去：先医院试点，再向基层与远程康复扩展"
+    },
+    {
+      "slide": 34,
+      "slot_id": "s34_sh39_p0r0",
+      "new_text": "第一步"
+    },
+    {
+      "slide": 34,
+      "slot_id": "s34_sh40_p0r0",
+      "new_text": "联合 3–5 家医院做试点，形成真实案例、口碑和临床背书"
+    },
+    {
+      "slide": 34,
+      "slot_id": "s34_sh37_p0r0",
+      "new_text": "第二步"
+    },
+    {
+      "slide": 34,
+      "slot_id": "s34_sh38_p0r0",
+      "new_text": "围绕重点省份建立渠道合作，复制到二级以上医院和康复中心"
+    },
+    {
+      "slide": 34,
+      "slot_id": "s34_sh35_p0r0",
+      "new_text": "第三步"
+    },
+    {
+      "slide": 34,
+      "slot_id": "s34_sh36_p0r0",
+      "new_text": "通过远程平台降低基层使用门槛，进入社区与基层机构"
+    },
+    {
+      "slide": 34,
+      "slot_id": "s34_sh33_p0r0",
+      "new_text": "第四步"
+    },
+    {
+      "slide": 34,
+      "slot_id": "s34_sh34_p0r0",
+      "new_text": "沉淀训练数据与服务能力，逐步构建康复管理平台"
+    },
+    {
+      "slide": 34,
+      "slot_id": "s34_sh31_p0r0",
+      "new_text": "第五步"
+    },
+    {
+      "slide": 34,
+      "slot_id": "s34_sh32_p0r0",
+      "new_text": "推进注册、合作网络和品牌影响力，形成可持续增长飞轮"
+    },
+    {
+      "slide": 37,
+      "slot_id": "s37_sh2_p0r0",
+      "new_text": "为什么值得支持我们：团队能力与下一步诉求"
+    },
+    {
+      "slide": 37,
+      "slot_id": "s37_sh7_p0r0",
+      "new_text": "六项"
+    },
+    {
+      "slide": 37,
+      "slot_id": "s37_sh21_p0r0",
+      "new_text": "强化学习"
+    },
+    {
+      "slide": 37,
+      "slot_id": "s37_sh22_p0r0",
+      "new_text": "机器人控制"
+    },
+    {
+      "slide": 37,
+      "slot_id": "s37_sh33_p0r0",
+      "new_text": "计算机视觉"
+    },
+    {
+      "slide": 37,
+      "slot_id": "s37_sh34_p0r0",
+      "new_text": "康复场景"
+    },
+    {
+      "slide": 37,
+      "slot_id": "s37_sh45_p0r0",
+      "new_text": "医院试点"
+    },
+    {
+      "slide": 37,
+      "slot_id": "s37_sh46_p0r0",
+      "new_text": "资金支持"
+    }
+  ]
+}

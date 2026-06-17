@@ -1,0 +1,8 @@
+{
+  "event": "run_completed",
+  "phase": "complete",
+  "iteration": 3,
+  "final_robot_path": "logs/dual_iterative_0617_1152\\iteration_3\\robot\\robot\\best_model.zip",
+  "total_opponents": 3,
+  "timestamp": "2026-06-17T07:25:57.588277+00:00"
+}

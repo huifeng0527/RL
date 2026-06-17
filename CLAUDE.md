@@ -21,6 +21,7 @@ An end-to-end RL framework for adaptive upper-limb rehabilitation. A UR10 robot 
 - **`src/`**: Simulation + training (gymnasium environments, PPO, league training)
 - **`rlproject/`**: Real-world deployment (UR10, vision pipeline, FastAPI backend, React frontend)
 - **`manuscripts/`**: IEEE paper drafts
+- **`memory/`**: Project-specific experimental observations and analysis notes. Check this directory when reasoning about prior experiment results or league-training behavior.
 
 ## Commands
 
