@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { getPatients, createPatient, deletePatient } from '../services/api';
 
@@ -16,20 +16,13 @@ export default function Patients() {
     notes: ''
   });
 
-  useEffect(() => {
-    loadPatients();
-    return () => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    };
-  }, []);
-
-  const showToast = (message, type = 'info') => {
+  const showToast = useCallback((message, type = 'info') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ message, type });
     toastTimerRef.current = setTimeout(() => setToast(null), 3000);
-  };
+  }, []);
 
-  const loadPatients = async () => {
+  const loadPatients = useCallback(async () => {
     try {
       const res = await getPatients();
       setPatients(res.data);
@@ -39,7 +32,15 @@ export default function Patients() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => loadPatients(), 0);
+    return () => {
+      clearTimeout(timer);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, [loadPatients]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

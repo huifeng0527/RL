@@ -3,9 +3,11 @@
 import subprocess
 import sys
 import os
-import signal
 import time
 import argparse
+import shutil
+import urllib.request
+import urllib.error
 
 # 项目根目录
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -18,27 +20,41 @@ class SystemManager:
     def start_backend(self):
         """启动后端服务"""
         print("[启动] 后端服务 (FastAPI on port 8000)...")
-        os.chdir(os.path.join(PROJECT_ROOT, 'backend'))
+        backend_dir = os.path.join(PROJECT_ROOT, 'backend')
         self.backend_process = subprocess.Popen(
             [sys.executable, 'main.py'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            bufsize=1,
-            universal_newlines=True
+            cwd=backend_dir
         )
         print(f"[后端] PID: {self.backend_process.pid}")
+
+    def wait_for_backend(self, timeout=30):
+        """等待后端健康检查通过"""
+        deadline = time.time() + timeout
+        health_url = 'http://localhost:8000/api/health'
+        while time.time() < deadline:
+            if self.backend_process and self.backend_process.poll() is not None:
+                print("[错误] 后端进程已退出")
+                return False
+            try:
+                with urllib.request.urlopen(health_url, timeout=1) as response:
+                    if response.status == 200:
+                        print("[后端] 健康检查通过")
+                        return True
+            except (urllib.error.URLError, TimeoutError):
+                time.sleep(1)
+        print("[警告] 后端健康检查超时")
+        return False
 
     def start_frontend(self):
         """启动前端服务"""
         print("[启动] 前端服务 (Vite dev server on port 5173)...")
-        os.chdir(os.path.join(PROJECT_ROOT, 'frontend'))
-        npm_cmd = os.path.join(os.environ.get('PROGRAMFILES', 'C:\\Program Files'), 'nodejs', 'npm.cmd')
+        frontend_dir = os.path.join(PROJECT_ROOT, 'frontend')
+        npm_cmd = shutil.which('npm') or shutil.which('npm.cmd')
+        if not npm_cmd:
+            raise RuntimeError("npm not found in PATH")
         self.frontend_process = subprocess.Popen(
             [npm_cmd, 'run', 'dev'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            bufsize=1,
-            universal_newlines=True
+            cwd=frontend_dir
         )
         print(f"[前端] PID: {self.frontend_process.pid}")
 
@@ -71,6 +87,7 @@ class SystemManager:
         try:
             if not frontend_only:
                 self.start_backend()
+                self.wait_for_backend()
             if not backend_only:
                 self.start_frontend()
 

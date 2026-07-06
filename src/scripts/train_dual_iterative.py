@@ -1,4 +1,4 @@
-"""Dual agent iterative training.
+﻿"""Dual agent iterative training.
 
 Alternating training between robot agent and hand agent.
 Robot learns to catch hand, hand learns to avoid robot.
@@ -12,6 +12,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 import argparse
 import datetime
+import json
+import math
+import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback, CallbackList
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -19,20 +22,31 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.logger import configure
 
 from src.custom_env import RehabilitationEnv
-from src.utils.callbacks import DebugCallback
-from src.utils.ablation_callbacks import PPOAuxTrainingCallback
-from src.utils.feature_extractors import MLPOnlyExtractor, LSTMExtractor, AuxLSTMExtractor, GatedExtractor, AuxGatedExtractor
+from src.observation_schema import HISTORY_CHANNELS, INTERACTION_HISTORY_CHANNELS
+from src.scripts.cross_eval import evaluate_pair
+from src.utils.callbacks import DebugCallback, StatusWriter, TrainingStatusCallback
+from src.utils.ablation_callbacks import PPOAuxTrainingCallback, PPOFutureAuxTrainingCallback
+from src.utils.feature_extractors import (
+    MLPOnlyExtractor,
+    LSTMExtractor,
+    AuxLSTMExtractor,
+    GatedExtractor,
+    AuxGatedExtractor,
+    StrategyGRUAuxExtractor,
+)
 
 EXTRACTOR_MAP = {
     "mlp": MLPOnlyExtractor,
     "lstm": LSTMExtractor,
     "aux_lstm": AuxLSTMExtractor,
-    "gate": GatedExtractor,
-    "aux_gate": AuxGatedExtractor,
+    "strategy_gru_aux": StrategyGRUAuxExtractor,
+    # "gate": GatedExtractor,
+    # "aux_gate": AuxGatedExtractor,
 }
 
 # Check if extractor has auxiliary task
 AUX_EXTRACTORS = {AuxLSTMExtractor, AuxGatedExtractor}
+STRATEGY_AUX_EXTRACTORS = {StrategyGRUAuxExtractor}
 
 
 def _copy_models_from_resume(resume_from, base_save_path, start_from_iteration):
@@ -72,27 +86,52 @@ def _copy_models_from_resume(resume_from, base_save_path, start_from_iteration):
     return copied_count
 
 
-def create_env(training_mode, robot_model=None, hand_model_paths=None):
+def create_env(training_mode, robot_model=None, hand_model_paths=None, include_opponent_id=False,
+               scripted_hand_sample_prob=None, robot_opponent_id_dim=0, history_length=16,
+               history_mode="motion"):
     """Create a single environment instance."""
     def _make():
         env = RehabilitationEnv(
             training_mode=training_mode,
             robot_model=robot_model,
-            hand_model_paths=hand_model_paths
+            hand_model_paths=hand_model_paths,
+            include_opponent_id=include_opponent_id if training_mode == 'robot' else False,
+            robot_opponent_id_dim=robot_opponent_id_dim if training_mode == 'hand' else 0,
+            history_length=history_length,
+            history_mode=history_mode if training_mode == 'robot' else "motion",
         )
+        if scripted_hand_sample_prob is not None:
+            env.scripted_hand_sample_prob = scripted_hand_sample_prob
         return Monitor(env)
     return _make
 
 
-def create_vec_env(training_mode, n_envs=4, robot_model=None, hand_model_paths=None):
+def create_vec_env(training_mode, n_envs=4, robot_model=None, hand_model_paths=None,
+                   include_opponent_id=False, scripted_hand_sample_prob=None,
+                   robot_opponent_id_dim=0, history_length=16, history_mode="motion"):
     """Create vectorized environment."""
-    env_fns = [create_env(training_mode, robot_model, hand_model_paths) for _ in range(n_envs)]
+    env_fns = [
+        create_env(
+            training_mode,
+            robot_model,
+            hand_model_paths,
+            include_opponent_id,
+            scripted_hand_sample_prob,
+            robot_opponent_id_dim,
+            history_length,
+            history_mode,
+        )
+        for _ in range(n_envs)
+    ]
     return DummyVecEnv(env_fns)
 
 
 def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_class=None,
                 previous_robot_path=None, continue_from_previous=False, start_iteration=1,
-                skip_if_exists=False, resume_from_path=None):
+                skip_if_exists=False, resume_from_path=None, status_run_dir=None,
+                status_log_freq=10000, include_opponent_id=False,
+                scripted_hand_sample_prob=None, history_length=16,
+                history_mode="motion", future_horizon=8, strategy_aux_weights=None):
     """Train robot agent to catch hand.
 
     Args:
@@ -127,7 +166,23 @@ def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_cl
     print("Training Robot Agent")
     print(f"{'='*40}")
 
-    vec_env = create_vec_env('robot', n_envs=n_envs, hand_model_paths=hand_model_paths)
+    vec_env = create_vec_env(
+        'robot',
+        n_envs=n_envs,
+        hand_model_paths=hand_model_paths,
+        include_opponent_id=include_opponent_id,
+        scripted_hand_sample_prob=scripted_hand_sample_prob,
+        history_length=history_length,
+        history_mode=history_mode,
+    )
+    obs_dim = vec_env.observation_space.shape[0]
+    history_channels = INTERACTION_HISTORY_CHANNELS if history_mode == "interaction" else HISTORY_CHANNELS
+    base_obs_dim = 12 + history_length * history_channels
+    opponent_id_dim = max(0, obs_dim - base_obs_dim)
+    print(
+        f"[*] Robot obs_dim={obs_dim}, history_length={history_length}, "
+        f"include_opponent_id={include_opponent_id}, opponent_id_dim={opponent_id_dim}"
+    )
 
     policy_kwargs = dict(
         net_arch=[256, 256, 256, 64],
@@ -135,6 +190,11 @@ def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_cl
     )
     if extractor_class is not None:
         policy_kwargs["features_extractor_class"] = extractor_class
+        if extractor_class in STRATEGY_AUX_EXTRACTORS:
+            policy_kwargs["features_extractor_kwargs"] = dict(
+                future_horizon=future_horizon,
+                history_channels=history_channels,
+            )
 
     # 加载并继续训练
     if existing_model:
@@ -173,7 +233,15 @@ def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_cl
             tensorboard_log=os.path.join(save_path, "tensorboard")
         )
 
-    eval_env = create_vec_env('robot', n_envs=1, hand_model_paths=hand_model_paths)
+    eval_env = create_vec_env(
+        'robot',
+        n_envs=1,
+        hand_model_paths=hand_model_paths,
+        include_opponent_id=include_opponent_id,
+        scripted_hand_sample_prob=scripted_hand_sample_prob,
+        history_length=history_length,
+        history_mode=history_mode,
+    )
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=os.path.join(save_path, "robot"),
@@ -183,14 +251,37 @@ def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_cl
     )
     # debug_callback = DebugCallback(env=eval_env, log_freq=10000)
 
-    # 添加 Aux callback 如果使用 aux extractor
+    # 添加 callbacks
+    callback_items = [eval_callback]
+    if status_run_dir is not None:
+        callback_items.append(TrainingStatusCallback(
+            run_dir=status_run_dir,
+            phase="robot",
+            iteration=start_iteration,
+            total_timesteps=total_steps,
+            log_freq=status_log_freq,
+        ))
+
     use_aux = extractor_class in AUX_EXTRACTORS
     if use_aux:
         print("[*] 使用 Aux 训练回调")
-        aux_callback = PPOAuxTrainingCallback(batch_size=512)
-        callbacks = CallbackList([eval_callback, aux_callback])
-    else:
-        callbacks = CallbackList([eval_callback])
+        callback_items.append(PPOAuxTrainingCallback(batch_size=512))
+
+    use_strategy_aux = extractor_class in STRATEGY_AUX_EXTRACTORS
+    if use_strategy_aux:
+        print("[*] Using strategy future auxiliary callback")
+        weights = strategy_aux_weights or {}
+        callback_items.append(PPOFutureAuxTrainingCallback(
+            history_length=history_length,
+            history_channels=history_channels,
+            future_horizon=future_horizon,
+            batch_size=512,
+            traj_weight=weights.get("traj", 1.0),
+            risk_weight=weights.get("risk", 0.2),
+            min_dist_weight=weights.get("min_dist", 0.1),
+        ))
+
+    callbacks = CallbackList(callback_items)
 
     model.learn(
         total_timesteps=total_steps,
@@ -207,7 +298,9 @@ def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_cl
 
 
 def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_class=None,
-               skip_if_exists=False, resume_from_path=None, warm_start_path=None):
+               skip_if_exists=False, resume_from_path=None, warm_start_path=None,
+               status_run_dir=None, status_log_freq=10000, iteration=1,
+               robot_opponent_id_dim=0):
     """Train hand agent to avoid robot.
 
     Args:
@@ -240,7 +333,12 @@ def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_cla
         verbose=0
     )
 
-    vec_env = create_vec_env('hand', n_envs=n_envs, robot_model=robot_model)
+    vec_env = create_vec_env(
+        'hand',
+        n_envs=n_envs,
+        robot_model=robot_model,
+        robot_opponent_id_dim=robot_opponent_id_dim,
+    )
 
     policy_kwargs = dict(
         net_arch=[256, 256, 64],
@@ -284,7 +382,12 @@ def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_cla
             tensorboard_log=os.path.join(save_path, "tensorboard")
         )
 
-    eval_env = create_vec_env('hand', n_envs=1, robot_model=robot_model)
+    eval_env = create_vec_env(
+        'hand',
+        n_envs=1,
+        robot_model=robot_model,
+        robot_opponent_id_dim=robot_opponent_id_dim,
+    )
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=os.path.join(save_path, "hand"),
@@ -294,14 +397,23 @@ def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_cla
     )
     debug_callback = DebugCallback(env=eval_env, log_freq=10000)
 
-    # 添加 Aux callback 如果使用 aux extractor
+    # 添加 callbacks
+    callback_items = [eval_callback, debug_callback]
+    if status_run_dir is not None:
+        callback_items.append(TrainingStatusCallback(
+            run_dir=status_run_dir,
+            phase="hand",
+            iteration=iteration,
+            total_timesteps=total_steps,
+            log_freq=status_log_freq,
+        ))
+
     use_aux = extractor_class in AUX_EXTRACTORS
     if use_aux:
         print("[*] 使用 Aux 训练回调")
-        aux_callback = PPOAuxTrainingCallback(batch_size=512)
-        callbacks = CallbackList([eval_callback, aux_callback, debug_callback])
-    else:
-        callbacks = CallbackList([eval_callback, debug_callback])
+        callback_items.append(PPOAuxTrainingCallback(batch_size=512))
+
+    callbacks = CallbackList(callback_items)
 
     model.learn(
         total_timesteps=total_steps,
@@ -317,16 +429,106 @@ def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_cla
 
     return hand_path
 
+def evaluate_convergence(robot_path, hand_paths, episodes=100, max_steps=40, zpd_min=4.0, zpd_max=6.0,
+                         pool_score_lambda=0.25):
+    pair_metrics = []
+    for idx, hand_path in enumerate(hand_paths, start=1):
+        metrics = evaluate_pair(
+            robot_path,
+            hand_path,
+            num_episodes=episodes,
+            max_steps=max_steps,
+            z_min=zpd_min,
+            z_max=zpd_max,
+        )
+        metrics.update({"hand_index": idx, "hand_path": hand_path})
+        pair_metrics.append(metrics)
+
+    if not pair_metrics:
+        return None
+
+    tis_means = np.array([m["tis_mean"] for m in pair_metrics], dtype=float)
+    tis_ses = np.array([
+        m["tis_std"] / math.sqrt(max(m.get("num_episodes", episodes), 1))
+        for m in pair_metrics
+    ], dtype=float)
+    zpd_means = np.array([m["zpd_coverage_mean"] for m in pair_metrics], dtype=float)
+    lengths = np.array([m["episode_length_mean"] for m in pair_metrics], dtype=float)
+
+    aggregate_se = float(math.sqrt(float(np.sum(tis_ses ** 2))) / len(pair_metrics))
+    mean_tis = float(np.mean(tis_means))
+    std_tis = float(np.std(tis_means))
+    pool_score = float(mean_tis - pool_score_lambda * std_tis)
+
+    return {
+        "num_opponents": len(pair_metrics),
+        "episodes_per_opponent": episodes,
+        "mean_tis": mean_tis,
+        "std_tis_across_hands": std_tis,
+        "worst_case_tis": float(np.min(tis_means)),
+        "aggregate_se": aggregate_se,
+        "mean_zpd_coverage": float(np.mean(zpd_means)),
+        "mean_episode_length": float(np.mean(lengths)),
+        "pool_score": pool_score,
+        "pool_score_lambda": pool_score_lambda,
+        "pair_metrics": pair_metrics,
+    }
+
+
+def convergence_decision(current, previous, stagnant_count, patience=2, z_value=1.96):
+    if previous is None or current is None:
+        return {
+            "stop": False,
+            "stagnant_count": 0,
+            "reason": "insufficient_history",
+        }
+
+    delta = current["pool_score"] - previous["pool_score"]
+    delta_se = math.sqrt(current["aggregate_se"] ** 2 + previous["aggregate_se"] ** 2)
+    noise_band = z_value * delta_se
+    stagnant = delta <= noise_band
+    next_count = stagnant_count + 1 if stagnant else 0
+    return {
+        "stop": next_count >= patience,
+        "stagnant_count": next_count,
+        "reason": "improvement_within_statistical_noise" if stagnant else "improving_beyond_noise",
+        "delta": float(delta),
+        "delta_se": float(delta_se),
+        "noise_band": float(noise_band),
+        "z_value": z_value,
+        "patience": patience,
+    }
+
+
+def append_json(path, payload):
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
 
 def run_iterative_training(
     n_iterations=5,
-    robot_steps=1_000_000,
-    hand_steps=2_000_000,
+    robot_steps=2_000_000,
+    first_robot_steps=3_000_000,
+    hand_steps=1_000_000,
     n_envs=4,
     base_save_path=None,
     extractor_name="mlp",
     resume_from=None,
-    start_from_iteration=1
+    start_from_iteration=1,
+    enable_convergence_stop=False,
+    convergence_episodes=100,
+    convergence_patience=2,
+    convergence_z=1.96,
+    pool_score_lambda=0.25,
+    status_log_freq=10000,
+    include_opponent_id=False,
+    scripted_hand_sample_prob=None,
+    history_length=16,
+    history_mode="motion",
+    future_horizon=8,
+    strategy_traj_weight=0.1,
+    strategy_risk_weight=0.02,
+    strategy_min_dist_weight=0.01,
 ):
     """Run iterative dual agent training.
 
@@ -339,6 +541,53 @@ def run_iterative_training(
         base_save_path = f"logs/dual_iterative_{now}"
 
     os.makedirs(base_save_path, exist_ok=True)
+    if extractor_name.lower() == "strategy_gru_aux":
+        if include_opponent_id:
+            print("[*] strategy_gru_aux is an implicit strategy-inference variant; disabling opponent id.")
+            include_opponent_id = False
+        if history_mode == "motion":
+            print("[*] strategy_gru_aux uses interaction history; setting history_mode=interaction.")
+            history_mode = "interaction"
+        # if history_length == 16:
+        #     pass  # strategy_gru_aux with interaction history: 16 steps * 8 channels = 128 dims
+        #     history_length = 32
+
+    status_writer = StatusWriter(base_save_path)
+    convergence_history_path = os.path.join(base_save_path, "convergence_history.jsonl")
+    previous_convergence = None
+    stagnant_count = 0
+    status_writer.write_event({
+        "event": "run_started",
+        "phase": "setup",
+        "iteration": start_from_iteration,
+        "base_save_path": base_save_path,
+        "n_iterations": n_iterations,
+        "robot_steps": robot_steps,
+        "first_robot_steps": first_robot_steps,
+        "hand_steps": hand_steps,
+        "n_envs": n_envs,
+        "enable_convergence_stop": enable_convergence_stop,
+        "extractor_name": extractor_name,
+        "history_length": history_length,
+        "history_mode": history_mode,
+        "future_horizon": future_horizon,
+        "include_opponent_id": include_opponent_id,
+    })
+    run_config_path = os.path.join(base_save_path, "run_config.json")
+    with open(run_config_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "extractor_name": extractor_name,
+            "history_length": history_length,
+            "history_mode": history_mode,
+            "future_horizon": future_horizon,
+            "include_opponent_id": include_opponent_id,
+            "scripted_hand_sample_prob": scripted_hand_sample_prob,
+            "strategy_aux_weights": {
+                "traj": strategy_traj_weight,
+                "risk": strategy_risk_weight,
+                "min_dist": strategy_min_dist_weight,
+            },
+        }, f, ensure_ascii=False, indent=2)
 
     # Get extractor class
     extractor_class = EXTRACTOR_MAP.get(extractor_name.lower())
@@ -347,6 +596,13 @@ def run_iterative_training(
         extractor_class = None
     else:
         print(f"Using feature extractor: {extractor_class.__name__}")
+
+    if (history_length != 16 or history_mode != "motion") and extractor_class not in STRATEGY_AUX_EXTRACTORS:
+        raise ValueError(
+            "non-legacy history settings are currently supported only by "
+            "--extractor strategy_gru_aux. Existing extractors keep the legacy "
+            "16-step slicing to preserve old experiments."
+        )
 
     # 加载历史手模型路径
     historical_hand_paths = []
@@ -387,6 +643,10 @@ def run_iterative_training(
             if os.path.exists(new_hand_path):
                 historical_hand_paths.append(new_hand_path)
 
+        if (include_opponent_id or history_length != 16 or history_mode != "motion") and current_robot_path is not None:
+            print("[*] Robot obs dim changed; reusing hand pool but starting a new Robot model.")
+            current_robot_path = None
+
     print(f"➤ 初始对手池大小: {len(historical_hand_paths) + 1} (包含脚本手)")
 
     # 从 start_from_iteration 开始训练
@@ -397,6 +657,12 @@ def run_iterative_training(
 
         iteration_path = os.path.join(base_save_path, f"iteration_{iteration}")
         os.makedirs(iteration_path, exist_ok=True)
+        status_writer.write_event({
+            "event": "iteration_started",
+            "phase": "setup",
+            "iteration": iteration,
+            "opponent_pool_size": len(historical_hand_paths),
+        })
 
         # 检查当前 iteration 是否已有模型
         resume_robot_path = None
@@ -414,12 +680,19 @@ def run_iterative_training(
         if resume_robot_path is None and continue_from_previous and current_robot_path and os.path.exists(current_robot_path):
             resume_robot_path = current_robot_path
 
+        if include_opponent_id or history_length != 16 or history_mode != "motion":
+            resume_robot_path = None
+            continue_from_previous = False
+
         print(f"➤ 当前对手池大小: {len(historical_hand_paths) + 1}")
 
+        current_robot_opponent_id_dim = (1 + len(historical_hand_paths)) if include_opponent_id else 0
+
         # 1. 训练 Robot
+        current_robot_steps = first_robot_steps if iteration == start_from_iteration else robot_steps
         current_robot_path = train_robot(
             hand_model_paths=historical_hand_paths,
-            total_steps=robot_steps,
+            total_steps=current_robot_steps,
             save_path=os.path.join(iteration_path, "robot"),
             n_envs=n_envs,
             extractor_class=extractor_class,
@@ -427,7 +700,19 @@ def run_iterative_training(
             continue_from_previous=continue_from_previous and (current_robot_path is not None),
             start_iteration=iteration,
             skip_if_exists=False,  # start_from 指定的轮次必须训练
-            resume_from_path=resume_robot_path  # 之前的轮次从这里加载
+            resume_from_path=resume_robot_path,  # 之前的轮次从这里加载
+            status_run_dir=base_save_path,
+            status_log_freq=status_log_freq,
+            include_opponent_id=include_opponent_id,
+            scripted_hand_sample_prob=scripted_hand_sample_prob,
+            history_length=history_length,
+            history_mode=history_mode,
+            future_horizon=future_horizon,
+            strategy_aux_weights={
+                "traj": strategy_traj_weight,
+                "risk": strategy_risk_weight,
+                "min_dist": strategy_min_dist_weight,
+            },
         )
 
         # 检查当前 iteration 是否已有 Hand 模型
@@ -440,12 +725,8 @@ def run_iterative_training(
                 print(f"    发现已有 Hand Iter {iteration}")
 
         # 2. 训练 Hand
-        # 热启动：从上一轮 Hand 模型继续训练
+        # 每一代 Hand 从头训练，避免后续对手只是上一代的连续微调版本
         prev_hand_warm_start = None
-        if iteration > 1:
-            prev_hand_path = os.path.join(base_save_path, f"iteration_{iteration - 1}", "hand", "hand", "best_model.zip")
-            if os.path.exists(prev_hand_path):
-                prev_hand_warm_start = prev_hand_path
 
         new_hand_path = train_hand(
             robot_model_path=current_robot_path,
@@ -455,7 +736,11 @@ def run_iterative_training(
             extractor_class=extractor_class,
             skip_if_exists=False,  # start_from 指定的轮次必须训练
             resume_from_path=resume_hand_path,  # 之前的轮次（跳过训练时使用）
-            warm_start_path=prev_hand_warm_start  # 上一轮 Hand 模型（热启动）
+            warm_start_path=prev_hand_warm_start,  # 上一轮 Hand 模型（热启动）
+            status_run_dir=base_save_path,
+            status_log_freq=status_log_freq,
+            iteration=iteration,
+            robot_opponent_id_dim=current_robot_opponent_id_dim,
         )
 
         # 如果跳过了训练，使用 resume 的路径
@@ -468,40 +753,141 @@ def run_iterative_training(
         if new_hand_path not in historical_hand_paths:
             historical_hand_paths.append(new_hand_path)
             print(f"[*] 已将 Hand Iter {iteration} 添加入对手池")
+            status_writer.write_event({
+                "event": "opponent_added",
+                "phase": "league",
+                "iteration": iteration,
+                "hand_path": new_hand_path,
+                "opponent_pool_size": len(historical_hand_paths),
+            })
+
+        if enable_convergence_stop and historical_hand_paths:
+            print("[*] Running convergence evaluation...")
+            current_convergence = evaluate_convergence(
+                current_robot_path,
+                historical_hand_paths,
+                episodes=convergence_episodes,
+                pool_score_lambda=pool_score_lambda,
+            )
+            decision = convergence_decision(
+                current_convergence,
+                previous_convergence,
+                stagnant_count,
+                patience=convergence_patience,
+                z_value=convergence_z,
+            )
+            stagnant_count = decision["stagnant_count"]
+            event = {
+                "event": "convergence_evaluated",
+                "phase": "convergence_eval",
+                "iteration": iteration,
+                "metrics": current_convergence,
+                "decision": decision,
+            }
+            status_writer.write_event(event)
+            append_json(convergence_history_path, event)
+            previous_convergence = current_convergence
+
+            print(
+                f"[*] PoolScore={current_convergence['pool_score']:.4f}, "
+                f"mean_TIS={current_convergence['mean_tis']:.4f}, "
+                f"worst_TIS={current_convergence['worst_case_tis']:.4f}, "
+                f"decision={decision['reason']}"
+            )
+            if decision["stop"]:
+                print(f"[*] Convergence reached at iteration {iteration}. Stopping league training.")
+                status_writer.write_event({
+                    "event": "run_stopped_by_convergence",
+                    "phase": "convergence_eval",
+                    "iteration": iteration,
+                    "decision": decision,
+                })
+                break
 
     print(f"\n{'='*60}")
     print("Iterative League Training Complete!")
     print(f"{'='*60}")
     print(f"Final Robot: {current_robot_path}")
     print(f"Total Opponents: {len(historical_hand_paths)}")
+    status_writer.write_event({
+        "event": "run_completed",
+        "phase": "complete",
+        "iteration": iteration if 'iteration' in locals() else start_from_iteration,
+        "final_robot_path": current_robot_path,
+        "total_opponents": len(historical_hand_paths),
+    })
 
-    return current_robot_path, historical_hand_paths[-1]
+    return current_robot_path, historical_hand_paths[-1] if historical_hand_paths else None
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Dual agent iterative league training')
-    parser.add_argument('--iterations', type=int, default=10, help='Number of training iterations')
-    parser.add_argument('--robot_steps', type=int, default=1_000_000, help='Steps per iteration for robot')
-    parser.add_argument('--hand_steps', type=int, default=2_000_000, help='Steps per iteration for hand')
+    parser.add_argument('--iterations', type=int, default=15, help='Number of training iterations')
+    parser.add_argument('--robot_steps', type=int, default=2_000_000, help='Steps per iteration for robot after the first iteration')
+    parser.add_argument('--first_robot_steps', type=int, default=3_000_000, help='Steps for first robot iteration')
+    parser.add_argument('--hand_steps', type=int, default=1_000_000, help='Steps per iteration for hand')
     parser.add_argument('--n_envs', type=int, default=4, help='Number of parallel environments')
     parser.add_argument('--save_path', type=str, default=None, help='Save path')
     parser.add_argument('--extractor', type=str, default='aux_lstm',
-                        choices=['mlp', 'lstm', 'aux_lstm', 'gate', 'aux_gate'],
+                        choices=['mlp', 'lstm', 'aux_lstm', 'gate', 'aux_gate', 'strategy_gru_aux'],
                         help='Feature extractor to use')
     parser.add_argument('--resume_from', type=str, default=None,
                         help='Path to previous training run to continue from (e.g., logs/dual_iterative_0419_1041)')
     parser.add_argument('--start_from', type=int, default=1,
                         help='Start from this iteration number (e.g., 2 to continue from iteration 1)')
+    parser.add_argument('--enable_convergence_stop', action='store_true',
+                        help='Stop league training when pool score improvement is within statistical noise')
+    parser.add_argument('--convergence_episodes', type=int, default=100,
+                        help='Episodes per opponent for post-iteration convergence evaluation')
+    parser.add_argument('--convergence_patience', type=int, default=2,
+                        help='Consecutive stagnant iterations before stopping')
+    parser.add_argument('--convergence_z', type=float, default=1.96,
+                        help='Z value for statistical noise band')
+    parser.add_argument('--pool_score_lambda', type=float, default=0.25,
+                        help='Penalty weight for TIS variance across opponents')
+    parser.add_argument('--status_log_freq', type=int, default=10000,
+                        help='Timesteps between dashboard status writes')
+    parser.add_argument('--include_opponent_id', action='store_true',
+                        help='Append opponent one-hot id to robot observations')
+    parser.add_argument('--scripted_hand_sample_prob', type=float, default=None,
+                        help='Probability of sampling the scripted hand when agent hand pool is non-empty')
+    parser.add_argument('--history_length', type=int, default=16,
+                        help='Motion-history length in observations; use 32 for strategy_gru_aux')
+    parser.add_argument('--history_mode', type=str, default='motion', choices=['motion', 'interaction'],
+                        help='History representation: legacy motion deltas or interaction features')
+    parser.add_argument('--future_horizon', type=int, default=8,
+                        help='Future horizon for strategy_gru_aux auxiliary prediction')
+    parser.add_argument('--strategy_traj_weight', type=float, default=0.1,
+                        help='Weight for future trajectory auxiliary loss')
+    parser.add_argument('--strategy_risk_weight', type=float, default=0.02,
+                        help='Weight for future catch-risk auxiliary loss')
+    parser.add_argument('--strategy_min_dist_weight', type=float, default=0.01,
+                        help='Weight for future minimum-distance auxiliary loss')
 
     args = parser.parse_args()
 
     run_iterative_training(
         n_iterations=args.iterations,
         robot_steps=args.robot_steps,
+        first_robot_steps=args.first_robot_steps,
         hand_steps=args.hand_steps,
         n_envs=args.n_envs,
         base_save_path=args.save_path,
         extractor_name=args.extractor,
         resume_from=args.resume_from,
-        start_from_iteration=args.start_from
+        start_from_iteration=args.start_from,
+        enable_convergence_stop=args.enable_convergence_stop,
+        convergence_episodes=args.convergence_episodes,
+        convergence_patience=args.convergence_patience,
+        convergence_z=args.convergence_z,
+        pool_score_lambda=args.pool_score_lambda,
+        status_log_freq=args.status_log_freq,
+        include_opponent_id=args.include_opponent_id,
+        scripted_hand_sample_prob=args.scripted_hand_sample_prob,
+        history_length=args.history_length,
+        history_mode=args.history_mode,
+        future_horizon=args.future_horizon,
+        strategy_traj_weight=args.strategy_traj_weight,
+        strategy_risk_weight=args.strategy_risk_weight,
+        strategy_min_dist_weight=args.strategy_min_dist_weight,
     )

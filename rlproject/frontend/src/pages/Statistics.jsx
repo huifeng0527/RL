@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getPatientStats, getTaskStats, exportExcel } from '../services/api';
+import { EVALUATION_TASKS } from '../constants/evaluationTasks';
 
 export default function Statistics() {
   const [patientStats, setPatientStats] = useState([]);
@@ -10,8 +11,8 @@ export default function Statistics() {
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
-      getPatientStats().then(r => r.data),
-      getTaskStats().then(r => r.data),
+      getPatientStats({ signal: controller.signal }).then(r => r.data),
+      getTaskStats({ signal: controller.signal }).then(r => r.data),
     ]).then(([patients, tasks]) => {
       setPatientStats(patients);
       setTaskStats(tasks);
@@ -19,7 +20,9 @@ export default function Statistics() {
       if (err.name === 'CanceledError' || err.name === 'AbortError') return;
       console.error('Failed to load stats:', err);
     })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
     return () => controller.abort();
   }, []);
 
@@ -41,13 +44,7 @@ export default function Statistics() {
     }
   };
 
-  const taskLabels = { Sprint: '💨', Tracking: '🎯', League: '⚔️', Boundary: '📐' };
-  const taskColors = {
-    Sprint: 'from-orange-400 to-orange-500',
-    Tracking: 'from-blue-400 to-blue-500',
-    League: 'from-purple-400 to-purple-500',
-    Boundary: 'from-green-400 to-green-500',
-  };
+  const taskMetaByName = Object.fromEntries(EVALUATION_TASKS.map((task) => [task.name, task]));
 
   if (loading) {
     return (
@@ -84,16 +81,17 @@ export default function Statistics() {
       {/* Task Summary Cards */}
       <div>
         <h3 className="text-lg font-semibold text-slate-700 mb-4">各项目平均分</h3>
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {taskStats.map((task) => {
             const score = task.avg_score ?? '--';
-            const colorClass = taskColors[task.task] || 'from-gray-400 to-gray-500';
+            const meta = taskMetaByName[task.task];
+            const colorClass = meta?.gradient || 'from-gray-400 to-gray-500';
             return (
               <div key={task.task} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                 <div className={`h-1.5 bg-gradient-to-r ${colorClass}`} />
                 <div className="p-5">
                   <div className="flex items-center gap-2 mb-3">
-                    <span className="text-2xl">{taskLabels[task.task] || '📊'}</span>
+                    <span className="text-xs font-bold text-slate-400">{meta?.shortName || 'Task'}</span>
                     <span className="font-semibold text-slate-700">{task.task}</span>
                   </div>
                   <div className="text-4xl font-bold text-slate-800 mb-1">
@@ -130,10 +128,11 @@ export default function Statistics() {
                   <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">患者</th>
                   <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">评估次数</th>
                   <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">总分</th>
-                  <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Sprint</th>
-                  <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Tracking</th>
-                  <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">League</th>
-                  <th className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Boundary</th>
+                  {EVALUATION_TASKS.map((task) => (
+                    <th key={task.id} className="px-6 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      {task.shortName}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -148,18 +147,11 @@ export default function Statistics() {
                         </span>
                       ) : '--'}
                     </td>
-                    <td className="px-6 py-4 text-center text-slate-600">
-                      {patient.avg_sprint_score ?? '--'}
-                    </td>
-                    <td className="px-6 py-4 text-center text-slate-600">
-                      {patient.avg_tracking_score ?? '--'}
-                    </td>
-                    <td className="px-6 py-4 text-center text-slate-600">
-                      {patient.avg_league_score ?? '--'}
-                    </td>
-                    <td className="px-6 py-4 text-center text-slate-600">
-                      {patient.avg_boundary_score ?? '--'}
-                    </td>
+                    {EVALUATION_TASKS.map((task) => (
+                      <td key={task.id} className="px-6 py-4 text-center text-slate-600">
+                        {patient[`avg_${task.id}_score`] ?? '--'}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>

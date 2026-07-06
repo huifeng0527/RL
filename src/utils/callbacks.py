@@ -1,7 +1,184 @@
 """Training callbacks for reinforcement learning."""
 
-from collections import deque
+import json
+import os
+import time
+from collections import Counter, deque
+from datetime import datetime, timezone
+from pathlib import Path
+
 from stable_baselines3.common.callbacks import BaseCallback
+
+
+def utc_now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+class StatusWriter:
+    """Append status events and atomically publish the latest snapshot."""
+
+    def __init__(self, run_dir):
+        self.run_dir = Path(run_dir)
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.events_path = self.run_dir / "training_status.jsonl"
+        self.latest_path = self.run_dir / "training_status_latest.json"
+        self.episodes_path = self.run_dir / "recent_episodes_latest.json"
+        self.sampled_episodes_path = self.run_dir / "sampled_episodes.jsonl"
+        self._episode_buffer = deque(maxlen=300)
+        self._episode_count = 0
+
+    def write_event(self, event):
+        event = dict(event)
+        event.setdefault("timestamp", utc_now_iso())
+        try:
+            with self.events_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(event, ensure_ascii=False) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+        except OSError:
+            pass
+        self.write_latest(event)
+
+    def write_episode(self, episode):
+        episode = dict(episode)
+        episode.setdefault("timestamp", utc_now_iso())
+        self._episode_count += 1
+        self._episode_buffer.append(episode)
+
+        if self._episode_count % 20 == 0:
+            try:
+                with self.episodes_path.open("w", encoding="utf-8") as f:
+                    json.dump(list(self._episode_buffer), f, ensure_ascii=False)
+            except OSError:
+                pass
+
+        if self._episode_count % 100 == 0:
+            try:
+                with self.sampled_episodes_path.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(episode, ensure_ascii=False) + "\n")
+            except OSError:
+                pass
+
+    def write_latest(self, status):
+        tmp_path = self.latest_path.with_suffix(".tmp")
+        try:
+            with tmp_path.open("w", encoding="utf-8") as f:
+                json.dump(status, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, self.latest_path)
+        except OSError:
+            pass
+
+
+class TrainingStatusCallback(BaseCallback):
+    """Write dashboard-friendly live training status files."""
+
+    def __init__(
+        self,
+        run_dir,
+        phase,
+        iteration,
+        total_timesteps,
+        log_freq=10000,
+        verbose=0,
+    ):
+        super().__init__(verbose)
+        self.writer = StatusWriter(run_dir)
+        self.phase = phase
+        self.iteration = iteration
+        self.total_timesteps = total_timesteps
+        self.log_freq = log_freq
+        self.recent_episodes = deque(maxlen=200)
+        self.done_reasons = Counter()
+        self.last_write_time = 0.0
+
+    def _on_training_start(self) -> None:
+        self._write_status("phase_started")
+
+    def _on_step(self) -> bool:
+        infos = self.locals.get("infos", []) or []
+        for env_idx, info in enumerate(infos):
+            if not info:
+                continue
+            league_episode = info.get("league_episode")
+            if league_episode:
+                episode = dict(league_episode)
+                episode.update({
+                    "event": "episode_completed",
+                    "phase": self.phase,
+                    "iteration": self.iteration,
+                    "env_idx": env_idx,
+                    "global_timestep": int(self.num_timesteps),
+                })
+                self.recent_episodes.append(episode)
+                if episode.get("done_reason"):
+                    self.done_reasons[str(episode["done_reason"])] += 1
+                self.writer.write_episode(episode)
+
+        if self.num_timesteps % self.log_freq == 0:
+            self._write_status("phase_progress")
+        return True
+
+    def _on_training_end(self) -> None:
+        self._write_status("phase_completed")
+
+    def _recent_mean(self, key):
+        values = [float(ep[key]) for ep in self.recent_episodes if key in ep and ep[key] is not None]
+        return sum(values) / len(values) if values else None
+
+    def _latest_episode(self):
+        return dict(self.recent_episodes[-1]) if self.recent_episodes else None
+
+    def _logger_snapshot(self):
+        values = getattr(self.model.logger, "name_to_value", {})
+        keys = [
+            "rollout/ep_rew_mean",
+            "rollout/ep_len_mean",
+            "train/loss",
+            "train/value_loss",
+            "train/policy_gradient_loss",
+            "train/entropy_loss",
+            "train/approx_kl",
+            "auxiliary/prediction_loss",
+        ]
+        snapshot = {}
+        for key in keys:
+            if key in values:
+                value = values[key]
+                try:
+                    snapshot[key] = float(value)
+                except (TypeError, ValueError):
+                    snapshot[key] = value
+        return snapshot
+
+    def _write_status(self, event):
+        progress = min(float(self.num_timesteps) / max(self.total_timesteps, 1), 1.0)
+        latest_episode = self._latest_episode()
+        status = {
+            "event": event,
+            "phase": self.phase,
+            "iteration": int(self.iteration),
+            "timesteps": int(self.num_timesteps),
+            "total_timesteps": int(self.total_timesteps),
+            "progress": progress,
+            "recent_episode_count": len(self.recent_episodes),
+            "recent_tis_mean": self._recent_mean("tis"),
+            "recent_zpd_coverage_mean": self._recent_mean("zpd_coverage"),
+            "recent_episode_length_mean": self._recent_mean("episode_length"),
+            "recent_too_close_rate_mean": self._recent_mean("too_close_rate"),
+            "recent_too_far_rate_mean": self._recent_mean("too_far_rate"),
+            "done_reason_counts": dict(self.done_reasons),
+            "latest_episode": latest_episode,
+            "logger": self._logger_snapshot(),
+        }
+        if latest_episode:
+            status["pfsp"] = {
+                "selected_opponent_index": latest_episode.get("selected_opponent_index"),
+                "selected_opponent_name": latest_episode.get("selected_opponent_name"),
+                "selected_opponent_prob": latest_episode.get("selected_opponent_prob"),
+                "pfsp_probs": latest_episode.get("pfsp_probs", []),
+                "pfsp_pool_size": latest_episode.get("pfsp_pool_size", 0),
+            }
+        self.writer.write_event(status)
 
 
 class DebugCallback(BaseCallback):
@@ -28,18 +205,9 @@ class DebugCallback(BaseCallback):
                         self.distance_mean.append(info['distance_mean'])
 
         if self.num_timesteps % self.log_freq == 0 and self.verbose:
-            log = self.model.logger.name_to_value
-            ep_rew = log.get('rollout/ep_rew_mean', None)
-            ep_len = log.get('rollout/ep_len_mean', None)
-            loss = log.get('train/loss', None)
-            v_loss = log.get('train/value_loss', None)
-            p_loss = log.get('train/policy_gradient_loss', None)
-            ent_loss = log.get('train/entropy_loss', None)
-            kl = log.get('train/approx_kl', None)
-
             total = len(self.termination_reasons)
             if total > 0:
-                count_hand = sum(1 for r in self.termination_reasons if r == 'out of bounds')
+                count_hand = sum(1 for r in self.termination_reasons if r in {'Robot Out', 'out of bounds'})
                 ratio_hand = count_hand / total
             else:
                 ratio_hand = 0.0

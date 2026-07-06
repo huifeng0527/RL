@@ -18,7 +18,6 @@ from reportlab.graphics.charts.linecharts import HorizontalLineChart
 from reportlab.graphics.charts.barcharts import VerticalBarChart
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
-# Set Chinese font support
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -31,15 +30,16 @@ class ReportGenerator:
         os.makedirs(self.output_dir, exist_ok=True)
 
     def _generate_radar_chart(self, scores: Dict[str, float], output_path: str):
-        """Generate radar chart for 4 evaluation dimensions."""
-        categories = ['Sprint\n(反应)', 'Tracking\n(追踪)', 'League\n(对抗)', 'Boundary\n(边界)']
+        """Generate radar chart for 5 evaluation dimensions."""
+        categories = ['Rapid\nReach', 'Tracking', 'Workspace', 'Rhythm', 'Line\nTracing']
         values = [
-            scores.get('sprint', 0),
-            scores.get('tracking', 0),
-            scores.get('league', 0),
-            scores.get('boundary', 0)
+            scores.get('rapid_reach', scores.get('sprint', 0)),
+            scores.get('continuous_tracking', scores.get('tracking', 0)),
+            scores.get('workspace_exploration', scores.get('boundary', 0)),
+            scores.get('rhythmic_synchronization', 0),
+            scores.get('constrained_line_tracing', 0),
         ]
-        values += values[:1]  # Close the polygon
+        values += values[:1]
 
         angles = np.linspace(0, 2 * np.pi, len(categories), endpoint=False).tolist()
         angles += angles[:1]
@@ -61,111 +61,115 @@ class ReportGenerator:
         plt.close()
 
     def _normalize_score(self, value, bound_0, bound_100):
-        """Min-Max scaling with clinical boundaries.
-        If bound_100 > bound_0: larger is better.
-        If bound_100 < bound_0: smaller is better.
-        """
+        """Min-Max scaling with clinical boundaries."""
         score = 100.0 * (value - bound_0) / (bound_100 - bound_0)
         return max(0.0, min(100.0, score))
 
     def _calculate_scores(self, results: Dict) -> Dict[str, float]:
-        """Calculate normalized scores (0-100) for each task using clinical standard min-max normalization.
-
-        Clinical Standards (from eval.py):
-        - Sprint: avg_catch_time [0.8s, 3.0s] - faster is better
-        - Tracking: avg_rmse [0.0, 2.0] - lower is better
-        - LeagueGame: survival_time [2.0s, 10.0s] (60%) + avg_dist [3.0, 8.0] (40%)
-        - Boundary: area_score (50%) + jerk_score (50%)
-        """
+        """Calculate normalized scores (0-100) for the 5-task assessment."""
         scores = {}
 
-        # Task 1: Sprint (Reaction & Explosive Power)
-        # avg_catch_time: 0.8s = best (100), 3.0s = worst (0)
-        if results.get('sprint') and results['sprint'].get('catch_times'):
-            avg_time = np.mean(results['sprint']['catch_times'])
-            scores['sprint'] = self._normalize_score(avg_time, bound_0=2, bound_100=0.8)
+        # T1: Rapid Reach (only average movement time)
+        rapid = results.get('rapid_reach') or results.get('sprint')
+        if rapid:
+            avg_move_time = np.mean(rapid.get('movement_times') or rapid.get('catch_times') or [6.0])
+            scores['rapid_reach'] = self._normalize_score(avg_move_time, 5.0, 0.8)
         else:
-            scores['sprint'] = 0
+            scores['rapid_reach'] = 0
 
-        # Task 2: Tracking (Multi-trajectory Smooth Tracking)
-        # avg_rmse: 0.0 = best (100), 2.0 = worst (0)
-        if results.get('tracking') and results['tracking'].get('rmse_list'):
-            avg_rmse = np.mean(results['tracking']['rmse_list'])
-            scores['tracking'] = self._normalize_score(avg_rmse, bound_0=2.0, bound_100=0.0)
+        # T2: Continuous Tracking
+        tracking = results.get('continuous_tracking') or results.get('tracking')
+        if tracking:
+            rmse = tracking.get('rmse_list', [])
+            avg_rmse = np.mean(rmse) if rmse else tracking.get('mean_error', 2.0) or 2.0
+            loss_rate = tracking.get('target_loss_rate')
+            if loss_rate is None:
+                loss_rate = np.mean(np.array(rmse) > 1.5) if rmse else 1.0
+            jerk_list = tracking.get('jerk_list', [])
+            mean_jerk = np.mean(jerk_list) if jerk_list else 3.0
+            scores['continuous_tracking'] = (
+                self._normalize_score(avg_rmse, 2.0, 0.0) * 0.55 +
+                self._normalize_score(loss_rate, 1.0, 0.0) * 0.25 +
+                self._normalize_score(mean_jerk, 3.0, 0.3) * 0.20
+            )
         else:
-            scores['tracking'] = 0
+            scores['continuous_tracking'] = 0
 
-        # Task 3: LeagueGame (Competition & Cognitive Interception)
-        # Two sub-indicators: survival_time (60%) + avg_dist (40%)
-        if results.get('league'):
-            survival_t = results['league'].get('survival_time', 0)
-            dist_list = results['league'].get('dist_list', [])
-            avg_dist = np.mean(dist_list) if dist_list else 8.0
-
-            # Sub-indicator 3a: survival time (60%)
-            # 2.0s = best (100), 10.0s = worst (0) - faster caught = better
-            time_score = self._normalize_score(survival_t, bound_0=10.0, bound_100=2.0)
-
-            # Sub-indicator 3b: avg distance (40%)
-            # 3.0 = best (100), 8.0 = worst (0) - closer to robot = better
-            dist_score = self._normalize_score(avg_dist, bound_0=8.0, bound_100=4)
-
-            scores['league'] = time_score * 0.6 + dist_score * 0.4
+        # T3: Workspace Exploration (range of motion + stability)
+        boundary = results.get('workspace_exploration') or results.get('adaptive_boundary_challenge') or results.get('boundary')
+        if boundary:
+            range_x = max(0, boundary.get('max_x', 0) - boundary.get('min_x', 0))
+            range_y = max(0, boundary.get('max_y', 0) - boundary.get('min_y', 0))
+            max_range_x = 15 - 2  # w_env - margins
+            max_range_y = 10 - 2  # h_env - margins
+            rom = (range_x * range_y) / max(max_range_x * max_range_y, 1.0)  # 0~1
+            vel_list = boundary.get('vel_list', [])
+            if len(vel_list) >= 2:
+                cv = np.std(vel_list) / max(np.mean(vel_list), 1e-6)
+                stability = max(0.0, 1.0 - cv / 2.0)
+            else:
+                stability = 0.5
+            scores['workspace_exploration'] = (
+                self._normalize_score(rom, 0.0, 1.0) * 0.60 +
+                self._normalize_score(stability, 0.0, 1.0) * 0.40
+            )
         else:
-            scores['league'] = 0
+            scores['workspace_exploration'] = 0
 
-        # Task 4: Boundary (Range of Motion & Stability)
-        # Two sub-indicators: area_score (50%) + jerk_score (50%)
-        if results.get('boundary'):
-            b = results['boundary']
-            # Area = (max_x - min_x) * (max_y - min_y)
-            area = max(0, b['max_x'] - b['min_x']) * max(0, b['max_y'] - b['min_y'])
-            max_area = (15 - 4) * (10 - 4)  # (w_env - 4) * (h_env - 4)
-
-            # Sub-indicator 4a: area coverage (50%)
-            # 0 = worst (0), max_area = best (100)
-            area_score = self._normalize_score(area, bound_0=0.0, bound_100=max_area)
-
-            # Sub-indicator 4b: motion jerk (50%)
-            # jerk = mean(|diff(vel_list)|), 0.0 = best (100), 3.0 = worst (0)
-            vel_list = b.get('vel_list', [])
-            mean_jerk = np.mean(np.abs(np.diff(vel_list))) if len(vel_list) > 1 else 3.0
-            jerk_score = self._normalize_score(mean_jerk, bound_0=3.0, bound_100=0.5)
-
-            scores['boundary'] = area_score * 0.5 + jerk_score * 0.5
+        # T4: Rhythmic Synchronization (only average response time)
+        rhythm = results.get('rhythmic_synchronization') or results.get('rhythmic_switching')
+        if rhythm:
+            valid_times = [t for t in rhythm.get('response_times', []) if t is not None]
+            if valid_times:
+                avg_response = np.mean(valid_times)
+                scores['rhythmic_synchronization'] = self._normalize_score(avg_response, 2.0, 0.5)
+            else:
+                scores['rhythmic_synchronization'] = 0
         else:
-            scores['boundary'] = 0
+            scores['rhythmic_synchronization'] = 0
 
-        # Weighted total (0-100), same as M-HECS formula
-        scores['total'] = (
-            scores['sprint'] * 0.20 +
-            scores['tracking'] * 0.30 +
-            scores['league'] * 0.30 +
-            scores['boundary'] * 0.20
-        )
+        # T5: Constrained Line Tracing (completion time + lateral accuracy)
+        line_trace = results.get('constrained_line_tracing')
+        if line_trace:
+            completion_times = line_trace.get('completion_times', [])
+            avg_completion = np.mean(completion_times) if completion_times else 10.0
+            mean_errors = [e for e in line_trace.get('mean_lateral_errors', []) if e is not None]
+            avg_lateral = np.mean(mean_errors) if mean_errors else 1.0
+            scores['constrained_line_tracing'] = (
+                self._normalize_score(avg_completion, 10.0, 2.0) * 0.50 +
+                self._normalize_score(avg_lateral, 1.0, 0.0) * 0.50
+            )
+        else:
+            scores['constrained_line_tracing'] = 0
 
+        task_keys = [
+            'rapid_reach',
+            'continuous_tracking',
+            'workspace_exploration',
+            'rhythmic_synchronization',
+            'constrained_line_tracing',
+        ]
+        scores['total'] = float(np.mean([scores[key] for key in task_keys]))
+
+        # Legacy aliases for backward compat
+        scores['sprint'] = scores['rapid_reach']
+        scores['tracking'] = scores['continuous_tracking']
+        scores['boundary'] = scores['workspace_exploration']
+        scores['league'] = 0
         return scores
 
     def _estimate_clinical_scores(self, scores: Dict[str, float]) -> Dict[str, float]:
-        """Estimate clinical scale scores (FMA-UE and ARAT) based on M-HECS scores.
+        """Estimate clinical scale scores (FMA-UE and ARAT) based on M-HECS scores."""
+        s_reach = scores.get('rapid_reach', 0) / 100.0
+        s_tracking = scores.get('continuous_tracking', 0) / 100.0
+        s_workspace = scores.get('workspace_exploration', 0) / 100.0
+        s_rhythm = scores.get('rhythmic_synchronization', 0) / 100.0
+        s_line = scores.get('constrained_line_tracing', 0) / 100.0
 
-        Formulas from eval.py:
-        - M-HECS total = 100 * (0.20 * sprint + 0.30 * tracking + 0.30 * league + 0.20 * boundary)
-        - FMA-UE (满分66): 侧重协同(Tracking)和范围(ROM)
-        - ARAT (满分57): 侧重爆发力(Sprint)和功能抓取(League)
-        """
-        s_sprint = scores.get('sprint', 0) / 100.0
-        s_tracking = scores.get('tracking', 0) / 100.0
-        s_league = scores.get('league', 0) / 100.0
-        s_boundary = scores.get('boundary', 0) / 100.0
+        total = scores.get('total', 100.0 * np.mean([s_reach, s_tracking, s_workspace, s_rhythm, s_line]))
 
-        total = 100.0 * (0.20 * s_sprint + 0.30 * s_tracking + 0.30 * s_league + 0.20 * s_boundary)
-
-        # FMA-UE (满分66)：侧重协同(Tracking)和范围(ROM)
-        est_fma = 66.0 * (0.10 * s_sprint + 0.45 * s_tracking + 0.05 * s_league + 0.40 * s_boundary)
-
-        # ARAT (满分57)：侧重爆发力(Sprint)和功能抓取(League)
-        est_arat = 57.0 * (0.40 * s_sprint + 0.15 * s_tracking + 0.35 * s_league + 0.10 * s_boundary)
+        est_fma = 66.0 * (0.15 * s_reach + 0.30 * s_tracking + 0.30 * s_workspace + 0.15 * s_rhythm + 0.10 * s_line)
+        est_arat = 57.0 * (0.25 * s_reach + 0.15 * s_tracking + 0.20 * s_workspace + 0.15 * s_rhythm + 0.25 * s_line)
 
         return {
             'fma_ue': round(est_fma, 1),
@@ -186,7 +190,7 @@ class ReportGenerator:
         Args:
             patient_name: Patient name
             session_date: Evaluation date
-            results: Dictionary containing evaluation results for all 4 tasks
+            results: Dictionary containing evaluation results for all 5 tasks
             output_filename: Optional output filename
 
         Returns:
@@ -201,7 +205,6 @@ class ReportGenerator:
 
         output_path = os.path.join(self.output_dir, output_filename)
 
-        # Create PDF document
         doc = SimpleDocTemplate(
             output_path,
             pagesize=A4,
@@ -237,11 +240,9 @@ class ReportGenerator:
 
         story = []
 
-        # Title
         story.append(Paragraph("M-HECS 康复评估报告", title_style))
         story.append(Spacer(1, 0.3*inch))
 
-        # Patient info
         patient_info = [
             ['患者姓名:', patient_name],
             ['评估日期:', session_date.strftime('%Y年%m月%d日 %H:%M')],
@@ -277,18 +278,18 @@ class ReportGenerator:
         story.append(PageBreak())
         story.append(Paragraph("任务详细结果", heading_style))
 
-        # Sprint
-        if results.get('sprint'):
-            story.append(Paragraph("1. Sprint（反应与爆发力）", heading_style))
-            sprint = results['sprint']
-            sprint_data = [['指标', '数值']]
-            for i, (ct, pv) in enumerate(zip(sprint['catch_times'], sprint['peak_vels'])):
-                sprint_data.append([f'第{i+1}次 catch time', f'{ct:.2f}s'])
-                sprint_data.append([f'第{i+1}次 peak velocity', f'{pv:.2f}'])
-            sprint_data.append(['平均 catch time', f'{np.mean(sprint["catch_times"]):.2f}s'])
-            sprint_data.append(['平均 peak velocity', f'{np.mean(sprint["peak_vels"]):.2f}'])
+        # T1: Rapid Reach
+        rapid = results.get('rapid_reach') or results.get('sprint')
+        if rapid:
+            story.append(Paragraph("1. Rapid Reach（快速到达）", heading_style))
+            movement_times = rapid.get('movement_times', [])
+            rapid_data = [['指标', '数值']]
+            if movement_times:
+                rapid_data.append(['平均运动时间', f'{np.mean(movement_times):.2f}s'])
+                rapid_data.append(['最短时间', f'{min(movement_times):.2f}s'])
+                rapid_data.append(['最长时间', f'{max(movement_times):.2f}s'])
 
-            t = Table(sprint_data, colWidths=[2.5*inch, 2.5*inch])
+            t = Table(rapid_data, colWidths=[2.5*inch, 2.5*inch])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E3F2FD')),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -297,22 +298,26 @@ class ReportGenerator:
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ]))
             story.append(t)
-            story.append(Paragraph(f"维度得分: {scores['sprint']:.1f} / 100", body_style))
+            story.append(Paragraph(f"维度得分: {scores['rapid_reach']:.1f} / 100", body_style))
 
         story.append(Spacer(1, 0.2*inch))
 
-        # Tracking
-        if results.get('tracking'):
-            story.append(Paragraph("2. Tracking（多轨迹追踪）", heading_style))
-            tracking = results['tracking']
-            tracking_data = [
-                ['指标', '数值'],
-                ['平均 RMSE', f'{np.mean(tracking["rmse_list"]):.3f}'],
-                ['最大 RMSE', f'{max(tracking["rmse_list"]):.3f}'],
-                ['最小 RMSE', f'{min(tracking["rmse_list"]):.3f}'],
-                ['平均 Jerk', f'{np.mean(tracking["jerk_list"]):.3f}']
-            ]
-            t = Table(tracking_data, colWidths=[2.5*inch, 2.5*inch])
+        # T2: Continuous Tracking
+        ct = results.get('continuous_tracking') or results.get('tracking')
+        if ct:
+            story.append(Paragraph("2. Continuous Tracking（连续追踪）", heading_style))
+            rmse_list = ct.get('rmse_list', [])
+            jerk_list = ct.get('jerk_list', [])
+            ct_data = [['指标', '数值']]
+            if rmse_list:
+                ct_data.append(['平均 RMSE', f'{np.mean(rmse_list):.3f}'])
+                ct_data.append(['最大 RMSE', f'{max(rmse_list):.3f}'])
+            if jerk_list:
+                ct_data.append(['平均 Jerk', f'{np.mean(jerk_list):.3f}'])
+            if ct.get('target_loss_rate') is not None:
+                ct_data.append(['目标丢失率', f'{ct["target_loss_rate"]:.1%}'])
+
+            t = Table(ct_data, colWidths=[2.5*inch, 2.5*inch])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E8F5E9')),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -321,46 +326,27 @@ class ReportGenerator:
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ]))
             story.append(t)
-            story.append(Paragraph(f"维度得分: {scores['tracking']:.1f} / 100", body_style))
+            story.append(Paragraph(f"维度得分: {scores['continuous_tracking']:.1f} / 100", body_style))
 
         story.append(Spacer(1, 0.2*inch))
 
-        # League
-        if results.get('league'):
-            story.append(Paragraph("3. LeagueGame（对抗与安全距离）", heading_style))
-            league = results['league']
-            league_data = [
-                ['指标', '数值'],
-                ['是否被抓到', '是' if league['is_caught'] else '否'],
-                ['生存时间', f'{league["survival_time"]:.1f}s / 30s'],
-                ['最小距离', f'{min(league["dist_list"]):.2f}'],
-                ['平均距离', f'{np.mean(league["dist_list"]):.2f}']
-            ]
-            t = Table(league_data, colWidths=[2.5*inch, 2.5*inch])
-            t.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#FFF3E0')),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 10),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ]))
-            story.append(t)
-            story.append(Paragraph(f"维度得分: {scores['league']:.1f} / 100", body_style))
+        # T3: Workspace Exploration
+        ws = results.get('workspace_exploration') or results.get('adaptive_boundary_challenge') or results.get('boundary')
+        if ws:
+            story.append(Paragraph("3. Workspace Exploration（可及空间与稳定性）", heading_style))
+            ws_data = [['指标', '数值']]
+            if ws.get('min_x') is not None:
+                range_x = ws['max_x'] - ws['min_x']
+                range_y = ws['max_y'] - ws['min_y']
+                ws_data.append(['X 活动范围', f'{range_x:.2f}'])
+                ws_data.append(['Y 活动范围', f'{range_y:.2f}'])
+                ws_data.append(['覆盖面积', f'{range_x * range_y:.2f}'])
+            vel_list = ws.get('vel_list', [])
+            if vel_list:
+                ws_data.append(['平均速度', f'{np.mean(vel_list):.3f}'])
+                ws_data.append(['速度标准差', f'{np.std(vel_list):.3f}'])
 
-        story.append(Spacer(1, 0.2*inch))
-
-        # Boundary
-        if results.get('boundary'):
-            story.append(Paragraph("4. Boundary（活动范围与稳定性）", heading_style))
-            boundary = results['boundary']
-            boundary_data = [
-                ['指标', '数值'],
-                ['X 范围', f'{boundary["min_x"]:.2f} - {boundary["max_x"]:.2f}'],
-                ['Y 范围', f'{boundary["min_y"]:.2f} - {boundary["max_y"]:.2f}'],
-                ['总范围', f'{(boundary["max_x"]-boundary["min_x"] + boundary["max_y"]-boundary["min_y"]):.2f}'],
-                ['平均速度', f'{np.mean(boundary["vel_list"]):.3f}']
-            ]
-            t = Table(boundary_data, colWidths=[2.5*inch, 2.5*inch])
+            t = Table(ws_data, colWidths=[2.5*inch, 2.5*inch])
             t.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F3E5F5')),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
@@ -369,12 +355,74 @@ class ReportGenerator:
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ]))
             story.append(t)
-            story.append(Paragraph(f"维度得分: {scores['boundary']:.1f} / 100", body_style))
+            story.append(Paragraph(f"维度得分: {scores['workspace_exploration']:.1f} / 100", body_style))
+
+        story.append(Spacer(1, 0.2*inch))
+
+        # T4: Rhythmic Synchronization
+        rhythm = results.get('rhythmic_synchronization') or results.get('rhythmic_switching')
+        if rhythm:
+            story.append(Paragraph("4. Rhythmic Synchronization（节律同步）", heading_style))
+            valid_times = [t for t in rhythm.get('response_times', []) if t is not None]
+            rhythm_data = [['指标', '数值']]
+            if valid_times:
+                rhythm_data.append(['平均响应时间', f'{np.mean(valid_times):.2f}s'])
+                rhythm_data.append(['最快响应', f'{min(valid_times):.2f}s'])
+                rhythm_data.append(['最慢响应', f'{max(valid_times):.2f}s'])
+            total = max(len(rhythm.get('beat_times', [])), 1)
+            rhythm_data.append(['未响应次数', str(rhythm.get('miss_count', 0))])
+
+            t = Table(rhythm_data, colWidths=[2.5*inch, 2.5*inch])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#FCE4EC')),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            story.append(t)
+            story.append(Paragraph(f"维度得分: {scores['rhythmic_synchronization']:.1f} / 100", body_style))
+
+        story.append(Spacer(1, 0.2*inch))
+
+        # T5: Constrained Line Tracing
+        lt = results.get('constrained_line_tracing')
+        if lt:
+            story.append(Paragraph("5. Constrained Line Tracing（受限直线描画）", heading_style))
+            line_specs = lt.get('line_specs', [])
+            successes = lt.get('successes', [])
+            completion_times = lt.get('completion_times', [])
+            mean_errors = lt.get('mean_lateral_errors', [])
+            lt_data = [['指标', '数值']]
+            if completion_times:
+                lt_data.append(['平均完成时间', f'{np.mean(completion_times):.2f}s'])
+            if mean_errors:
+                valid_errors = [e for e in mean_errors if e is not None]
+                if valid_errors:
+                    lt_data.append(['平均横向误差', f'{np.mean(valid_errors):.3f}'])
+            for i, spec in enumerate(line_specs):
+                name = spec.get('name', f'Line {i+1}')
+                s = '✓' if i < len(successes) and successes[i] else '✗'
+                err = f'{mean_errors[i]:.3f}' if i < len(mean_errors) and mean_errors[i] is not None else '-'
+                ct_val = f'{completion_times[i]:.2f}s' if i < len(completion_times) else '-'
+                lt_data.append([f'{name} 完成', s])
+                lt_data.append([f'{name} 横向误差', err])
+                lt_data.append([f'{name} 完成时间', ct_val])
+
+            t = Table(lt_data, colWidths=[2.5*inch, 2.5*inch])
+            t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E0F7FA')),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 10),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            story.append(t)
+            story.append(Paragraph(f"维度得分: {scores['constrained_line_tracing']:.1f} / 100", body_style))
 
         # Build PDF
         doc.build(story)
 
-        # Cleanup temp radar image
         if os.path.exists(radar_path):
             os.remove(radar_path)
 
