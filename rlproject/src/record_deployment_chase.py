@@ -1,4 +1,5 @@
 import argparse
+import importlib.util
 import os
 import queue
 import sys
@@ -251,7 +252,11 @@ def load_runtime_dependencies():
     from ultralytics import YOLO as yolo_class
 
     from camera_calibration.camera_calibration import CameraCalibration as calibration_class
-    from callbacks.deployment_rollout_logger import DeploymentRolloutLogger as logger_class
+    logger_path = SCRIPT_DIR / "callbacks" / "deployment_rollout_logger.py"
+    spec = importlib.util.spec_from_file_location("deployment_rollout_logger", logger_path)
+    logger_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(logger_module)
+    logger_class = logger_module.DeploymentRolloutLogger
     from cv.hand_detect import HandDetection as hand_detection_class
     from cv.get_workspace import get_workspace as workspace_func
     from robot_control.ur_control import URControl as ur_control_class
