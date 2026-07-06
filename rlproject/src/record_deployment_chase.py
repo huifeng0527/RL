@@ -37,6 +37,9 @@ DEFAULT_CONTROL_FREQ = 20.0
 RX_C, RY_C, RZ_C = 0.193, 0.067, 5.3
 DEFAULT_STRIDE = 0.3
 DEFAULT_MAX_SAFE_STRIDE = 0.6
+OBS_SCALAR_DIM = 12
+MOTION_HISTORY_CHANNELS = 2
+INTERACTION_HISTORY_CHANNELS = 8
 
 DEFAULT_POLICY_CANDIDATES = [
     REPO_ROOT / "logs" / "league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux" / "iteration_10" / "robot" / "robot" / "best_model.zip",
@@ -200,6 +203,28 @@ class VisionThread(threading.Thread):
         self.running = False
 
 
+def infer_observation_layout(model):
+    shape = getattr(getattr(model, "observation_space", None), "shape", None)
+    if not shape:
+        return 44, 16, MOTION_HISTORY_CHANNELS, "motion"
+    obs_dim = int(shape[0])
+    history_dim = obs_dim - OBS_SCALAR_DIM
+    if history_dim > 0 and history_dim % INTERACTION_HISTORY_CHANNELS == 0 and obs_dim != 44:
+        return obs_dim, history_dim // INTERACTION_HISTORY_CHANNELS, INTERACTION_HISTORY_CHANNELS, "interaction"
+    if history_dim > 0 and history_dim % MOTION_HISTORY_CHANNELS == 0:
+        return obs_dim, history_dim // MOTION_HISTORY_CHANNELS, MOTION_HISTORY_CHANNELS, "motion"
+    raise ValueError(f"Unsupported policy observation dimension: {obs_dim}")
+
+
+def fit_history(history_values, expected_size):
+    flat = np.asarray(history_values, dtype=np.float32).flatten()
+    if flat.size > expected_size:
+        flat = flat[-expected_size:]
+    elif flat.size < expected_size:
+        flat = np.concatenate([np.zeros(expected_size - flat.size, dtype=np.float32), flat])
+    return flat.astype(np.float32)
+
+
 def find_default_policy():
     for path in DEFAULT_POLICY_CANDIDATES:
         if path.exists():
@@ -314,7 +339,9 @@ def main():
 
     try:
         robot_control = URControl(args.robot_ip)
-        rl_model = PPO.load(str(model_path), custom_objects={"learning_rate": 0.0, "optimizer_class": None})
+        rl_model = PPO.load(str(model_path), custom_objects={"learning_rate": 0.0, "lr_schedule": lambda _: 0.0, "clip_range": lambda _: 0.0, "optimizer_class": None})
+        expected_obs_dim, history_length, history_channels, history_mode = infer_observation_layout(rl_model)
+        print(f"[model] observation: {expected_obs_dim} dims ({history_mode}, length={history_length}, channels={history_channels})")
 
         cap = cv2.VideoCapture(args.camera)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.camera_width)
@@ -343,6 +370,10 @@ def main():
             "workspace_width_cm": W_ENV,
             "workspace_height_cm": H_ENV,
             "duration_target_s": float(args.duration),
+            "policy_obs_dim": int(expected_obs_dim),
+            "history_mode": history_mode,
+            "history_length": int(history_length),
+            "history_channels": int(history_channels),
             "stride_cm": float(args.stride),
             "max_safe_step_cm": float(args.max_step),
             "stop_on_catch": bool(args.stop_on_catch),
@@ -367,8 +398,12 @@ def main():
         virtual_target_pixel = center_pixel.copy()
         desired_virtual_target = center_pixel.copy()
         hand_tracker = HandTracker(w_env=W_ENV, h_env=H_ENV, vel_alpha=0.6)
-        hand_history_buffer = deque([np.zeros(2, dtype=np.float32)] * 16, maxlen=16)
+        motion_history_buffer = deque([np.zeros(MOTION_HISTORY_CHANNELS, dtype=np.float32)] * history_length, maxlen=history_length)
+        interaction_history_buffer = deque([np.zeros(INTERACTION_HISTORY_CHANNELS, dtype=np.float32)] * history_length, maxlen=history_length)
         last_action = np.zeros(2, dtype=np.float32)
+        prev_hand_env = None
+        prev_robot_env = None
+        prev_distance_cm = None
         cached_frame = workspace_frame.copy()
         cached_microrobot_env = np.full(2, np.nan, dtype=np.float32)
         cached_microrobot_detected = False
@@ -418,7 +453,6 @@ def main():
             position_hand_env = hand_tracker.predict(loop_start)
             dead_reckoning_used = not hand_detected
             dead_reckoning_age_s = None if hand_tracker.last_vision_time is None else loop_start - hand_tracker.last_vision_time
-            hand_history_buffer.append(hand_tracker.vel * (1.0 / args.control_hz))
 
             robot_pose, real_robot_pixel, position_robot_env = get_robot_env_position(robot_control, cali, w_px, h_px)
             distance_target_env = cached_microrobot_env if cached_microrobot_detected else position_robot_env
@@ -432,8 +466,11 @@ def main():
                 robot_obs[0], W_ENV - robot_obs[0],
                 robot_obs[1], H_ENV - robot_obs[1],
             ], dtype=np.float32)
-            flat_history = np.array(hand_history_buffer).flatten()
             previous_action = last_action.copy()
+            if history_mode == "interaction":
+                flat_history = fit_history(interaction_history_buffer, history_length * history_channels)
+            else:
+                flat_history = fit_history(motion_history_buffer, history_length * history_channels)
             obs_array = np.concatenate((
                 robot_obs,
                 hand_obs,
@@ -443,6 +480,8 @@ def main():
                 previous_action,
                 flat_history,
             )).astype(np.float32)
+            if obs_array.shape[0] != expected_obs_dim:
+                raise RuntimeError(f"Built observation has {obs_array.shape[0]} dims, expected {expected_obs_dim}")
 
             inference_start = time.perf_counter()
             action, _ = rl_model.predict(obs_array, deterministic=True)
@@ -531,6 +570,24 @@ def main():
                 "task_finished": task_finished,
                 "done_reason": step_done_reason,
             })
+
+            hand_move = np.zeros(2, dtype=np.float32) if prev_hand_env is None else (position_hand_env - prev_hand_env).astype(np.float32)
+            robot_move = np.zeros(2, dtype=np.float32) if prev_robot_env is None else (position_robot_env - prev_robot_env).astype(np.float32)
+            distance_delta = 0.0 if prev_distance_cm is None else float(distance_cm - prev_distance_cm)
+            motion_history_buffer.append(hand_move)
+            interaction_history_buffer.append(np.array([
+                float(position_hand_env[0] - position_robot_env[0]),
+                float(position_hand_env[1] - position_robot_env[1]),
+                float(distance_cm),
+                distance_delta,
+                float(robot_move[0]),
+                float(robot_move[1]),
+                float(hand_move[0]),
+                float(hand_move[1]),
+            ], dtype=np.float32))
+            prev_hand_env = position_hand_env.copy()
+            prev_robot_env = position_robot_env.copy()
+            prev_distance_cm = distance_cm
 
             if int(t_task_s) != last_status_second:
                 last_status_second = int(t_task_s)
