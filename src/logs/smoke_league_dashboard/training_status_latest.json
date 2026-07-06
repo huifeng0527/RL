@@ -1,8 +1,0 @@
-{
-  "event": "run_completed",
-  "phase": "complete",
-  "iteration": 2,
-  "final_robot_path": "src/logs/smoke_league_dashboard\\iteration_2\\robot\\robot\\best_model.zip",
-  "total_opponents": 2,
-  "timestamp": "2026-06-12T11:06:03.436620+00:00"
-}

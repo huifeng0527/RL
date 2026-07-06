@@ -1,0 +1,24 @@
+[
+  {
+    "robot_name": "league",
+    "robot_path": "C:\\Users\\admin\\Desktop\\research\\RL\\logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\robot\\robot\\best_model.zip",
+    "test_name": "mouse_hand",
+    "test_type": "mouse",
+    "hand_path": null,
+    "episodes": 13,
+    "max_steps": 100,
+    "reward_mean": 3.868504087457364,
+    "reward_std": 31.76051115855311,
+    "tis_mean": 0.4638461538461539,
+    "tis_std": 0.20055839209330845,
+    "zpd_coverage_mean": 0.5581090827496837,
+    "zpd_coverage_std": 0.10352864887118922,
+    "episode_length_mean": 79.23076923076923,
+    "episode_length_std": 26.437600979705596,
+    "catch_rate": 0.5384615384615384,
+    "too_close_rate": 0.3757424777470713,
+    "too_far_rate": 0.06614843950324498,
+    "avg_distance_mean": 4.32665597475492,
+    "avg_distance_std": 0.2842896143669259
+  }
+]

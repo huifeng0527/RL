@@ -1,0 +1,34 @@
+{
+  "league_dir": "logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux",
+  "hand_paths": [
+    "logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux\\iteration_1\\hand\\hand\\best_model.zip",
+    "logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux\\iteration_2\\hand\\hand\\best_model.zip",
+    "logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux\\iteration_3\\hand\\hand\\best_model.zip",
+    "logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux\\iteration_4\\hand\\hand\\best_model.zip",
+    "logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux\\iteration_5\\hand\\hand\\best_model.zip",
+    "logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux\\iteration_6\\hand\\hand\\best_model.zip",
+    "logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux\\iteration_7\\hand\\hand\\best_model.zip",
+    "logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux\\iteration_8\\hand\\hand\\best_model.zip",
+    "logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux\\iteration_9\\hand\\hand\\best_model.zip",
+    "logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux\\iteration_10\\hand\\hand\\best_model.zip"
+  ],
+  "steps": 2048,
+  "n_envs": 1,
+  "history_length": 16,
+  "history_mode": "interaction",
+  "future_horizon": 4,
+  "scripted_hand_sample_prob": 0.1,
+  "traj_weight": 0.1,
+  "risk_weight": 0.02,
+  "contrastive_weight": 0.0,
+  "traj_cumulative_weight": 0.0,
+  "traj_endpoint_weight": 0.0,
+  "requested_groups": [
+    "4_GRU_Pred_H4"
+  ],
+  "load_model": null,
+  "resume_timesteps": false,
+  "experiments": [
+    "4_GRU_Pred_H4"
+  ]
+}

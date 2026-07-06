@@ -1,0 +1,8 @@
+{
+  "event": "run_completed",
+  "phase": "complete",
+  "iteration": 10,
+  "final_robot_path": "logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux\\iteration_10\\robot\\robot\\best_model.zip",
+  "total_opponents": 10,
+  "timestamp": "2026-06-26T03:56:21.585308+00:00"
+}

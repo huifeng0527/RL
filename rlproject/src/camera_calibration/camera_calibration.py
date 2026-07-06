@@ -1,34 +1,35 @@
-# camera_calibration.py
+from pathlib import Path
 
-import cv2
-import numpy as np
+from vision.calibration_utils import DEFAULT_IMAGE_SIZE, load_calibration_data
+from vision.geometry import load_homography, pixel_to_world, world_to_pixel
+from vision.paths import DEFAULT_CALIBRATION_DATA_PATH, DEFAULT_HOMOGRAPHY_PATH
+from vision.preprocessing import undistort_frame
+
 
 class CameraCalibration:
-    def __init__(self, calibration_matrix_path='./camera_calibration/calibration_data.npz', homography_matrix_path=r'C:\Users\admin\Desktop\huifeng\RL\rlproject\src\camera_calibration\Homography_matrix.npy'):
-        self.H = np.load(homography_matrix_path)
-        calibration_data = np.load(calibration_matrix_path)
-        self.K = calibration_data['K']
-        self.dist_coeffs = calibration_data['dist_coeffs']
-        self.new_camera_matrix, self.roi = cv2.getOptimalNewCameraMatrix(self.K, self.dist_coeffs, (2592, 1944), 0, (2592, 1944))
+    def __init__(
+        self,
+        calibration_matrix_path=None,
+        homography_matrix_path=None,
+        image_size=DEFAULT_IMAGE_SIZE,
+    ):
+        calibration_matrix_path = Path(calibration_matrix_path or DEFAULT_CALIBRATION_DATA_PATH)
+        homography_matrix_path = Path(homography_matrix_path or DEFAULT_HOMOGRAPHY_PATH)
+        self.H = load_homography(homography_matrix_path)
+        calibration_data = load_calibration_data(calibration_matrix_path, image_size=image_size, alpha=0)
+        self.K = calibration_data.K
+        self.dist_coeffs = calibration_data.dist_coeffs
+        self.new_camera_matrix = calibration_data.new_camera_matrix
+        self.roi = calibration_data.roi
 
     def undistort_frame(self, frame):
-        """ 使用相机矩阵进行畸变矫正 """
-        undistorted_frame = cv2.undistort(frame, self.K, self.dist_coeffs, None, self.new_camera_matrix)
-        return undistorted_frame
+        return undistort_frame(frame, self.K, self.dist_coeffs, self.new_camera_matrix)
 
     def pixel_to_world(self, pixel_coords):
-        """ 将像素坐标转换为世界坐标系坐标 """
-        px = np.asarray(pixel_coords).flatten()
-        p_world = np.linalg.inv(self.H) @ np.array([px[0], px[1], 1], dtype=np.float32)
-        p_world /= p_world[2]  # 归一化
-        return p_world[:2]
+        return pixel_to_world(self.H, pixel_coords)
 
     def world_to_pixel(self, world_coords):
-        """ 将世界坐标系坐标转换为像素坐标 """
-        wc = np.asarray(world_coords).flatten()
-        p_pixel = self.H @ np.array([wc[0], wc[1], 1], dtype=np.float32)
-        p_pixel /= p_pixel[2]  # 归一化
-        return p_pixel[:2]
+        return world_to_pixel(self.H, world_coords)
 
     def get_camera_matrix(self):
         return self.K, self.dist_coeffs

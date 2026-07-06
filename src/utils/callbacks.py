@@ -125,6 +125,34 @@ class TrainingStatusCallback(BaseCallback):
         values = [float(ep[key]) for ep in self.recent_episodes if key in ep and ep[key] is not None]
         return sum(values) / len(values) if values else None
 
+    def _recent_by_opponent(self):
+        grouped = {}
+        total = max(len(self.recent_episodes), 1)
+        numeric_keys = ("episode_length", "selected_opponent_prob", "tis", "zpd_coverage")
+
+        for ep in self.recent_episodes:
+            name = ep.get("selected_opponent_name")
+            if not name:
+                continue
+            bucket = grouped.setdefault(name, {"episodes": 0, **{key: [] for key in numeric_keys}})
+            bucket["episodes"] += 1
+            for key in numeric_keys:
+                if ep.get(key) is not None:
+                    bucket[key].append(float(ep[key]))
+
+        result = {}
+        for name, bucket in grouped.items():
+            episodes = bucket["episodes"]
+            result[name] = {
+                "episodes": episodes,
+                "selection_rate": episodes / total,
+                "episode_length_mean": sum(bucket["episode_length"]) / len(bucket["episode_length"]) if bucket["episode_length"] else None,
+                "selected_prob_mean": sum(bucket["selected_opponent_prob"]) / len(bucket["selected_opponent_prob"]) if bucket["selected_opponent_prob"] else None,
+                "tis_mean": sum(bucket["tis"]) / len(bucket["tis"]) if bucket["tis"] else None,
+                "zpd_coverage_mean": sum(bucket["zpd_coverage"]) / len(bucket["zpd_coverage"]) if bucket["zpd_coverage"] else None,
+            }
+        return result
+
     def _latest_episode(self):
         return dict(self.recent_episodes[-1]) if self.recent_episodes else None
 
@@ -166,6 +194,7 @@ class TrainingStatusCallback(BaseCallback):
             "recent_episode_length_mean": self._recent_mean("episode_length"),
             "recent_too_close_rate_mean": self._recent_mean("too_close_rate"),
             "recent_too_far_rate_mean": self._recent_mean("too_far_rate"),
+            "recent_by_opponent": self._recent_by_opponent(),
             "done_reason_counts": dict(self.done_reasons),
             "latest_episode": latest_episode,
             "logger": self._logger_snapshot(),
@@ -177,6 +206,14 @@ class TrainingStatusCallback(BaseCallback):
                 "selected_opponent_prob": latest_episode.get("selected_opponent_prob"),
                 "pfsp_probs": latest_episode.get("pfsp_probs", []),
                 "pfsp_pool_size": latest_episode.get("pfsp_pool_size", 0),
+                "pfsp_window_size": latest_episode.get("pfsp_window_size"),
+                "pfsp_min_episodes": latest_episode.get("pfsp_min_episodes"),
+                "pfsp_length_alpha": latest_episode.get("pfsp_length_alpha"),
+                "pfsp_temperature": latest_episode.get("pfsp_temperature"),
+                "pfsp_min_prob": latest_episode.get("pfsp_min_prob"),
+                "pfsp_total_learned_episodes": latest_episode.get("pfsp_total_learned_episodes"),
+                "pfsp_window_episodes_by_opponent": latest_episode.get("pfsp_window_episodes_by_opponent", {}),
+                "pfsp_window_avg_len_by_opponent": latest_episode.get("pfsp_window_avg_len_by_opponent", {}),
             }
         self.writer.write_event(status)
 

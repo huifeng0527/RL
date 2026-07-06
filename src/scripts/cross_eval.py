@@ -175,11 +175,11 @@ def main():
     parser.add_argument('--base_dir', type=str,
                         default=r"C:\Users\admin\Desktop\科研\RL\logs\dual_iterative_0415_1041",
                         help='Base log directory containing model iterations')
-    parser.add_argument('--iterations', type=int, default=10,
+    parser.add_argument('--iterations', type=int, default=50,
                         help='Number of iterations to evaluate')
     parser.add_argument('--episodes', type=int, default=200,
                         help='Number of episodes per evaluation')
-    parser.add_argument('--max_steps', type=int, default=40,
+    parser.add_argument('--max_steps', type=int, default=100,
                         help='Max steps per episode')
     parser.add_argument('--zpd_min', type=float, default=4.0,
                         help='ZPD minimum distance')

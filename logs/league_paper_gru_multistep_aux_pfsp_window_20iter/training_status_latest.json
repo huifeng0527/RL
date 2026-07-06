@@ -1,0 +1,8 @@
+{
+  "event": "run_completed",
+  "phase": "complete",
+  "iteration": 20,
+  "final_robot_path": "C:/Users/admin/Desktop/research/RL/logs/league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_20\\robot\\robot\\best_model.zip",
+  "total_opponents": 20,
+  "timestamp": "2026-06-23T05:38:56.016500+00:00"
+}

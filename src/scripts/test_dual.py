@@ -10,15 +10,37 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import argparse
+import re
 import pygame
 import numpy as np
 
 from src.custom_env import RehabilitationEnv
+from src.observation_schema import OBS_SCALAR_DIM, HISTORY_CHANNELS, INTERACTION_HISTORY_CHANNELS
 from src.renderer import render_aesthetic
 from stable_baselines3 import PPO
 
 
-def test_dual(robot_model_path=None, hand_model_path=None, max_steps=1000, fps=30):
+def infer_opponent_id(hand_model_path, opponent_id_dim):
+    if opponent_id_dim <= 0 or not hand_model_path:
+        return 0
+    match = re.search(r"iteration[_\\/-](\d+)|iteration_(\d+)", hand_model_path)
+    if match:
+        opponent_id = int(next(group for group in match.groups() if group is not None))
+        if 0 <= opponent_id < opponent_id_dim:
+            return opponent_id
+    return min(1, opponent_id_dim - 1)
+
+
+def append_opponent_id(obs, opponent_id_dim, opponent_id):
+    if opponent_id_dim <= 0:
+        return obs
+    opponent_vec = np.zeros(opponent_id_dim, dtype=np.float32)
+    if 0 <= opponent_id < opponent_id_dim:
+        opponent_vec[opponent_id] = 1.0
+    return np.concatenate((obs, opponent_vec)).astype(np.float32)
+
+
+def test_dual(robot_model_path=None, hand_model_path=None, max_steps=1000, fps=30, history_mode=None, opponent_id=None):
     """Test both robot and hand agents together.
 
     Args:
@@ -58,12 +80,25 @@ def test_dual(robot_model_path=None, hand_model_path=None, max_steps=1000, fps=3
         except Exception as e:
             print(f"Error loading hand model: {e}")
 
+    robot_obs_dim = robot_model.observation_space.shape[0] if robot_model is not None else 44
+    if history_mode is None:
+        history_mode = "interaction" if robot_obs_dim >= 140 else "motion"
+    history_channels = INTERACTION_HISTORY_CHANNELS if history_mode == "interaction" else HISTORY_CHANNELS
+    base_obs_dim = OBS_SCALAR_DIM + 16 * history_channels
+    opponent_id_dim = max(0, robot_obs_dim - base_obs_dim)
+    selected_opponent_id = infer_opponent_id(hand_model_path, opponent_id_dim) if opponent_id is None else int(opponent_id)
+    print(f"Using history_mode={history_mode}")
+    if opponent_id_dim > 0:
+        print(f"Using opponent_id={selected_opponent_id}, opponent_id_dim={opponent_id_dim}")
+
     # Create environment - use robot training mode so hand_model controls hand
     env = RehabilitationEnv(
         training_mode='robot',
         robot_model=robot_model,
-        hand_model=hand_model
+        hand_model=hand_model,
+        history_mode=history_mode
     )
+    env.scripted_hand_sample_prob = 0.0
 
     # if hand_model is not None:
     #     env.hand_model = hand_model
@@ -108,7 +143,8 @@ def test_dual(robot_model_path=None, hand_model_path=None, max_steps=1000, fps=3
 
             # Get actions
             if robot_model is not None:
-                action, _ = robot_model.predict(obs, deterministic=True)
+                robot_obs = append_opponent_id(obs, opponent_id_dim, selected_opponent_id)
+                action, _ = robot_model.predict(robot_obs, deterministic=True)
             else:
                 action = np.zeros(2)
 
@@ -155,6 +191,10 @@ if __name__ == '__main__':
                         help='Max steps per episode')
     parser.add_argument('--fps', type=int, default=10,
                         help='Target frames per second (default: 30)')
+    parser.add_argument('--history-mode', choices=['motion', 'interaction'], default=None,
+                        help='Override observation history mode; defaults to model observation shape')
+    parser.add_argument('--opponent-id', type=int, default=None,
+                        help='Opponent id for robot models trained with opponent-id observations; defaults to hand path iteration number')
 
     args = parser.parse_args()
 
@@ -165,5 +205,7 @@ if __name__ == '__main__':
         robot_model_path=args.robot,
         hand_model_path=args.hand,
         max_steps=args.steps,
-        fps=args.fps
+        fps=args.fps,
+        history_mode=args.history_mode,
+        opponent_id=args.opponent_id
     )

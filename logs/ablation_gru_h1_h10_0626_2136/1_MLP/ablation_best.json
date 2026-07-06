@@ -1,0 +1,8 @@
+{
+  "timestep": 6000000,
+  "reward_mean": -25.902923774114345,
+  "reward_std": 28.37379461652583,
+  "episode_length_mean": 32.88,
+  "zpd_coverage_mean": 0.6055485780803191,
+  "zpd_coverage_std": 0.21218169823483563
+}

@@ -15,11 +15,21 @@ import pygame
 import numpy as np
 
 from src.custom_env import RehabilitationEnv
+from src.observation_schema import OBS_SCALAR_DIM, HISTORY_CHANNELS, INTERACTION_HISTORY_CHANNELS
 from src.renderer import render_aesthetic
 from stable_baselines3 import PPO
 
 
-def test_with_mouse(model_path=None, max_steps=1000, fps=60):
+def append_opponent_id(obs, opponent_id_dim, opponent_id):
+    if opponent_id_dim <= 0:
+        return obs
+    opponent_vec = np.zeros(opponent_id_dim, dtype=np.float32)
+    if 0 <= opponent_id < opponent_id_dim:
+        opponent_vec[opponent_id] = 1.0
+    return np.concatenate((obs, opponent_vec)).astype(np.float32)
+
+
+def test_with_mouse(model_path=None, max_steps=1000, fps=60, history_mode=None, opponent_id=0):
     """Test trained robot agent with mouse-controlled hand.
 
     Args:
@@ -50,11 +60,23 @@ def test_with_mouse(model_path=None, max_steps=1000, fps=60):
             print(f"Error loading model: {e}")
             print("Using random actions for Robot.")
 
+    robot_obs_dim = robot_model.observation_space.shape[0] if robot_model is not None else 44
+    if history_mode is None:
+        history_mode = "interaction" if robot_obs_dim >= OBS_SCALAR_DIM + 16 * INTERACTION_HISTORY_CHANNELS else "motion"
+    history_channels = INTERACTION_HISTORY_CHANNELS if history_mode == "interaction" else HISTORY_CHANNELS
+    base_obs_dim = OBS_SCALAR_DIM + 16 * history_channels
+    opponent_id_dim = max(0, robot_obs_dim - base_obs_dim)
+    selected_opponent_id = int(opponent_id)
+    print(f"Using history_mode={history_mode}")
+    if opponent_id_dim > 0:
+        print(f"Using opponent_id={selected_opponent_id}, opponent_id_dim={opponent_id_dim}")
+
     # Create environment with robot training mode
     env = RehabilitationEnv(
         training_mode='robot',
         robot_model=robot_model,
-        hand_model_paths=None
+        hand_model_paths=None,
+        history_mode=history_mode,
     )
 
     env.grid_size = grid_size
@@ -134,7 +156,8 @@ def test_with_mouse(model_path=None, max_steps=1000, fps=60):
             # Get robot action and step
             obs = env._get_obs()
             if robot_model is not None:
-                action, _ = robot_model.predict(obs, deterministic=True)
+                robot_obs = append_opponent_id(obs, opponent_id_dim, selected_opponent_id)
+                action, _ = robot_model.predict(robot_obs, deterministic=True)
             else:
                 action = env.action_space.sample()
 
@@ -179,11 +202,17 @@ if __name__ == '__main__':
                         help='Max steps per episode')
     parser.add_argument('--fps', type=int, default=20,
                         help='Target frames per second (default: 60)')
+    parser.add_argument('--history_mode', choices=['motion', 'interaction'], default=None,
+                        help='Override inferred robot history mode')
+    parser.add_argument('--opponent_id', type=int, default=0,
+                        help='Opponent ID index for models trained with opponent ID')
 
     args = parser.parse_args()
 
     test_with_mouse(
         model_path=args.model,
         max_steps=args.steps,
-        fps=args.fps
+        fps=args.fps,
+        history_mode=args.history_mode,
+        opponent_id=args.opponent_id,
     )

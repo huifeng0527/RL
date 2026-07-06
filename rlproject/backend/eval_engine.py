@@ -785,8 +785,6 @@ class EvalEngine:
 
         virtual_target_pixel = np.array([w_px / 2, h_px / 2], dtype=np.float64)
         last_control_time = time.time()
-        task_start = time.time()
-        last_response_target = None
         current_target_index = 1
 
         for beat_idx in range(beat_count):
@@ -801,16 +799,17 @@ class EvalEngine:
             current_target_index += step
             target_name = target_names[current_target_index]
             target = target_positions[current_target_index]
-            beat_time = beat_idx * beat_interval
-            beat_abs = task_start + beat_time
-            results['beat_times'].append(float(beat_time))
-            results['target_sequence'].append(target_name)
-            results['target_positions'].append(target.tolist())
+
+            beat_start = time.time()
+            beat_end = beat_start + beat_interval
             response_time = None
 
-            while self._running and time.time() < beat_abs + beat_interval:
+            results['beat_times'].append(float(beat_idx * beat_interval))
+            results['target_sequence'].append(target_name)
+            results['target_positions'].append(target.tolist())
+
+            while self._running and time.time() < beat_end:
                 loop_start = time.time()
-                elapsed = loop_start - task_start
 
                 if self.simulate:
                     self._sim_hand_pos = self._sim_hand_pos + self.safe_normalize(target - self._sim_hand_pos) * 0.25
@@ -820,16 +819,15 @@ class EvalEngine:
                     h_px, w_px = frame.shape[:2]
                 if hand_env is not None:
                     hand_env = hand_env[:2] if len(hand_env) >= 2 else hand_env
-                    if response_time is None and last_response_target != target_name and np.linalg.norm(hand_env - target) <= target_radius:
-                        response_time = elapsed
-                        last_response_target = target_name
+                    if response_time is None and np.linalg.norm(hand_env - target) <= target_radius:
+                        response_time = loop_start - beat_start
                         break
 
                 virtual_target_pixel = self._step_virtual_target(virtual_target_pixel, target, w_px, h_px)
                 control_now = time.time()
                 self._send_robot_to_pixel(virtual_target_pixel, dt=min(max(control_now - last_control_time, 0.01), 0.2))
                 last_control_time = control_now
-                self._update_progress("Rhythmic Synchronization", 4, (beat_idx + min((elapsed - beat_time) / beat_interval, 1.0)) / beat_count, f"节律同步 {beat_idx + 1}/{beat_count} -> {target_name}")
+                self._update_progress("Rhythmic Synchronization", 4, (beat_idx + min((loop_start - beat_start) / beat_interval, 1.0)) / beat_count, f"节律同步 {beat_idx + 1}/{beat_count} -> {target_name}")
 
                 sleep_time = loop_dt - (time.time() - loop_start)
                 if sleep_time > 0:
@@ -839,16 +837,16 @@ class EvalEngine:
                 results['response_times'].append(None)
                 results['timing_errors'].append(None)
                 results['miss_count'] += 1
-                continue
-            timing_error = response_time - beat_time
-            results['response_times'].append(float(response_time))
-            results['timing_errors'].append(float(timing_error))
-            if abs(timing_error) <= time_window:
-                results['correct_count'] += 1
-            elif timing_error < -time_window:
-                results['early_count'] += 1
             else:
-                results['late_count'] += 1
+                timing_error = response_time - beat_interval
+                results['response_times'].append(float(response_time))
+                results['timing_errors'].append(float(timing_error))
+                if abs(timing_error) <= time_window:
+                    results['correct_count'] += 1
+                elif timing_error < -time_window:
+                    results['early_count'] += 1
+                else:
+                    results['late_count'] += 1
 
         valid_errors = [e for e in results['timing_errors'] if e is not None]
         if valid_errors:
@@ -994,9 +992,6 @@ class EvalEngine:
         completion_time = max_trial_time
         success = False
 
-        virtual_target_pixel = np.array([w_px / 2, h_px / 2], dtype=np.float64)
-        last_control_time = time.time()
-
         while self._running:
             loop_start = time.time()
             elapsed = loop_start - trial_start
@@ -1004,9 +999,9 @@ class EvalEngine:
                 break
 
             alpha = min(elapsed / max_trial_time, 1.0)
-            target_env = start_env * (1.0 - alpha) + end_env * alpha
 
             if self.simulate:
+                target_env = start_env * (1.0 - alpha) + end_env * alpha
                 self._sim_hand_pos = self._sim_hand_pos + self.safe_normalize(target_env - self._sim_hand_pos) * 0.22
 
             frame, hand_env, _ = self._get_frame_and_positions()
@@ -1036,10 +1031,6 @@ class EvalEngine:
                     success = True
                     break
 
-            virtual_target_pixel = self._step_virtual_target(virtual_target_pixel, target_env, w_px, h_px)
-            control_now = time.time()
-            self._send_robot_to_pixel(virtual_target_pixel, dt=min(max(control_now - last_control_time, 0.01), 0.2))
-            last_control_time = control_now
             self._update_progress("Constrained Line Tracing", 5, alpha, f"直线描画 {elapsed:.1f}s / {max_trial_time}s")
 
             sleep_time = self.target_dt - (time.time() - loop_start)

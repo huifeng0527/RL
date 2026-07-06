@@ -1,0 +1,1027 @@
+{
+  "base_dir": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter",
+  "iterations": 7,
+  "episodes": 50,
+  "max_steps": 100,
+  "zpd_min": 4.0,
+  "zpd_max": 6.0,
+  "results": [
+    {
+      "tis_mean": 0.1414,
+      "tis_std": 0.12859253477554597,
+      "zpd_coverage_mean": 0.4662484612410081,
+      "episode_length_mean": 24.86,
+      "too_close_rate_mean": 0.40254317080322055,
+      "too_far_rate_mean": 0.13120836795577134,
+      "done_reason_counts": {
+        "Robot Caught": 48,
+        "null": 2
+      },
+      "robot": "R1",
+      "hand": "H1",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.17519999999999997,
+      "tis_std": 0.1623236273621311,
+      "zpd_coverage_mean": 0.451056405075188,
+      "episode_length_mean": 32.26,
+      "too_close_rate_mean": 0.47821867619314107,
+      "too_far_rate_mean": 0.07072491873167101,
+      "done_reason_counts": {
+        "Robot Caught": 45,
+        "null": 5
+      },
+      "robot": "R1",
+      "hand": "H2",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.25680000000000003,
+      "tis_std": 0.23840671131492921,
+      "zpd_coverage_mean": 0.47617152554835,
+      "episode_length_mean": 47.0,
+      "too_close_rate_mean": 0.3902285190935858,
+      "too_far_rate_mean": 0.13359995535806424,
+      "done_reason_counts": {
+        "null": 14,
+        "Robot Caught": 36
+      },
+      "robot": "R1",
+      "hand": "H3",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.1814,
+      "tis_std": 0.20204959787141374,
+      "zpd_coverage_mean": 0.40099971597061,
+      "episode_length_mean": 35.88,
+      "too_close_rate_mean": 0.5250897312688713,
+      "too_far_rate_mean": 0.07391055276051876,
+      "done_reason_counts": {
+        "null": 9,
+        "Robot Caught": 39,
+        "Robot Out": 2
+      },
+      "robot": "R1",
+      "hand": "H4",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.22999999999999995,
+      "tis_std": 0.16486357996840903,
+      "zpd_coverage_mean": 0.550720259047673,
+      "episode_length_mean": 41.14,
+      "too_close_rate_mean": 0.3449536387003449,
+      "too_far_rate_mean": 0.10432610225198223,
+      "done_reason_counts": {
+        "Robot Caught": 43,
+        "null": 7
+      },
+      "robot": "R1",
+      "hand": "H5",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.26239999999999997,
+      "tis_std": 0.25794231913356136,
+      "zpd_coverage_mean": 0.5304018022167085,
+      "episode_length_mean": 40.4,
+      "too_close_rate_mean": 0.38276561229120687,
+      "too_far_rate_mean": 0.08683258549208467,
+      "done_reason_counts": {
+        "Robot Caught": 39,
+        "null": 11
+      },
+      "robot": "R1",
+      "hand": "H6",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.1796,
+      "tis_std": 0.1913422065306032,
+      "zpd_coverage_mean": 0.4471942458496768,
+      "episode_length_mean": 34.22,
+      "too_close_rate_mean": 0.4706160957626343,
+      "too_far_rate_mean": 0.08218965838768894,
+      "done_reason_counts": {
+        "Robot Caught": 44,
+        "Robot Out": 1,
+        "null": 5
+      },
+      "robot": "R1",
+      "hand": "H7",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2488,
+      "tis_std": 0.2113257201572965,
+      "zpd_coverage_mean": 0.5964921948692239,
+      "episode_length_mean": 38.42,
+      "too_close_rate_mean": 0.33028253647801364,
+      "too_far_rate_mean": 0.07322526865276244,
+      "done_reason_counts": {
+        "Robot Caught": 42,
+        "null": 8
+      },
+      "robot": "R2",
+      "hand": "H1",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2286,
+      "tis_std": 0.22638913401486388,
+      "zpd_coverage_mean": 0.5361539107266997,
+      "episode_length_mean": 32.66,
+      "too_close_rate_mean": 0.4052063124453437,
+      "too_far_rate_mean": 0.05863977682795652,
+      "done_reason_counts": {
+        "Robot Caught": 45,
+        "null": 5
+      },
+      "robot": "R2",
+      "hand": "H2",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.3078,
+      "tis_std": 0.2286069990179653,
+      "zpd_coverage_mean": 0.6179146822747051,
+      "episode_length_mean": 43.44,
+      "too_close_rate_mean": 0.3410426200192234,
+      "too_far_rate_mean": 0.04104269770607136,
+      "done_reason_counts": {
+        "Robot Caught": 44,
+        "null": 6
+      },
+      "robot": "R2",
+      "hand": "H3",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2884,
+      "tis_std": 0.2573197233015767,
+      "zpd_coverage_mean": 0.47998083217964616,
+      "episode_length_mean": 49.28,
+      "too_close_rate_mean": 0.48111414752684795,
+      "too_far_rate_mean": 0.038905020293505954,
+      "done_reason_counts": {
+        "Robot Caught": 35,
+        "null": 15
+      },
+      "robot": "R2",
+      "hand": "H4",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.28,
+      "tis_std": 0.23332380932943814,
+      "zpd_coverage_mean": 0.5759652220329928,
+      "episode_length_mean": 41.54,
+      "too_close_rate_mean": 0.35939173925913936,
+      "too_far_rate_mean": 0.06464303870786776,
+      "done_reason_counts": {
+        "null": 5,
+        "Robot Caught": 45
+      },
+      "robot": "R2",
+      "hand": "H5",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.29080000000000006,
+      "tis_std": 0.22970276445876747,
+      "zpd_coverage_mean": 0.6045084904786586,
+      "episode_length_mean": 39.94,
+      "too_close_rate_mean": 0.31778357785991557,
+      "too_far_rate_mean": 0.07770793166142584,
+      "done_reason_counts": {
+        "Robot Caught": 44,
+        "null": 6
+      },
+      "robot": "R2",
+      "hand": "H6",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.26320000000000005,
+      "tis_std": 0.23412338627313592,
+      "zpd_coverage_mean": 0.5387172747484401,
+      "episode_length_mean": 39.12,
+      "too_close_rate_mean": 0.4087484123958541,
+      "too_far_rate_mean": 0.05253431285570586,
+      "done_reason_counts": {
+        "Robot Caught": 44,
+        "null": 6
+      },
+      "robot": "R2",
+      "hand": "H7",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2966,
+      "tis_std": 0.23933750228495326,
+      "zpd_coverage_mean": 0.6495727190156281,
+      "episode_length_mean": 42.02,
+      "too_close_rate_mean": 0.2868717010173303,
+      "too_far_rate_mean": 0.06355557996704161,
+      "done_reason_counts": {
+        "null": 9,
+        "Robot Caught": 41
+      },
+      "robot": "R3",
+      "hand": "H1",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.5906,
+      "tis_std": 0.37221719465924724,
+      "zpd_coverage_mean": 0.7093938267161648,
+      "episode_length_mean": 71.8,
+      "too_close_rate_mean": 0.251427420732657,
+      "too_far_rate_mean": 0.03917875255117818,
+      "done_reason_counts": {
+        "Robot Caught": 17,
+        "null": 33
+      },
+      "robot": "R3",
+      "hand": "H2",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2474,
+      "tis_std": 0.23889587690037684,
+      "zpd_coverage_mean": 0.5357175085923849,
+      "episode_length_mean": 38.86,
+      "too_close_rate_mean": 0.411411461000008,
+      "too_far_rate_mean": 0.052871030407607184,
+      "done_reason_counts": {
+        "Robot Caught": 41,
+        "null": 9
+      },
+      "robot": "R3",
+      "hand": "H3",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.22840000000000005,
+      "tis_std": 0.20047304058152057,
+      "zpd_coverage_mean": 0.5100792751898366,
+      "episode_length_mean": 38.0,
+      "too_close_rate_mean": 0.4362733107963643,
+      "too_far_rate_mean": 0.05364741401379912,
+      "done_reason_counts": {
+        "Robot Caught": 44,
+        "null": 6
+      },
+      "robot": "R3",
+      "hand": "H4",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2084,
+      "tis_std": 0.2150940259514429,
+      "zpd_coverage_mean": 0.43609015351588626,
+      "episode_length_mean": 32.8,
+      "too_close_rate_mean": 0.5204957589487552,
+      "too_far_rate_mean": 0.0434140875353585,
+      "done_reason_counts": {
+        "Robot Caught": 46,
+        "null": 4
+      },
+      "robot": "R3",
+      "hand": "H5",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.24179999999999996,
+      "tis_std": 0.19917519925934554,
+      "zpd_coverage_mean": 0.49242452816127597,
+      "episode_length_mean": 41.04,
+      "too_close_rate_mean": 0.4484931053672911,
+      "too_far_rate_mean": 0.059082366471433036,
+      "done_reason_counts": {
+        "Robot Caught": 43,
+        "null": 7
+      },
+      "robot": "R3",
+      "hand": "H6",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.33399999999999996,
+      "tis_std": 0.26300570336021234,
+      "zpd_coverage_mean": 0.550216915842493,
+      "episode_length_mean": 54.22,
+      "too_close_rate_mean": 0.4069833715916158,
+      "too_far_rate_mean": 0.042799712565891095,
+      "done_reason_counts": {
+        "Robot Caught": 37,
+        "null": 13
+      },
+      "robot": "R3",
+      "hand": "H7",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.19699999999999998,
+      "tis_std": 0.16307360301409912,
+      "zpd_coverage_mean": 0.5495882823186553,
+      "episode_length_mean": 30.14,
+      "too_close_rate_mean": 0.39277055510806297,
+      "too_far_rate_mean": 0.05764116257328162,
+      "done_reason_counts": {
+        "Robot Caught": 46,
+        "null": 3,
+        "Robot Out": 1
+      },
+      "robot": "R4",
+      "hand": "H1",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.7212,
+      "tis_std": 0.3292272163719154,
+      "zpd_coverage_mean": 0.7500312997347478,
+      "episode_length_mean": 83.36,
+      "too_close_rate_mean": 0.22616870026525196,
+      "too_far_rate_mean": 0.023799999999999998,
+      "done_reason_counts": {
+        "null": 41,
+        "Robot Caught": 9
+      },
+      "robot": "R4",
+      "hand": "H2",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.29259999999999997,
+      "tis_std": 0.24165107076112866,
+      "zpd_coverage_mean": 0.5650890257786079,
+      "episode_length_mean": 42.32,
+      "too_close_rate_mean": 0.3821907949641405,
+      "too_far_rate_mean": 0.05272017925725163,
+      "done_reason_counts": {
+        "Robot Caught": 42,
+        "null": 8
+      },
+      "robot": "R4",
+      "hand": "H3",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2526,
+      "tis_std": 0.19193551000270898,
+      "zpd_coverage_mean": 0.5666566021025183,
+      "episode_length_mean": 41.64,
+      "too_close_rate_mean": 0.3701434497527955,
+      "too_far_rate_mean": 0.06319994814468624,
+      "done_reason_counts": {
+        "Robot Caught": 40,
+        "null": 9,
+        "Robot Out": 1
+      },
+      "robot": "R4",
+      "hand": "H4",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2666,
+      "tis_std": 0.22317356474278038,
+      "zpd_coverage_mean": 0.5486067445691555,
+      "episode_length_mean": 41.24,
+      "too_close_rate_mean": 0.3968074157370298,
+      "too_far_rate_mean": 0.05458583969381479,
+      "done_reason_counts": {
+        "Robot Caught": 42,
+        "null": 8
+      },
+      "robot": "R4",
+      "hand": "H5",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2986,
+      "tis_std": 0.21237711741145746,
+      "zpd_coverage_mean": 0.6113836178549672,
+      "episode_length_mean": 43.14,
+      "too_close_rate_mean": 0.3120852348392489,
+      "too_far_rate_mean": 0.07653114730578395,
+      "done_reason_counts": {
+        "Robot Caught": 43,
+        "null": 7
+      },
+      "robot": "R4",
+      "hand": "H6",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2664,
+      "tis_std": 0.19699502531789984,
+      "zpd_coverage_mean": 0.5301045879723192,
+      "episode_length_mean": 46.44,
+      "too_close_rate_mean": 0.4197548983115873,
+      "too_far_rate_mean": 0.05014051371609358,
+      "done_reason_counts": {
+        "Robot Caught": 45,
+        "null": 5
+      },
+      "robot": "R4",
+      "hand": "H7",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2842,
+      "tis_std": 0.20684380580525005,
+      "zpd_coverage_mean": 0.6098826332366222,
+      "episode_length_mean": 42.76,
+      "too_close_rate_mean": 0.325956938475691,
+      "too_far_rate_mean": 0.06416042828768677,
+      "done_reason_counts": {
+        "Robot Caught": 41,
+        "null": 9
+      },
+      "robot": "R5",
+      "hand": "H1",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.6381999999999999,
+      "tis_std": 0.36532007883498546,
+      "zpd_coverage_mean": 0.6663566216891554,
+      "episode_length_mean": 77.68,
+      "too_close_rate_mean": 0.30975932033983006,
+      "too_far_rate_mean": 0.023884057971014495,
+      "done_reason_counts": {
+        "null": 38,
+        "Robot Caught": 12
+      },
+      "robot": "R5",
+      "hand": "H2",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2778,
+      "tis_std": 0.2446490547702974,
+      "zpd_coverage_mean": 0.5689632593197772,
+      "episode_length_mean": 42.62,
+      "too_close_rate_mean": 0.3752024099248218,
+      "too_far_rate_mean": 0.05583433075540107,
+      "done_reason_counts": {
+        "Robot Caught": 41,
+        "null": 9
+      },
+      "robot": "R5",
+      "hand": "H3",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2748,
+      "tis_std": 0.21676014393794812,
+      "zpd_coverage_mean": 0.6484261342258075,
+      "episode_length_mean": 39.68,
+      "too_close_rate_mean": 0.2868097689082175,
+      "too_far_rate_mean": 0.06476409686597501,
+      "done_reason_counts": {
+        "Robot Caught": 43,
+        "null": 7
+      },
+      "robot": "R5",
+      "hand": "H4",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.33020000000000005,
+      "tis_std": 0.2350871327827195,
+      "zpd_coverage_mean": 0.6203953985710872,
+      "episode_length_mean": 48.28,
+      "too_close_rate_mean": 0.3261127321186635,
+      "too_far_rate_mean": 0.05349186931024918,
+      "done_reason_counts": {
+        "null": 11,
+        "Robot Caught": 39
+      },
+      "robot": "R5",
+      "hand": "H5",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2438,
+      "tis_std": 0.2185029976911072,
+      "zpd_coverage_mean": 0.5674774387810184,
+      "episode_length_mean": 34.84,
+      "too_close_rate_mean": 0.378471472702083,
+      "too_far_rate_mean": 0.05405108851689859,
+      "done_reason_counts": {
+        "Robot Caught": 44,
+        "null": 6
+      },
+      "robot": "R5",
+      "hand": "H6",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.298,
+      "tis_std": 0.22235107375499677,
+      "zpd_coverage_mean": 0.5718607031176434,
+      "episode_length_mean": 46.04,
+      "too_close_rate_mean": 0.4029934819131761,
+      "too_far_rate_mean": 0.025145814969180648,
+      "done_reason_counts": {
+        "null": 9,
+        "Robot Caught": 41
+      },
+      "robot": "R5",
+      "hand": "H7",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.42779999999999996,
+      "tis_std": 0.2717225791133302,
+      "zpd_coverage_mean": 0.5142138551506973,
+      "episode_length_mean": 68.74,
+      "too_close_rate_mean": 0.42743873284102113,
+      "too_far_rate_mean": 0.05834741200828158,
+      "done_reason_counts": {
+        "Robot Caught": 20,
+        "null": 30
+      },
+      "robot": "R6",
+      "hand": "H1",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.7163999999999998,
+      "tis_std": 0.33001672684880684,
+      "zpd_coverage_mean": 0.7369521739130434,
+      "episode_length_mean": 83.58,
+      "too_close_rate_mean": 0.2380728260869565,
+      "too_far_rate_mean": 0.024975000000000004,
+      "done_reason_counts": {
+        "null": 41,
+        "Robot Caught": 9
+      },
+      "robot": "R6",
+      "hand": "H2",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.27899999999999997,
+      "tis_std": 0.2110758157629623,
+      "zpd_coverage_mean": 0.5726821471579178,
+      "episode_length_mean": 42.94,
+      "too_close_rate_mean": 0.32704898306050045,
+      "too_far_rate_mean": 0.10026886978158178,
+      "done_reason_counts": {
+        "Robot Caught": 43,
+        "null": 7
+      },
+      "robot": "R6",
+      "hand": "H3",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2916,
+      "tis_std": 0.27203205693447235,
+      "zpd_coverage_mean": 0.5256117978799887,
+      "episode_length_mean": 43.68,
+      "too_close_rate_mean": 0.4148131102533374,
+      "too_far_rate_mean": 0.05957509186667396,
+      "done_reason_counts": {
+        "null": 11,
+        "Robot Caught": 39
+      },
+      "robot": "R6",
+      "hand": "H4",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.27099999999999996,
+      "tis_std": 0.18073461206974165,
+      "zpd_coverage_mean": 0.5891725930605437,
+      "episode_length_mean": 40.0,
+      "too_close_rate_mean": 0.3606812336879846,
+      "too_far_rate_mean": 0.05014617325147169,
+      "done_reason_counts": {
+        "null": 4,
+        "Robot Caught": 46
+      },
+      "robot": "R6",
+      "hand": "H5",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.2518,
+      "tis_std": 0.19092082128463622,
+      "zpd_coverage_mean": 0.5641428740200685,
+      "episode_length_mean": 38.06,
+      "too_close_rate_mean": 0.3768587722315103,
+      "too_far_rate_mean": 0.058998353748421176,
+      "done_reason_counts": {
+        "Robot Caught": 44,
+        "null": 6
+      },
+      "robot": "R6",
+      "hand": "H6",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.31980000000000003,
+      "tis_std": 0.24927486836823326,
+      "zpd_coverage_mean": 0.6004879702104182,
+      "episode_length_mean": 46.68,
+      "too_close_rate_mean": 0.34607001663536097,
+      "too_far_rate_mean": 0.05344201315422087,
+      "done_reason_counts": {
+        "Robot Caught": 40,
+        "null": 10
+      },
+      "robot": "R6",
+      "hand": "H7",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.4646,
+      "tis_std": 0.24919237548528647,
+      "zpd_coverage_mean": 0.5639781118308238,
+      "episode_length_mean": 74.76,
+      "too_close_rate_mean": 0.40283785730642185,
+      "too_far_rate_mean": 0.03318403086275427,
+      "done_reason_counts": {
+        "null": 33,
+        "Robot Caught": 17
+      },
+      "robot": "R7",
+      "hand": "H1",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_1\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.6629999999999999,
+      "tis_std": 0.35167740899864464,
+      "zpd_coverage_mean": 0.6761074074074074,
+      "episode_length_mean": 80.26,
+      "too_close_rate_mean": 0.3082925925925926,
+      "too_far_rate_mean": 0.015600000000000001,
+      "done_reason_counts": {
+        "null": 39,
+        "Robot Caught": 11
+      },
+      "robot": "R7",
+      "hand": "H2",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_2\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.3832000000000001,
+      "tis_std": 0.2629177818254216,
+      "zpd_coverage_mean": 0.56646329959982,
+      "episode_length_mean": 59.06,
+      "too_close_rate_mean": 0.3916117701554677,
+      "too_far_rate_mean": 0.04192493024471231,
+      "done_reason_counts": {
+        "Robot Caught": 34,
+        "null": 15,
+        "Robot Out": 1
+      },
+      "robot": "R7",
+      "hand": "H3",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_3\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.25780000000000003,
+      "tis_std": 0.1811109052486901,
+      "zpd_coverage_mean": 0.5324187438865722,
+      "episode_length_mean": 43.16,
+      "too_close_rate_mean": 0.4181376866188796,
+      "too_far_rate_mean": 0.04944356949454802,
+      "done_reason_counts": {
+        "Robot Caught": 45,
+        "null": 5
+      },
+      "robot": "R7",
+      "hand": "H4",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_4\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.27299999999999996,
+      "tis_std": 0.19135568975078843,
+      "zpd_coverage_mean": 0.60546043324298,
+      "episode_length_mean": 41.22,
+      "too_close_rate_mean": 0.3339335734737694,
+      "too_far_rate_mean": 0.060605993283250566,
+      "done_reason_counts": {
+        "Robot Caught": 45,
+        "null": 5
+      },
+      "robot": "R7",
+      "hand": "H5",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_5\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.314,
+      "tis_std": 0.22537967965191538,
+      "zpd_coverage_mean": 0.5970748093536197,
+      "episode_length_mean": 45.54,
+      "too_close_rate_mean": 0.35672054709604845,
+      "too_far_rate_mean": 0.04620464355033187,
+      "done_reason_counts": {
+        "Robot Caught": 42,
+        "null": 8
+      },
+      "robot": "R7",
+      "hand": "H6",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_6\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    },
+    {
+      "tis_mean": 0.22680000000000003,
+      "tis_std": 0.17115419948105276,
+      "zpd_coverage_mean": 0.50337848943041,
+      "episode_length_mean": 39.14,
+      "too_close_rate_mean": 0.4255268073706842,
+      "too_far_rate_mean": 0.07109470319890582,
+      "done_reason_counts": {
+        "Robot Caught": 44,
+        "null": 6
+      },
+      "robot": "R7",
+      "hand": "H7",
+      "robot_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\robot\\robot\\best_model.zip",
+      "hand_path": "logs\\league_paper_gru_multistep_aux_pfsp_window_20iter\\iteration_7\\hand\\hand\\best_model.zip",
+      "episodes": 50,
+      "max_steps": 100
+    }
+  ],
+  "tis_matrix": [
+    [
+      0.1414,
+      0.17519999999999997,
+      0.25680000000000003,
+      0.1814,
+      0.22999999999999995,
+      0.26239999999999997,
+      0.1796
+    ],
+    [
+      0.2488,
+      0.2286,
+      0.3078,
+      0.2884,
+      0.28,
+      0.29080000000000006,
+      0.26320000000000005
+    ],
+    [
+      0.2966,
+      0.5906,
+      0.2474,
+      0.22840000000000005,
+      0.2084,
+      0.24179999999999996,
+      0.33399999999999996
+    ],
+    [
+      0.19699999999999998,
+      0.7212,
+      0.29259999999999997,
+      0.2526,
+      0.2666,
+      0.2986,
+      0.2664
+    ],
+    [
+      0.2842,
+      0.6381999999999999,
+      0.2778,
+      0.2748,
+      0.33020000000000005,
+      0.2438,
+      0.298
+    ],
+    [
+      0.42779999999999996,
+      0.7163999999999998,
+      0.27899999999999997,
+      0.2916,
+      0.27099999999999996,
+      0.2518,
+      0.31980000000000003
+    ],
+    [
+      0.4646,
+      0.6629999999999999,
+      0.3832000000000001,
+      0.25780000000000003,
+      0.27299999999999996,
+      0.314,
+      0.22680000000000003
+    ]
+  ],
+  "zpd_matrix": [
+    [
+      0.4662484612410081,
+      0.451056405075188,
+      0.47617152554835,
+      0.40099971597061,
+      0.550720259047673,
+      0.5304018022167085,
+      0.4471942458496768
+    ],
+    [
+      0.5964921948692239,
+      0.5361539107266997,
+      0.6179146822747051,
+      0.47998083217964616,
+      0.5759652220329928,
+      0.6045084904786586,
+      0.5387172747484401
+    ],
+    [
+      0.6495727190156281,
+      0.7093938267161648,
+      0.5357175085923849,
+      0.5100792751898366,
+      0.43609015351588626,
+      0.49242452816127597,
+      0.550216915842493
+    ],
+    [
+      0.5495882823186553,
+      0.7500312997347478,
+      0.5650890257786079,
+      0.5666566021025183,
+      0.5486067445691555,
+      0.6113836178549672,
+      0.5301045879723192
+    ],
+    [
+      0.6098826332366222,
+      0.6663566216891554,
+      0.5689632593197772,
+      0.6484261342258075,
+      0.6203953985710872,
+      0.5674774387810184,
+      0.5718607031176434
+    ],
+    [
+      0.5142138551506973,
+      0.7369521739130434,
+      0.5726821471579178,
+      0.5256117978799887,
+      0.5891725930605437,
+      0.5641428740200685,
+      0.6004879702104182
+    ],
+    [
+      0.5639781118308238,
+      0.6761074074074074,
+      0.56646329959982,
+      0.5324187438865722,
+      0.60546043324298,
+      0.5970748093536197,
+      0.50337848943041
+    ]
+  ]
+}

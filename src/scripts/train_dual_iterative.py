@@ -28,25 +28,15 @@ from src.utils.callbacks import DebugCallback, StatusWriter, TrainingStatusCallb
 from src.utils.ablation_callbacks import PPOAuxTrainingCallback, PPOFutureAuxTrainingCallback
 from src.utils.feature_extractors import (
     MLPOnlyExtractor,
-    LSTMExtractor,
-    AuxLSTMExtractor,
-    GatedExtractor,
-    AuxGatedExtractor,
     StrategyGRUAuxExtractor,
 )
 
 EXTRACTOR_MAP = {
     "mlp": MLPOnlyExtractor,
-    "lstm": LSTMExtractor,
-    "aux_lstm": AuxLSTMExtractor,
-    "strategy_gru_aux": StrategyGRUAuxExtractor,
-    # "gate": GatedExtractor,
-    # "aux_gate": AuxGatedExtractor,
+    "gru": StrategyGRUAuxExtractor,
 }
 
-# Check if extractor has auxiliary task
-AUX_EXTRACTORS = {AuxLSTMExtractor, AuxGatedExtractor}
-STRATEGY_AUX_EXTRACTORS = {StrategyGRUAuxExtractor}
+GRU_EXTRACTORS = {StrategyGRUAuxExtractor}
 
 
 def _copy_models_from_resume(resume_from, base_save_path, start_from_iteration):
@@ -131,7 +121,8 @@ def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_cl
                 skip_if_exists=False, resume_from_path=None, status_run_dir=None,
                 status_log_freq=10000, include_opponent_id=False,
                 scripted_hand_sample_prob=None, history_length=16,
-                history_mode="motion", future_horizon=8, strategy_aux_weights=None):
+                history_mode="motion", future_horizon=8, aux_mode="none",
+                strategy_aux_weights=None):
     """Train robot agent to catch hand.
 
     Args:
@@ -190,10 +181,11 @@ def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_cl
     )
     if extractor_class is not None:
         policy_kwargs["features_extractor_class"] = extractor_class
-        if extractor_class in STRATEGY_AUX_EXTRACTORS:
+        if extractor_class in GRU_EXTRACTORS:
             policy_kwargs["features_extractor_kwargs"] = dict(
                 future_horizon=future_horizon,
                 history_channels=history_channels,
+                history_length=history_length,
             )
 
     # 加载并继续训练
@@ -215,7 +207,9 @@ def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_cl
         )
         # 重新设置学习率
         model.learning_rate = 1e-4
-        logger = configure(os.path.join(save_path, "tensorboard"), ["tensorboard"])
+        tensorboard_dir = os.path.join(save_path, "tensorboard")
+        os.makedirs(tensorboard_dir, exist_ok=True)
+        logger = configure(tensorboard_dir, ["tensorboard"])
         model.set_logger(logger)
     else:
         print("[*] 初始训练: 创建全新的 Robot 模型")
@@ -262,15 +256,18 @@ def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_cl
             log_freq=status_log_freq,
         ))
 
-    use_aux = extractor_class in AUX_EXTRACTORS
-    if use_aux:
-        print("[*] 使用 Aux 训练回调")
-        callback_items.append(PPOAuxTrainingCallback(batch_size=512))
-
-    use_strategy_aux = extractor_class in STRATEGY_AUX_EXTRACTORS
-    if use_strategy_aux:
-        print("[*] Using strategy future auxiliary callback")
+    aux_mode = str(aux_mode).lower()
+    if aux_mode == "single":
+        print("[*] Using single-step auxiliary callback")
+        callback_items.append(PPOAuxTrainingCallback(
+            batch_size=512,
+            history_length=history_length,
+            history_channels=history_channels,
+        ))
+    elif aux_mode in {"multi_risk", "contrastive"}:
+        print(f"[*] Using {aux_mode} strategy auxiliary callback")
         weights = strategy_aux_weights or {}
+        contrastive_weight = weights.get("contrastive", 0.05) if aux_mode == "contrastive" else 0.0
         callback_items.append(PPOFutureAuxTrainingCallback(
             history_length=history_length,
             history_channels=history_channels,
@@ -278,7 +275,8 @@ def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_cl
             batch_size=512,
             traj_weight=weights.get("traj", 1.0),
             risk_weight=weights.get("risk", 0.2),
-            min_dist_weight=weights.get("min_dist", 0.1),
+            contrastive_weight=contrastive_weight,
+            contrastive_temperature=weights.get("temperature", 0.1),
         ))
 
     callbacks = CallbackList(callback_items)
@@ -288,8 +286,13 @@ def train_robot(hand_model_paths, total_steps, save_path, n_envs=4, extractor_cl
         callback=callbacks
     )
 
-    model.save(robot_model_path)
-    print(f"Robot model saved to {robot_model_path}")
+    final_robot_model_path = os.path.join(save_path, "robot", "final_model.zip")
+    model.save(final_robot_model_path)
+    print(f"Robot final model saved to {final_robot_model_path}")
+    if os.path.exists(robot_model_path):
+        print(f"Robot best model kept at {robot_model_path}")
+    else:
+        robot_model_path = final_robot_model_path
 
     vec_env.close()
     eval_env.close()
@@ -342,10 +345,15 @@ def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_cla
 
     policy_kwargs = dict(
         net_arch=[256, 256, 64],
-        share_features_extractor=True
+        share_features_extractor=True,
+        features_extractor_class=StrategyGRUAuxExtractor,
+        features_extractor_kwargs=dict(
+            future_horizon=1,
+            history_channels=HISTORY_CHANNELS,
+            history_length=16,
+        ),
     )
-    if extractor_class is not None:
-        policy_kwargs["features_extractor_class"] = extractor_class
+    print("[*] Hand extractor fixed to GRU")
 
     # 热启动：从上一代 Hand 模型继续训练（保留通用能力）
     if warm_start_path and os.path.exists(warm_start_path):
@@ -355,7 +363,7 @@ def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_cla
             env=vec_env,
             custom_objects={
                 'learning_rate': 1e-4,  # 降低学习率微调
-                'ent_coef': 0.008,
+                'ent_coef': 0.03,
                 'n_epochs': 4,
                 'max_grad_norm': 0.5,
                 'batch_size': 512,
@@ -364,7 +372,10 @@ def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_cla
             verbose=0
         )
         model.learning_rate = 1e-4
-        logger = configure(os.path.join(save_path, "tensorboard"), ["tensorboard"])
+        model.ent_coef = 0.03
+        tensorboard_dir = os.path.join(save_path, "tensorboard")
+        os.makedirs(tensorboard_dir, exist_ok=True)
+        logger = configure(tensorboard_dir, ["tensorboard"])
         model.set_logger(logger)
     else:
         print("[*] 基因变异: 创建全新的 Hand 对手模型 (从头开始)")
@@ -373,7 +384,7 @@ def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_cla
             vec_env,
             verbose=0,
             learning_rate=3e-4,
-            ent_coef=0.01,
+            ent_coef=0.03,
             n_epochs=4,
             max_grad_norm=0.5,
             batch_size=512,
@@ -408,11 +419,6 @@ def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_cla
             log_freq=status_log_freq,
         ))
 
-    use_aux = extractor_class in AUX_EXTRACTORS
-    if use_aux:
-        print("[*] 使用 Aux 训练回调")
-        callback_items.append(PPOAuxTrainingCallback(batch_size=512))
-
     callbacks = CallbackList(callback_items)
 
     model.learn(
@@ -421,8 +427,13 @@ def train_hand(robot_model_path, total_steps, save_path, n_envs=4, extractor_cla
     )
 
     hand_path = os.path.join(save_path, "hand", "best_model.zip")
-    model.save(hand_path)
-    print(f"Hand model saved to {hand_path}")
+    final_hand_path = os.path.join(save_path, "hand", "final_model.zip")
+    model.save(final_hand_path)
+    print(f"Hand final model saved to {final_hand_path}")
+    if os.path.exists(hand_path):
+        print(f"Hand best model kept at {hand_path}")
+    else:
+        hand_path = final_hand_path
 
     vec_env.close()
     eval_env.close()
@@ -523,12 +534,14 @@ def run_iterative_training(
     status_log_freq=10000,
     include_opponent_id=False,
     scripted_hand_sample_prob=None,
+    aux_mode="none",
     history_length=16,
     history_mode="motion",
     future_horizon=8,
     strategy_traj_weight=0.1,
     strategy_risk_weight=0.02,
-    strategy_min_dist_weight=0.01,
+    strategy_contrastive_weight=0.05,
+    strategy_contrastive_temperature=0.1,
 ):
     """Run iterative dual agent training.
 
@@ -541,16 +554,13 @@ def run_iterative_training(
         base_save_path = f"logs/dual_iterative_{now}"
 
     os.makedirs(base_save_path, exist_ok=True)
-    if extractor_name.lower() == "strategy_gru_aux":
-        if include_opponent_id:
-            print("[*] strategy_gru_aux is an implicit strategy-inference variant; disabling opponent id.")
-            include_opponent_id = False
-        if history_mode == "motion":
-            print("[*] strategy_gru_aux uses interaction history; setting history_mode=interaction.")
-            history_mode = "interaction"
-        # if history_length == 16:
-        #     pass  # strategy_gru_aux with interaction history: 16 steps * 8 channels = 128 dims
-        #     history_length = 32
+    extractor_name = extractor_name.lower()
+    aux_mode = aux_mode.lower()
+    if extractor_name == "gru" and history_mode == "motion":
+        print("[*] GRU league experiments use interaction history; setting history_mode=interaction.")
+        history_mode = "interaction"
+    if extractor_name == "mlp" and aux_mode != "none":
+        raise ValueError("MLP baseline only supports --aux none")
 
     status_writer = StatusWriter(base_save_path)
     convergence_history_path = os.path.join(base_save_path, "convergence_history.jsonl")
@@ -568,6 +578,7 @@ def run_iterative_training(
         "n_envs": n_envs,
         "enable_convergence_stop": enable_convergence_stop,
         "extractor_name": extractor_name,
+        "aux_mode": aux_mode,
         "history_length": history_length,
         "history_mode": history_mode,
         "future_horizon": future_horizon,
@@ -577,15 +588,24 @@ def run_iterative_training(
     with open(run_config_path, "w", encoding="utf-8") as f:
         json.dump({
             "extractor_name": extractor_name,
+            "aux_mode": aux_mode,
             "history_length": history_length,
             "history_mode": history_mode,
             "future_horizon": future_horizon,
             "include_opponent_id": include_opponent_id,
             "scripted_hand_sample_prob": scripted_hand_sample_prob,
+            "pfsp": {
+                "window_size": 2000,
+                "min_episodes": 20,
+                "length_alpha": 1.0,
+                "temperature": 1.0,
+                "min_prob": 0.05,
+            },
             "strategy_aux_weights": {
                 "traj": strategy_traj_weight,
                 "risk": strategy_risk_weight,
-                "min_dist": strategy_min_dist_weight,
+                "contrastive": strategy_contrastive_weight,
+                "temperature": strategy_contrastive_temperature,
             },
         }, f, ensure_ascii=False, indent=2)
 
@@ -597,12 +617,8 @@ def run_iterative_training(
     else:
         print(f"Using feature extractor: {extractor_class.__name__}")
 
-    if (history_length != 16 or history_mode != "motion") and extractor_class not in STRATEGY_AUX_EXTRACTORS:
-        raise ValueError(
-            "non-legacy history settings are currently supported only by "
-            "--extractor strategy_gru_aux. Existing extractors keep the legacy "
-            "16-step slicing to preserve old experiments."
-        )
+    if (history_length != 16 or history_mode != "motion") and extractor_class not in GRU_EXTRACTORS:
+        raise ValueError("non-legacy history settings are supported only by --extractor gru")
 
     # 加载历史手模型路径
     historical_hand_paths = []
@@ -643,8 +659,8 @@ def run_iterative_training(
             if os.path.exists(new_hand_path):
                 historical_hand_paths.append(new_hand_path)
 
-        if (include_opponent_id or history_length != 16 or history_mode != "motion") and current_robot_path is not None:
-            print("[*] Robot obs dim changed; reusing hand pool but starting a new Robot model.")
+        if include_opponent_id and current_robot_path is not None:
+            print("[*] Robot obs dim changes with opponent id; reusing hand pool but starting a new Robot model.")
             current_robot_path = None
 
     print(f"➤ 初始对手池大小: {len(historical_hand_paths) + 1} (包含脚本手)")
@@ -680,7 +696,7 @@ def run_iterative_training(
         if resume_robot_path is None and continue_from_previous and current_robot_path and os.path.exists(current_robot_path):
             resume_robot_path = current_robot_path
 
-        if include_opponent_id or history_length != 16 or history_mode != "motion":
+        if include_opponent_id:
             resume_robot_path = None
             continue_from_previous = False
 
@@ -708,10 +724,12 @@ def run_iterative_training(
             history_length=history_length,
             history_mode=history_mode,
             future_horizon=future_horizon,
+            aux_mode=aux_mode,
             strategy_aux_weights={
                 "traj": strategy_traj_weight,
                 "risk": strategy_risk_weight,
-                "min_dist": strategy_min_dist_weight,
+                "contrastive": strategy_contrastive_weight,
+                "temperature": strategy_contrastive_temperature,
             },
         )
 
@@ -725,8 +743,7 @@ def run_iterative_training(
                 print(f"    发现已有 Hand Iter {iteration}")
 
         # 2. 训练 Hand
-        # 每一代 Hand 从头训练，避免后续对手只是上一代的连续微调版本
-        prev_hand_warm_start = None
+        prev_hand_warm_start = historical_hand_paths[-1] if historical_hand_paths else None
 
         new_hand_path = train_hand(
             robot_model_path=current_robot_path,
@@ -828,9 +845,12 @@ if __name__ == '__main__':
     parser.add_argument('--hand_steps', type=int, default=1_000_000, help='Steps per iteration for hand')
     parser.add_argument('--n_envs', type=int, default=4, help='Number of parallel environments')
     parser.add_argument('--save_path', type=str, default=None, help='Save path')
-    parser.add_argument('--extractor', type=str, default='aux_lstm',
-                        choices=['mlp', 'lstm', 'aux_lstm', 'gate', 'aux_gate', 'strategy_gru_aux'],
+    parser.add_argument('--extractor', type=str, default='mlp',
+                        choices=['mlp', 'gru'],
                         help='Feature extractor to use')
+    parser.add_argument('--aux', type=str, default='none',
+                        choices=['none', 'single', 'multi_risk', 'contrastive'],
+                        help='Auxiliary objective for GRU experiments')
     parser.add_argument('--resume_from', type=str, default=None,
                         help='Path to previous training run to continue from (e.g., logs/dual_iterative_0419_1041)')
     parser.add_argument('--start_from', type=int, default=1,
@@ -852,17 +872,19 @@ if __name__ == '__main__':
     parser.add_argument('--scripted_hand_sample_prob', type=float, default=None,
                         help='Probability of sampling the scripted hand when agent hand pool is non-empty')
     parser.add_argument('--history_length', type=int, default=16,
-                        help='Motion-history length in observations; use 32 for strategy_gru_aux')
+                        help='History length in observations')
     parser.add_argument('--history_mode', type=str, default='motion', choices=['motion', 'interaction'],
-                        help='History representation: legacy motion deltas or interaction features')
+                        help='History representation: motion deltas or interaction features')
     parser.add_argument('--future_horizon', type=int, default=8,
-                        help='Future horizon for strategy_gru_aux auxiliary prediction')
+                        help='Future horizon for multi-step GRU auxiliary prediction')
     parser.add_argument('--strategy_traj_weight', type=float, default=0.1,
                         help='Weight for future trajectory auxiliary loss')
     parser.add_argument('--strategy_risk_weight', type=float, default=0.02,
                         help='Weight for future catch-risk auxiliary loss')
-    parser.add_argument('--strategy_min_dist_weight', type=float, default=0.01,
-                        help='Weight for future minimum-distance auxiliary loss')
+    parser.add_argument('--strategy_contrastive_weight', type=float, default=0.05,
+                        help='Weight for supervised contrastive strategy-embedding auxiliary loss')
+    parser.add_argument('--strategy_contrastive_temperature', type=float, default=0.1,
+                        help='Temperature for supervised contrastive strategy-embedding auxiliary loss')
 
     args = parser.parse_args()
 
@@ -884,10 +906,12 @@ if __name__ == '__main__':
         status_log_freq=args.status_log_freq,
         include_opponent_id=args.include_opponent_id,
         scripted_hand_sample_prob=args.scripted_hand_sample_prob,
+        aux_mode=args.aux,
         history_length=args.history_length,
         history_mode=args.history_mode,
         future_horizon=args.future_horizon,
         strategy_traj_weight=args.strategy_traj_weight,
         strategy_risk_weight=args.strategy_risk_weight,
-        strategy_min_dist_weight=args.strategy_min_dist_weight,
+        strategy_contrastive_weight=args.strategy_contrastive_weight,
+        strategy_contrastive_temperature=args.strategy_contrastive_temperature,
     )

@@ -1,0 +1,179 @@
+\documentclass[lettersize,journal]{IEEEtran}
+\usepackage{amsmath,amsfonts}
+\usepackage{array}
+\usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
+\usepackage{textcomp}
+\usepackage{stfloats}
+\usepackage{url}
+\usepackage{graphicx}
+\usepackage{balance}
+\hyphenation{op-tical net-works semi-conduc-tor re-ha-bil-i-ta-tion}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{League-Trained Reinforcement Learning for Adaptive Non-Contact Upper-Limb Rehabilitation}
+
+\author{Huifeng~Li
+\thanks{Author affiliation, funding, and correspondence information should be completed before submission.}}
+
+\markboth{IEEE Journal Draft,~2026}%
+{Li: League-Trained Reinforcement Learning for Adaptive Non-Contact Upper-Limb Rehabilitation}
+
+\maketitle
+
+\begin{abstract}
+Adaptive rehabilitation robots should maintain a level of challenge that is neither trivial nor unreachable for each patient. This paper presents a simulation-to-real reinforcement learning framework for non-contact upper-limb rehabilitation using a magnetically actuated microrobot. A UR10 robot moves a permanent magnet beneath an acrylic workspace, indirectly driving an unpowered microrobot that the patient tracks with the hand. The learning problem is formulated as a pursuit--evasion task in which the robot learns to keep the hand--microrobot distance inside a therapeutic zone of proximal development. To improve generalization across heterogeneous patient behaviors, the framework combines cognitive--motor decoupled domain randomization, a dual-stream recurrent encoder with an auxiliary future-dynamics head, and iterative league training with prioritized opponent sampling. In a ten-generation no-opponent-ID league experiment, the final robot improves mean time-in-zone against learned hand opponents from 0.188 to 0.282 and worst-case time-in-zone from 0.138 to 0.204. A GRU ablation further shows that temporal interaction-history encoding substantially improves reward, episode length, ZPD steps, and workspace coverage relative to an MLP baseline, while the auxiliary prediction task provides interpretable supervision for latent patient-motion dynamics. These results support the proposed framework as a robust simulation foundation for subsequent physical UR10 deployment.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Reinforcement learning, rehabilitation robotics, magnetic microrobot, league training, domain randomization, auxiliary learning, sim-to-real transfer.
+\end{IEEEkeywords}
+
+\section{Introduction}
+\IEEEPARstart{R}{obotic} upper-limb rehabilitation aims to provide repetitive, task-oriented motor practice while adapting to the patient's current ability. A central requirement is to avoid both extremes of difficulty: if the task is too easy, the patient receives limited motor-learning stimulus; if it is too hard, the patient may become fatigued, frustrated, or disengaged. This motivates control policies that maintain interaction within a therapeutic challenge range, analogous to the zone of proximal development (ZPD), where the patient can remain actively engaged while receiving appropriate assistance or challenge.
+
+Conventional rehabilitation robots often involve direct mechanical contact with the patient's limb. Although such systems can deliver precise forces, they also introduce risks related to blunt impact, traction, and incorrect impedance tuning. We therefore study a non-contact rehabilitation platform in which a UR10 robot actuates a magnetic microrobot from below the workspace. The patient interacts only with the passive microrobot on top of the acrylic surface, while the robotic arm remains physically separated from the patient.
+
+The control problem is difficult because patient behavior is heterogeneous and time-varying. A patient may chase the target directly, anticipate its path, move slowly because of bradykinesia, respond with delay, or exhibit noisy tremor-like motion. A policy trained against a single scripted hand may overfit to that behavior and fail when facing a different patient strategy. This work addresses the problem with a simulation training framework built around three ideas: cognitive--motor decoupled domain randomization (CMD-DR), a dual-stream recurrent encoder with auxiliary future prediction, and iterative league training against an expanding hand-policy pool.
+
+This manuscript revises the methodology-stage draft into an IEEE journal format and incorporates the current simulation results. The main evidence consists of a ten-generation league-training overview and a GRU-based network ablation using raw per-episode metrics.
+
+\section{System Overview and Problem Formulation}
+\subsection{Hardware Platform}
+The platform achieves safety by physically separating the robotic actuator from the patient. The system has three layers. The actuation layer places a UR10 robotic arm beneath the workspace, with a permanent magnet on its end-effector that drives the microrobot above. The interaction layer is a 5-mm acrylic sheet that supports the unpowered magnetic microrobot while acting as a barrier between the arm and the patient. The perception layer uses an overhead RGB camera connected via USB to a host computer, which also communicates with the UR10 over Ethernet. At each control cycle, the computer acquires a camera frame, estimates the positions of the microrobot and the patient's hand, and sends target pose commands to the arm.
+
+By separating the robotic actuator from the patient's limb, the acrylic interface reduces risks that may arise in direct-contact rehabilitation devices. The system also has a simple and reproducible structure: it requires only a collaborative robot, a camera, and a permanent magnet, without wearable components, force sensors, or custom onboard actuation. The microrobot is unpowered and is driven passively by the magnetic field, eliminating the need for onboard electronics or batteries. This simplicity facilitates setup, maintenance, and potential deployment across clinical environments.
+
+\subsection{Problem Formulation}
+We formulate the rehabilitation task as a pursuit--evasion game on a flat workspace. The patient sits in front of the acrylic surface and uses one hand to chase the magnetic microrobot, which moves under the control of the robot arm below. The patient goal is to bring the hand within a small contact radius of the microrobot. Unlike a static reaching exercise, the microrobot actively evades, so the patient must continuously track, predict, and intercept a moving target.
+
+The robot objective is not to defeat the patient. Instead, it should maintain a therapeutically useful level of challenge. In the simulation, this objective is encoded by a ZPD distance band between the hand and the microrobot. The robot receives positive reward when the distance remains inside the band and penalties when the target is caught too easily, escapes too far, violates workspace boundaries, or moves with excessive jerk. By conditioning the policy on temporal observations of hand and microrobot motion, the controller can infer patient intent from movement history rather than responding only to instantaneous position error.
+
+\section{Methodology}
+\subsection{Cognitive--Motor Decoupled Domain Randomization}
+The pursuit--evasion task is implemented as a Gymnasium environment with two interacting entities. The robot policy controls the magnetic microrobot, while the hand represents the patient and is controlled by a separate policy or scripted controller. A key challenge for real-world deployment is that neurological patients may move in different ways. If the simulated hand follows only one fixed strategy, the learned robot policy may overfit and perform poorly when facing real patients.
+
+To address this issue, CMD-DR uses a two-layer virtual-patient model. The first layer randomizes the hand's movement strategy. At the beginning of each episode, a hand controller is sampled from an opponent pool containing both scripted pursuit heuristics and trained RL hand policies. The selected controller produces a desired hand displacement at each timestep. The second layer modifies this desired displacement according to motor and sensing constraints. The raw displacement is passed through a first-order low-pass filter,
+\begin{equation}
+    x_t = \alpha x_{t-1} + (1-\alpha)u_t,
+\end{equation}
+where $u_t$ denotes the raw desired displacement and $x_t$ denotes the filtered displacement. Acceleration clipping is then applied to limit abrupt changes in motion,
+\begin{equation}
+    \Delta x_t = \mathrm{clip}(x_t - x_{t-1}, -a_{\max}, a_{\max}).
+\end{equation}
+Gaussian observation noise simulates vision-position error, and a sampled temporal delay models delayed motor response. This design separates what the hand attempts to do from how the movement is executed, exposing the robot to a wide range of patient-like behaviors.
+
+\begin{table}[!t]
+\caption{CMD-DR motor randomization parameters.}
+\label{tab:cmd_dr}
+\centering
+\begin{tabular}{lcc}
+\hline
+Parameter & Symbol & Value or range \\
+\hline
+Muscle inertia & $\alpha$ & 0.7 \\
+Maximum acceleration & $a_{\max}$ & 0.15 \\
+Gaussian observation noise & $\sigma$ & $\mathcal{U}(0.01, 0.08)$ \\
+Neural delay & $\delta$ & 0--3 frames \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Dual-Stream Encoder with Auxiliary Future Dynamics}
+The patient's intended movement cannot be reliably inferred from a single frame. The observed hand motion may include sensing noise, motor delay, tremor-like perturbations, and slow response. Therefore, using only instantaneous position inputs may be insufficient for distinguishing purposeful movement from short-term disturbances.
+
+At each timestep, the 44-dimensional observation vector is divided into a 12-dimensional scalar vector and a 32-dimensional temporal buffer,
+\begin{equation}
+    o_t = [s_t; h_{t-T:t}].
+\end{equation}
+The scalar vector is defined as
+\begin{equation}
+    s_t = [p_R, p_H, d(R,H), b_N,b_S,b_E,b_W, \mathrm{stride}, a_{t-1}],
+\end{equation}
+where $p_R$ and $p_H$ denote the two-dimensional positions of the microrobot and hand, $d(R,H)$ is their Euclidean distance, $b_N,b_S,b_E,b_W$ are signed distances to workspace boundaries, $\mathrm{stride}$ is the current movement step size, and $a_{t-1}$ is the previous robot action.
+
+The temporal buffer contains the $T=16$ most recent relative interaction-displacement vectors, forming a 32-dimensional sequence. In the current ablation, this temporal sequence is processed by a GRU encoder, while the scalar state is processed by an MLP. The two streams are concatenated and passed through a fusion MLP to produce a shared representation for policy and value prediction.
+
+Although the ZPD reward provides a continuous control signal, it does not directly teach the encoder how to represent patient motion. We therefore attach an auxiliary future-dynamics head to the fused representation. The head predicts the patient's future relative displacement over an eight-step horizon, and an additional risk head estimates near-catch events. The auxiliary trajectory loss is defined over predicted and observed future displacement sequences,
+\begin{equation}
+    \mathcal{L}_{\mathrm{traj}} = \mathbb{E}\left[\|\hat{D}_{t+1:t+H} - D_{t+1:t+H}\|_2^2\right],
+\end{equation}
+where $H=8$. The overall training objective combines PPO losses with the auxiliary prediction terms,
+\begin{equation}
+    \mathcal{L}_{\mathrm{total}} = \mathcal{L}_{\mathrm{PPO}} + \lambda_{\mathrm{traj}}\mathcal{L}_{\mathrm{traj}} + \lambda_{\mathrm{risk}}\mathcal{L}_{\mathrm{risk}}.
+\end{equation}
+Because the auxiliary head shares the encoder with the policy, its gradients encourage the representation to capture patient inertia, delay, and interaction dynamics.
+
+\subsection{Iterative League Training}
+A natural baseline is to train robot and hand policies simultaneously. However, simultaneous training in a two-agent game creates a non-stationary learning problem: each policy update changes the environment faced by the other policy. This can lead to cyclic adaptation and forgetting. We instead freeze one side of the interaction while training the other. During robot training, hand policies are fixed and treated as part of the environment. During hand training, the robot policy is fixed.
+
+The opponent pool $\mathcal{P}$ stores hand policies from different training stages. Each iteration contains two phases. In the robot phase, the opponent pool is fixed and the robot policy is trained with PPO against sampled hand policies. In the hand phase, a new hand policy is warm-started from the previous hand generation and fine-tuned against the current fixed robot policy. The trained hand is then added to $\mathcal{P}$, increasing the diversity of hand behaviors available for the next robot generation.
+
+Uniformly sampling from the opponent pool is inefficient. Weak hand policies provide little learning signal, while overly strong hands may terminate episodes too quickly. We therefore use prioritized fictitious self-play (PFSP), which gives higher probability to opponents that produce intermediate episode lengths. A probability floor is maintained so that no opponent is neglected, and a fixed sampling probability is assigned to the scripted hand to retain simple noisy pursuit behavior.
+
+\section{Experiments and Results}
+\subsection{League Training Robustness}
+The league experiment evaluates a ten-generation robot--hand training process under a ZPD band of 3.5--5.5 workspace units. The final robot is evaluated against learned hand policies H1--H10 and a scripted hand. The policy does not receive an explicit opponent identity, so it must infer hand behavior from interaction history.
+
+Fig.~\ref{fig:league_overview} summarizes the result. Mean time-in-zone (TIS) against learned hands increases from 0.188 for the first-generation robot to 0.282 for the tenth-generation robot, an absolute gain of 0.094. Worst-case learned-hand TIS improves from 0.138 to 0.204, an absolute gain of 0.065. The sorted empirical matrix further shows that later robot generations occupy higher-TIS regions across a broader range of learned opponents. This supports the use of league-trained hands as a robustness stress test for adaptive rehabilitation policies.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/fig_sim01_league_overview_no_title.png}
+\caption{League-training overview for the no-opponent-ID ZPD 3.5--5.5 simulation. The final robot generation improves mean and worst-case time-in-zone against the learned-hand pool, while the sorted empirical matrix visualizes robustness across increasingly difficult virtual patients.}
+\label{fig:league_overview}
+\end{figure*}
+
+\subsection{GRU Network Ablation}
+The architecture ablation compares three robot policy encoders trained for one generation against the H1--H10 plus scripted-hand pool. MLP uses only scalar spatial state. GRU adds temporal interaction-history encoding. GRU+Aux further adds the auxiliary future-prediction objective. Each group is trained for 8M environment steps. Raw per-episode reward, episode length, ZPD steps, and workspace coverage are recorded independently of TensorBoard.
+
+Fig.~\ref{fig:ablation_composite} shows the training curves and auxiliary prediction behavior. The top row uses raw per-episode training data smoothed over a 200k-timestep window. The MLP baseline plateaus at lower reward and shorter episode length than both recurrent variants. In the final 10\% of training episodes, MLP obtains a mean reward of -42.94 and mean episode length of 27.58, while GRU reaches -35.56 reward and 36.12 episode length. GRU+Aux reaches a similar final reward (-35.39) and episode length (35.92). Thus, temporal interaction-history encoding is the dominant factor in aggregate control performance in this run.
+
+The auxiliary model does not substantially outperform GRU-only on final aggregate metrics, but the bottom row of Fig.~\ref{fig:ablation_composite} shows that the future-prediction head learns a meaningful short-horizon motion model. The trajectory error increases with horizon, as expected for multi-step prediction, while early-step predictions remain close to the observed hand trajectory. This supports the role of the auxiliary task as representation supervision for latent patient dynamics.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.98\textwidth]{figures/fig_sim02_ablation_gru_aux_composite_filled_no_title.png}
+\caption{GRU ablation and auxiliary future-motion prediction. Panels (a) and (b) show smoothed raw training reward and episode length for MLP, GRU, and GRU+Aux policies. Panels (c) and (d) visualize representative auxiliary future-prediction examples and horizon-dependent trajectory error.}
+\label{fig:ablation_composite}
+\end{figure*}
+
+\begin{table}[!t]
+\caption{Final-stage ablation summary from the last 10\% of training episodes.}
+\label{tab:ablation_summary}
+\centering
+\begin{tabular}{lcccc}
+\hline
+Method & Reward & Length & ZPD steps & Workspace \\
+\hline
+MLP & -42.94 & 27.58 & 18.47 & 0.297 \\
+GRU & -35.56 & 36.12 & 22.08 & 0.347 \\
+GRU+Aux & -35.39 & 35.92 & 21.96 & 0.343 \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Sim-to-Real Implementation}
+The physical UR10 deployment is not directly comparable to simulation through a pointwise sim--real gap table because real human behavior, camera latency, magnetic actuation, and safety constraints are not distribution-matched to virtual hands. We therefore treat sim-to-real validation as a closed-loop feasibility study rather than a paired simulation benchmark. The implementation uses the same 44-dimensional observation structure as simulation: robot position from RTDE, hand and microrobot positions from the overhead camera, boundary features, previous action, and the displacement-history buffer.
+
+The implementation decouples vision and control in time. The camera runs at approximately 10--15 Hz, while the robot receives deterministic commands at a fixed 20 Hz control rate. Running both in one thread would cause jitter because slow vision inference could stall the control loop. We therefore use two threads connected by a single-element message queue. The vision thread captures frames, runs undistortion and detection, and pushes results to the queue. If the queue is full, stale results are replaced. The control thread attempts a non-blocking read each cycle; if no new frame is available, the hand position is propagated using dead reckoning from a low-pass filtered velocity estimate.
+
+The 44-dimensional observation is assembled from the estimated hand position, the robot position via RTDE, and the displacement-history buffer, then fed to the PPO policy. The 2D action is accumulated as a virtual target in pixel space, rate-limited to prevent large per-step motion, and mapped to world coordinates via the inverse homography. The final pose is sent to the UR10 through the servoL interface with a 0.1-s lookahead time and proportional gain of 400, yielding smooth end-effector tracking.
+
+\section{Discussion}
+The revised simulation results suggest two conclusions. First, league training improves robustness by exposing the robot to a distribution of learned patient behaviors rather than a single scripted controller. Improvement in both mean and worst-case TIS indicates that opponent-pool training reduces exploitability and better approximates patient variability.
+
+Second, temporal interaction history is essential. The gap between MLP and GRU policies shows that instantaneous spatial state is insufficient for adapting to patient behavior in this pursuit--evasion rehabilitation task. The auxiliary future-prediction objective provides an interpretable representation-learning signal, although its current aggregate control advantage over GRU-only training is modest. Future work should tune the auxiliary weights, prediction horizon, and training curriculum to better translate representation quality into control performance.
+
+\section{Conclusion}
+This paper presented a simulation-stage RL framework for adaptive non-contact upper-limb rehabilitation. CMD-DR exposes the robot to diverse virtual patient strategies and motor limitations. A dual-stream recurrent encoder uses interaction history to infer latent patient dynamics, while an auxiliary future-prediction head supplies dense self-supervised supervision. Iterative league training improves robustness across learned hand opponents, and the GRU ablation confirms the importance of temporal sequence modeling. The next step is to combine these simulation results with systematic real-platform validation on the UR10 magnetic microrobot system.
+
+\balance
+\begin{thebibliography}{1}
+\bibitem{placeholder}
+References should be completed with related work on rehabilitation robotics, reinforcement learning, self-play, domain randomization, and sim-to-real transfer.
+\end{thebibliography}
+
+\end{document}

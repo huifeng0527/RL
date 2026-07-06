@@ -1,0 +1,74 @@
+[
+  {
+    "robot_name": "scripted_only",
+    "robot_label": "Scripted-only",
+    "test_group": "Scripted tests",
+    "n_tests": 4,
+    "tis_mean": 0.54095,
+    "tis_worst": 0.3702000000000001,
+    "tis_std": 0.15169939848265718,
+    "zpd_coverage_mean": 0.6718276042763794,
+    "too_close_rate": 0.22700363885231079,
+    "too_far_rate": 0.10116875687130983
+  },
+  {
+    "robot_name": "scripted_only",
+    "robot_label": "Scripted-only",
+    "test_group": "Learned-hand tests",
+    "n_tests": 10,
+    "tis_mean": 0.14618000000000003,
+    "tis_worst": 0.1166,
+    "tis_std": 0.025944317296857124,
+    "zpd_coverage_mean": 0.5532643198706804,
+    "too_close_rate": 0.32403385425235604,
+    "too_far_rate": 0.12270182587696359
+  },
+  {
+    "robot_name": "single_h10",
+    "robot_label": "Single-hand",
+    "test_group": "Scripted tests",
+    "n_tests": 4,
+    "tis_mean": 0.3999,
+    "tis_worst": 0.10680000000000002,
+    "tis_std": 0.23333154523124386,
+    "zpd_coverage_mean": 0.6034612702907232,
+    "too_close_rate": 0.3342667318180764,
+    "too_far_rate": 0.06227199789120037
+  },
+  {
+    "robot_name": "single_h10",
+    "robot_label": "Single-hand",
+    "test_group": "Learned-hand tests",
+    "n_tests": 10,
+    "tis_mean": 0.16302000000000003,
+    "tis_worst": 0.12040000000000001,
+    "tis_std": 0.09667088289655786,
+    "zpd_coverage_mean": 0.48717035760085736,
+    "too_close_rate": 0.43150758431393077,
+    "too_far_rate": 0.08132205808521174
+  },
+  {
+    "robot_name": "league",
+    "robot_label": "League",
+    "test_group": "Scripted tests",
+    "n_tests": 4,
+    "tis_mean": 0.7205999999999999,
+    "tis_worst": 0.49520000000000003,
+    "tis_std": 0.17697248373687924,
+    "zpd_coverage_mean": 0.773545068514187,
+    "too_close_rate": 0.16653856335390557,
+    "too_far_rate": 0.059916368131907274
+  },
+  {
+    "robot_name": "league",
+    "robot_label": "League",
+    "test_group": "Learned-hand tests",
+    "n_tests": 10,
+    "tis_mean": 0.2372,
+    "tis_worst": 0.16579999999999998,
+    "tis_std": 0.06475708455451032,
+    "zpd_coverage_mean": 0.6007523277513801,
+    "too_close_rate": 0.325298131129363,
+    "too_far_rate": 0.07394954111925685
+  }
+]

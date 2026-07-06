@@ -1,0 +1,22 @@
+{
+  "extractor_name": "gru",
+  "aux_mode": "none",
+  "history_length": 16,
+  "history_mode": "interaction",
+  "future_horizon": 8,
+  "include_opponent_id": false,
+  "scripted_hand_sample_prob": null,
+  "pfsp": {
+    "window_size": 2000,
+    "min_episodes": 20,
+    "length_alpha": 1.0,
+    "temperature": 1.0,
+    "min_prob": 0.05
+  },
+  "strategy_aux_weights": {
+    "traj": 0.1,
+    "risk": 0.02,
+    "contrastive": 0.05,
+    "temperature": 0.1
+  }
+}

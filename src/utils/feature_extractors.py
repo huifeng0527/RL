@@ -295,6 +295,7 @@ class StrategyGRUAuxExtractor(BaseFeaturesExtractor):
         observation_space: gym.spaces.Box,
         future_horizon: int = 8,
         history_channels: int = INTERACTION_HISTORY_CHANNELS,
+        history_length: int | None = None,
         hidden_dim: int = 64,
         latent_dim: int = 32,
     ):
@@ -304,10 +305,16 @@ class StrategyGRUAuxExtractor(BaseFeaturesExtractor):
         self.history_channels = int(history_channels)
         self.hidden_dim = int(hidden_dim)
         self.latent_dim = int(latent_dim)
-        self.history_len = infer_history_length(observation_space.shape[0], history_channels=self.history_channels)
+        if history_length is None:
+            self.history_len = infer_history_length(observation_space.shape[0], history_channels=self.history_channels)
+        else:
+            self.history_len = int(history_length)
+        self.scalar_dim = int(observation_space.shape[0]) - self.history_len * self.history_channels
+        if self.scalar_dim < OBS_SCALAR_DIM:
+            raise ValueError(f"Invalid scalar_dim={self.scalar_dim} for observation shape {observation_space.shape}")
 
         self.scalar_net = nn.Sequential(
-            nn.Linear(OBS_SCALAR_DIM, 32),
+            nn.Linear(self.scalar_dim, 32),
             nn.LayerNorm(32),
             nn.ReLU(),
         )
@@ -340,28 +347,35 @@ class StrategyGRUAuxExtractor(BaseFeaturesExtractor):
             nn.ReLU(),
             nn.Linear(32, 1),
         )
-        self.min_distance_head = nn.Sequential(
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1),
-        )
 
     def _split(self, observations: th.Tensor):
         history_dim = self.history_len * self.history_channels
+        history_start = OBS_SCALAR_DIM
+        history_stop = history_start + history_dim
         scalar_part = observations[:, :OBS_SCALAR_DIM]
-        history_part = observations[:, OBS_SCALAR_DIM:OBS_SCALAR_DIM + history_dim]
+        id_part = observations[:, history_stop:]
+        if id_part.shape[1] > 0:
+            scalar_part = th.cat([scalar_part, id_part], dim=1)
+        history_part = observations[:, history_start:history_stop]
         history_seq = history_part.reshape(-1, self.history_len, self.history_channels)
         return scalar_part, history_seq
+
+    def _strategy_embedding(self, history_seq: th.Tensor) -> th.Tensor:
+        _, hidden = self.strategy_gru(history_seq)
+        return self.strategy_proj(hidden[-1])
 
     def _encode(self, observations: th.Tensor) -> th.Tensor:
         scalar_part, history_seq = self._split(observations)
         scalar_features = self.scalar_net(scalar_part)
-        _, hidden = self.strategy_gru(history_seq)
-        strategy_latent = self.strategy_proj(hidden[-1])
+        strategy_latent = self._strategy_embedding(history_seq)
         return self.fusion_net(th.cat([scalar_features, strategy_latent], dim=1))
 
     def forward(self, observations: th.Tensor) -> th.Tensor:
         return self._encode(observations)
+
+    def forward_strategy_embedding(self, observations: th.Tensor) -> th.Tensor:
+        _, history_seq = self._split(observations)
+        return self._strategy_embedding(history_seq)
 
     def forward_aux_future(self, observations: th.Tensor):
         features = self._encode(observations)
@@ -369,9 +383,27 @@ class StrategyGRUAuxExtractor(BaseFeaturesExtractor):
             -1, self.future_horizon, HISTORY_CHANNELS
         )
         catch_logit = self.catch_risk_head(features).squeeze(-1)
-        min_distance = self.min_distance_head(features).squeeze(-1)
-        return future_traj, catch_logit, min_distance
+        return future_traj, catch_logit
 
     def forward_aux(self, observations: th.Tensor) -> th.Tensor:
-        future_traj, _, _ = self.forward_aux_future(observations)
+        future_traj, _ = self.forward_aux_future(observations)
         return future_traj[:, 0, :]
+
+
+class StrategyGRUPredEndpointExtractor(StrategyGRUAuxExtractor):
+    """GRU encoder whose policy input includes the predicted future endpoint."""
+
+    def __init__(self, observation_space: gym.spaces.Box, detach_prediction: bool = True, **kwargs):
+        super().__init__(observation_space, **kwargs)
+        self.detach_prediction = bool(detach_prediction)
+        self._features_dim = 66
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        features = self._encode(observations)
+        future_traj = self.future_traj_head(features).reshape(
+            -1, self.future_horizon, HISTORY_CHANNELS
+        )
+        endpoint = th.cumsum(future_traj, dim=1)[:, -1, :]
+        if self.detach_prediction:
+            endpoint = endpoint.detach()
+        return th.cat([features, endpoint], dim=1)

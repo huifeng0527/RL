@@ -63,10 +63,20 @@ class PPOAuxTrainingCallback(BaseCallback):
     Collects rollout data and trains auxiliary task at end of each rollout.
     """
 
-    def __init__(self, batch_size=256, buffer_size=10000, aux_epochs=3, verbose=0):
+    def __init__(
+        self,
+        batch_size=256,
+        buffer_size=10000,
+        aux_epochs=3,
+        history_length=DEFAULT_HISTORY_LENGTH,
+        history_channels=HISTORY_CHANNELS,
+        verbose=0,
+    ):
         super().__init__(verbose)
         self.batch_size = batch_size
         self.aux_epochs = aux_epochs
+        self.history_length = int(history_length)
+        self.history_channels = int(history_channels)
         self.optimizer = None
 
         self.obs_buffer = deque(maxlen=buffer_size)
@@ -98,7 +108,8 @@ class PPOAuxTrainingCallback(BaseCallback):
                 batch_obs_tensor = th.tensor(batch_obs, dtype=th.float32).to(device)
                 batch_next_obs_tensor = th.tensor(batch_next_obs, dtype=th.float32).to(device)
 
-                true_next_move = batch_next_obs_tensor[:, HISTORY_END - HISTORY_CHANNELS:HISTORY_END]
+                h_slice = history_slice(self.history_length, self.history_channels)
+                true_next_move = batch_next_obs_tensor[:, h_slice.stop - HISTORY_CHANNELS:h_slice.stop]
                 pred_next_move = self.extractor.forward_aux(batch_obs_tensor)
                 loss = F.mse_loss(pred_next_move, true_next_move)
 
@@ -113,12 +124,7 @@ class PPOAuxTrainingCallback(BaseCallback):
 
 
 class PPOFutureAuxTrainingCallback(BaseCallback):
-    """Auxiliary training for strategy inference from recent interaction history.
-
-    The callback samples windows from completed rollout episodes and trains the
-    extractor to predict future hand-motion deltas, future catch risk, and the
-    future minimum robot-hand distance.
-    """
+    """Auxiliary training for strategy inference from recent interaction history."""
 
     def __init__(
         self,
@@ -131,7 +137,10 @@ class PPOFutureAuxTrainingCallback(BaseCallback):
         lr=5e-5,
         traj_weight=1.0,
         risk_weight=0.2,
-        min_dist_weight=0.1,
+        contrastive_weight=0.05,
+        contrastive_temperature=0.1,
+        traj_cumulative_weight=0.0,
+        traj_endpoint_weight=0.0,
         catch_threshold=2.0,
         verbose=0,
     ):
@@ -144,90 +153,171 @@ class PPOFutureAuxTrainingCallback(BaseCallback):
         self.lr = float(lr)
         self.traj_weight = float(traj_weight)
         self.risk_weight = float(risk_weight)
-        self.min_dist_weight = float(min_dist_weight)
+        self.contrastive_weight = float(contrastive_weight)
+        self.contrastive_temperature = float(contrastive_temperature)
+        self.traj_cumulative_weight = float(traj_cumulative_weight)
+        self.traj_endpoint_weight = float(traj_endpoint_weight)
         self.catch_threshold = float(catch_threshold)
         self.episodes = deque(maxlen=buffer_size)
         self.current_episodes = None
+        self.current_labels = None
         self.optimizer = None
 
     def _on_training_start(self) -> None:
         self.extractor = self.model.policy.features_extractor
         self.optimizer = th.optim.Adam(self.extractor.parameters(), lr=self.lr)
         self.current_episodes = [[] for _ in range(self.training_env.num_envs)]
+        self.current_labels = [None for _ in range(self.training_env.num_envs)]
+
+    def _opponent_label_from_info(self, info):
+        if not isinstance(info, dict):
+            return None
+        if info.get("opponent_id") is not None:
+            return int(info["opponent_id"])
+        league_episode = info.get("league_episode")
+        if isinstance(league_episode, dict) and league_episode.get("opponent_id") is not None:
+            return int(league_episode["opponent_id"])
+        current_hand_index = info.get("current_hand_index")
+        if current_hand_index is not None:
+            return int(current_hand_index) + 1
+        return None
 
     def _on_step(self) -> bool:
         obs_array = self.model._last_obs
         dones = self.locals.get("dones", [])
+        infos = self.locals.get("infos", []) or []
 
         for env_idx in range(obs_array.shape[0]):
             self.current_episodes[env_idx].append(np.array(obs_array[env_idx], dtype=np.float32))
+            info = infos[env_idx] if len(infos) > env_idx else {}
+            label = self._opponent_label_from_info(info)
+            if label is not None:
+                self.current_labels[env_idx] = label
             if len(dones) > env_idx and dones[env_idx]:
                 episode = self.current_episodes[env_idx]
-                if len(episode) > self.future_horizon:
-                    self.episodes.append(np.stack(episode, axis=0))
+                episode_label = label if label is not None else self.current_labels[env_idx]
+                if len(episode) > self.future_horizon and (episode_label is not None or self.contrastive_weight == 0):
+                    self.episodes.append({
+                        "obs": np.stack(episode, axis=0),
+                        "label": int(episode_label) if episode_label is not None else 0,
+                    })
                 self.current_episodes[env_idx] = []
+                self.current_labels[env_idx] = None
         return True
 
+    def _sample_window(self, episode_record, h_slice, hand_delta_start):
+        ep = episode_record["obs"]
+        t = np.random.randint(0, len(ep) - self.future_horizon)
+        future = ep[t + 1:t + 1 + self.future_horizon]
+        future_moves = future[:, hand_delta_start:h_slice.stop]
+        min_dist = float(np.min(future[:, 4]))
+        risk = 1.0 if min_dist < self.catch_threshold else 0.0
+        return ep[t], future_moves, risk, int(episode_record["label"])
+
     def _sample_batch(self):
-        valid = [ep for ep in self.episodes if len(ep) > self.future_horizon]
+        valid = [ep for ep in self.episodes if len(ep["obs"]) > self.future_horizon]
         if not valid:
+            return None
+
+        episodes_by_label = {}
+        for ep in valid:
+            episodes_by_label.setdefault(int(ep["label"]), []).append(ep)
+        labels_available = list(episodes_by_label.keys())
+        if not labels_available:
             return None
 
         obs_batch = []
         future_moves = []
         risk_targets = []
-        min_dist_targets = []
+        labels = []
         h_slice = history_slice(self.history_length, self.history_channels)
         latest_step_start = h_slice.stop - self.history_channels
         hand_delta_start = latest_step_start + self.history_channels - HISTORY_CHANNELS
 
-        for _ in range(self.batch_size):
-            ep = valid[np.random.randint(len(valid))]
-            t = np.random.randint(0, len(ep) - self.future_horizon)
-            future = ep[t + 1:t + 1 + self.future_horizon]
-            obs_batch.append(ep[t])
-            future_moves.append(future[:, hand_delta_start:h_slice.stop])
-            distances = future[:, 4]
-            min_dist = float(np.min(distances))
-            min_dist_targets.append(min_dist)
-            risk_targets.append(1.0 if min_dist < self.catch_threshold else 0.0)
+        while len(obs_batch) < self.batch_size:
+            label = labels_available[np.random.randint(len(labels_available))]
+            repeats = min(2 if len(labels_available) >= 2 else 1, self.batch_size - len(obs_batch))
+            for _ in range(repeats):
+                episode_record = episodes_by_label[label][np.random.randint(len(episodes_by_label[label]))]
+                obs, moves, risk, sampled_label = self._sample_window(episode_record, h_slice, hand_delta_start)
+                obs_batch.append(obs)
+                future_moves.append(moves)
+                risk_targets.append(risk)
+                labels.append(sampled_label)
 
         return (
             np.asarray(obs_batch, dtype=np.float32),
             np.asarray(future_moves, dtype=np.float32),
             np.asarray(risk_targets, dtype=np.float32),
-            np.asarray(min_dist_targets, dtype=np.float32),
+            np.asarray(labels, dtype=np.int64),
         )
+
+    def _supervised_contrastive_loss(self, embeddings, labels):
+        unique_labels = th.unique(labels)
+        if embeddings.shape[0] < 2 or unique_labels.numel() < 2:
+            return embeddings.new_tensor(0.0)
+
+        z = F.normalize(embeddings, dim=1)
+        logits = th.matmul(z, z.T) / self.contrastive_temperature
+        logits = logits - logits.max(dim=1, keepdim=True).values.detach()
+        batch_size = labels.shape[0]
+        non_self = ~th.eye(batch_size, dtype=th.bool, device=labels.device)
+        positive_mask = labels.unsqueeze(0).eq(labels.unsqueeze(1)) & non_self
+        positive_counts = positive_mask.sum(dim=1)
+        valid = positive_counts > 0
+        if not th.any(valid):
+            return embeddings.new_tensor(0.0)
+
+        log_denom = th.logsumexp(logits.masked_fill(~non_self, float("-inf")), dim=1, keepdim=True)
+        log_prob = logits - log_denom
+        per_anchor_loss = -(log_prob * positive_mask.float()).sum(dim=1) / positive_counts.clamp_min(1)
+        return per_anchor_loss[valid].mean()
 
     def _on_rollout_end(self) -> None:
         if len(self.episodes) == 0:
             return
 
         traj_losses = []
+        traj_step_losses = []
+        traj_cumulative_losses = []
+        traj_endpoint_losses = []
         risk_losses = []
-        min_dist_losses = []
+        contrastive_losses = []
         total_losses = []
 
         for _ in range(self.aux_epochs):
             batch = self._sample_batch()
             if batch is None:
                 return
-            obs_np, future_moves_np, risk_np, min_dist_np = batch
+            obs_np, future_moves_np, risk_np, labels_np = batch
 
             device = self.model.device
             obs = th.tensor(obs_np, dtype=th.float32, device=device)
             future_moves = th.tensor(future_moves_np, dtype=th.float32, device=device)
             risk = th.tensor(risk_np, dtype=th.float32, device=device)
-            min_dist = th.tensor(min_dist_np, dtype=th.float32, device=device)
+            labels = th.tensor(labels_np, dtype=th.long, device=device)
 
-            pred_traj, pred_risk_logit, pred_min_dist = self.extractor.forward_aux_future(obs)
-            traj_loss = F.mse_loss(pred_traj, future_moves)
+            pred_traj, pred_risk_logit = self.extractor.forward_aux_future(obs)
+            traj_step_loss = F.mse_loss(pred_traj, future_moves)
+            pred_cumulative = th.cumsum(pred_traj, dim=1)
+            true_cumulative = th.cumsum(future_moves, dim=1)
+            traj_cumulative_loss = F.mse_loss(pred_cumulative, true_cumulative)
+            traj_endpoint_loss = F.mse_loss(pred_cumulative[:, -1], true_cumulative[:, -1])
+            traj_loss = (
+                traj_step_loss
+                + self.traj_cumulative_weight * traj_cumulative_loss
+                + self.traj_endpoint_weight * traj_endpoint_loss
+            )
             risk_loss = F.binary_cross_entropy_with_logits(pred_risk_logit, risk)
-            min_dist_loss = F.mse_loss(pred_min_dist, min_dist)
+            if self.contrastive_weight > 0:
+                strategy_embeddings = self.extractor.forward_strategy_embedding(obs)
+                contrastive_loss = self._supervised_contrastive_loss(strategy_embeddings, labels)
+            else:
+                contrastive_loss = obs.new_tensor(0.0)
             loss = (
                 self.traj_weight * traj_loss
                 + self.risk_weight * risk_loss
-                + self.min_dist_weight * min_dist_loss
+                + self.contrastive_weight * contrastive_loss
             )
 
             self.optimizer.zero_grad()
@@ -236,14 +326,21 @@ class PPOFutureAuxTrainingCallback(BaseCallback):
             self.optimizer.step()
 
             traj_losses.append(traj_loss.item())
+            traj_step_losses.append(traj_step_loss.item())
+            traj_cumulative_losses.append(traj_cumulative_loss.item())
+            traj_endpoint_losses.append(traj_endpoint_loss.item())
             risk_losses.append(risk_loss.item())
-            min_dist_losses.append(min_dist_loss.item())
+            contrastive_losses.append(contrastive_loss.item())
             total_losses.append(loss.item())
 
         self.logger.record("strategy_aux/loss", np.mean(total_losses))
         self.logger.record("strategy_aux/future_traj_loss", np.mean(traj_losses))
+        self.logger.record("strategy_aux/future_step_loss", np.mean(traj_step_losses))
+        self.logger.record("strategy_aux/future_cumulative_loss", np.mean(traj_cumulative_losses))
+        self.logger.record("strategy_aux/future_endpoint_loss", np.mean(traj_endpoint_losses))
         self.logger.record("strategy_aux/catch_risk_loss", np.mean(risk_losses))
-        self.logger.record("strategy_aux/min_distance_loss", np.mean(min_dist_losses))
+        self.logger.record("strategy_aux/contrastive_loss", np.mean(contrastive_losses))
+        self.logger.record("strategy_aux/label_count", len({ep["label"] for ep in self.episodes}))
 
 
 class SaveMetricsCallback(BaseCallback):

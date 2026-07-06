@@ -185,8 +185,10 @@ class RehabilitationEnv(gym.Env):
 
         # --- Thresholds ---
         self.distance_threshold_collision = 2
+        self.zpd_min = 3.5
+        self.zpd_max = 5.5
         # self.distance_threshold_penalty = 3.0\
-        
+
         # --- Rewards Config ---
         self.reward_hand_catch = 30
         self.reward_robot_caught = -40
@@ -203,8 +205,8 @@ class RehabilitationEnv(gym.Env):
         self.stride_robot_random = [0.58, 0.62]
         # dual: [0.3, 0.4]
 
-        self.stride_hand_random = [0.3, 0.5]
-        self.scripted_hand_stride_random = [0.4, 0.6]
+        self.stride_hand_random = [0.2, 0.6]
+        self.scripted_hand_stride_random = [0.45, 0.7]
         self.hand_move_epsilon = 0.05
         
         self.max_steps = 100
@@ -246,13 +248,15 @@ class RehabilitationEnv(gym.Env):
         # ========================================================
         # []lphaStar PFSP ?
         # ========================================================
-        self.pfsp_stats = {}        # {pool_index: {'total_steps': 0, 'episodes': 0}}
-        self.pfsp_pending_stats = {}  # Batched updates before committing into pfsp_stats
-        self.pfsp_update_interval = 20
+        self.pfsp_stats = {}
+        self.pfsp_lifetime_stats = {}
+        self.pfsp_window_size = 2000
+        self.pfsp_min_episodes = 20
+        self.pfsp_length_alpha = 1.0
+        self.pfsp_temperature = 1.0
+        self.pfsp_min_prob = 0.05
         self.pfsp_episode_counter = 0
         self.pfsp_last_log_episode = 0
-        self.pfsp_temperature = 1.0  # ?
-        self.pfsp_min_prob = 0.05   # ?
         self.scripted_hand_sample_prob = 0.2  #  Robot 
         self._current_hand_index = None  # ?pool ?1  scripted hand
         self._episode_pfsp_probs = []
@@ -280,50 +284,73 @@ class RehabilitationEnv(gym.Env):
         for _ in range(self.history_length):
             buffer.append(np.zeros(dim, dtype=np.float32))
 
+    def _record_pfsp_episode(self, pool_idx, episode_steps):
+        if pool_idx not in self.pfsp_stats:
+            self.pfsp_stats[pool_idx] = deque(maxlen=self.pfsp_window_size)
+        self.pfsp_stats[pool_idx].append(int(episode_steps))
+
+        if pool_idx not in self.pfsp_lifetime_stats:
+            self.pfsp_lifetime_stats[pool_idx] = {'total_steps': 0, 'episodes': 0}
+        self.pfsp_lifetime_stats[pool_idx]['total_steps'] += int(episode_steps)
+        self.pfsp_lifetime_stats[pool_idx]['episodes'] += 1
+        self.pfsp_episode_counter += 1
+
     def _compute_pfsp_probabilities(self):
-        """Compute PFSP sampling probabilities from average survival length."""
+        """Compute PFSP sampling probabilities from recent survival length."""
         pool_size = len(self.hand_model_pool)
-        scores = np.zeros(pool_size)
+        if pool_size == 0:
+            return np.asarray([], dtype=float)
 
+        avg_lens = np.full(pool_size, np.nan, dtype=float)
         for i in range(pool_size):
-            if i in self.pfsp_stats and self.pfsp_stats[i]['episodes'] >= 3:
-                avg_len = self.pfsp_stats[i]['total_steps'] / self.pfsp_stats[i]['episodes']
-                scores[i] = 1.0 / max(avg_len, 1.0)  # ?
-            else:
-                scores[i] = 1.0  # 
+            window = self.pfsp_stats.get(i)
+            if window is not None and len(window) >= self.pfsp_min_episodes:
+                avg_lens[i] = float(np.mean(window))
 
-        # 
+        known = np.isfinite(avg_lens)
+        if not np.any(known):
+            return np.ones(pool_size, dtype=float) / pool_size
+
+        neutral_len = float(np.nanmedian(avg_lens[known]))
+        avg_lens[~known] = neutral_len
+        reference_len = max(float(np.nanmax(avg_lens)), 1.0)
+        effective_alpha = max(float(self.pfsp_length_alpha), 0.0) / max(float(self.pfsp_temperature), 1e-6)
+        scores = (reference_len / np.maximum(avg_lens, 1.0)) ** effective_alpha
+        scores = np.maximum(scores, 1e-12)
+
         raw_probs = scores / scores.sum() if scores.sum() > 0 else np.ones(pool_size) / pool_size
-
-        # ?
-        min_prob = self.pfsp_min_prob / pool_size
-        adjusted_probs = np.maximum(raw_probs, min_prob)
-        adjusted_probs = adjusted_probs / adjusted_probs.sum()
-
-        return adjusted_probs
+        explore_mass = float(np.clip(self.pfsp_min_prob, 0.0, 1.0))
+        adjusted_probs = (1.0 - explore_mass) * raw_probs + explore_mass / pool_size
+        return adjusted_probs / adjusted_probs.sum()
 
     def get_pfsp_stats(self):
-        """
-         PFSP  debug?
-        Returns dict with pool index -> {avg_steps, episodes, probability}
-        """
         result = {}
         pool_size = len(self.hand_model_pool)
         probs = self._compute_pfsp_probabilities()
 
         for i in range(pool_size):
-            if i in self.pfsp_stats and self.pfsp_stats[i]['episodes'] > 0:
-                avg_steps = self.pfsp_stats[i]['total_steps'] / self.pfsp_stats[i]['episodes']
-            else:
-                avg_steps = None
+            window = self.pfsp_stats.get(i, [])
+            window_episodes = len(window)
+            window_total_steps = int(sum(window)) if window_episodes else 0
+            window_avg_steps = float(window_total_steps / window_episodes) if window_episodes else None
+            lifetime = self.pfsp_lifetime_stats.get(i, {'total_steps': 0, 'episodes': 0})
+            lifetime_episodes = int(lifetime['episodes'])
+            lifetime_total_steps = int(lifetime['total_steps'])
+            lifetime_avg_steps = float(lifetime_total_steps / lifetime_episodes) if lifetime_episodes else None
 
             model_name = self.hand_model_names[i] if i < len(self.hand_model_names) else f"hand_{i}"
             result[model_name] = {
                 'pool_index': i,
-                'episodes': self.pfsp_stats[i]['episodes'] if i in self.pfsp_stats else 0,
-                'total_steps': self.pfsp_stats[i]['total_steps'] if i in self.pfsp_stats else 0,
-                'avg_episode_steps': avg_steps,
-                'selection_prob': probs[i] if i < len(probs) else 0,
+                'episodes': window_episodes,
+                'total_steps': window_total_steps,
+                'avg_episode_steps': window_avg_steps,
+                'window_episodes': window_episodes,
+                'window_total_steps': window_total_steps,
+                'window_avg_episode_steps': window_avg_steps,
+                'lifetime_episodes': lifetime_episodes,
+                'lifetime_total_steps': lifetime_total_steps,
+                'lifetime_avg_episode_steps': lifetime_avg_steps,
+                'selection_prob': float(probs[i]) if i < len(probs) else 0.0,
             }
         return result
 
@@ -378,8 +405,22 @@ class RehabilitationEnv(gym.Env):
 
     def _sample_initial_positions(self):
         bounds = [self.env_width - self.margin, self.env_height - self.margin]
-        self.robot_position = np.random.uniform(self.margin, bounds)
-        self.hand_position = np.random.uniform(self.margin, bounds)
+        min_initial_distance = self.zpd_min
+        for _ in range(200):
+            robot_position = np.random.uniform(self.margin, bounds)
+            hand_position = np.random.uniform(self.margin, bounds)
+            if np.linalg.norm(robot_position - hand_position) >= min_initial_distance:
+                self.robot_position = robot_position
+                self.hand_position = hand_position
+                break
+        else:
+            self.robot_position = np.random.uniform(self.margin, bounds)
+            direction = self.safe_normalize(np.random.normal(size=2))
+            self.hand_position = np.clip(
+                self.robot_position + direction * min_initial_distance,
+                self.margin,
+                bounds,
+            )
         self.fixed_point = np.array([self.env_width * random.gauss(0.5, 0.15), self.env_height])
 
     def _apply_obs_noise(self, obs):
@@ -388,14 +429,17 @@ class RehabilitationEnv(gym.Env):
         return obs + np.random.normal(0, self.noise_sigma, size=obs.shape)
 
     def _get_rehab_reward(self):
-        z_min = 4
-        z_max = 6
+        z_min = self.zpd_min
+        z_max = self.zpd_max
+        z_center = 0.5 * (z_min + z_max)
+        z_half_width = 0.5 * (z_max - z_min)
         if self.current_distance < z_min:
-            reward = -0.1 * np.exp(1.5 * (z_min - self.current_distance) * 2)
-        elif self.current_distance < z_max:
-            reward = 0.5
+            reward = -0.25 * np.exp(1.4 * (z_min - self.current_distance))
+        elif self.current_distance <= z_max:
+            center_score = 1.0 - abs(self.current_distance - z_center) / max(z_half_width, 1e-6)
+            reward = 0.75 + 0.25 * center_score
         else:
-            reward = -0.3 * (self.current_distance - z_max)
+            reward = -0.35 * (self.current_distance - z_max)
         return float(np.clip(reward, -1, 1))
 
     def _robot_out_of_bounds(self):
@@ -444,7 +488,7 @@ class RehabilitationEnv(gym.Env):
         p_effort = self.w_effort * (s_rad**2)
         return p_sweep + p_effort
 
-    def _get_robot_obs(self):
+    def _get_robot_obs(self, history_mode=None, opponent_id_dim=None, opponent_id=None):
         """Build robot observation."""
         dist_bounds = np.array([
             self.robot_position[0],
@@ -452,10 +496,11 @@ class RehabilitationEnv(gym.Env):
             self.robot_position[1],
             self.env_height - self.robot_position[1]
         ])
-        
-        if self.history_mode == "interaction":
+
+        selected_history_mode = self.history_mode if history_mode is None else history_mode
+        if selected_history_mode == "interaction":
             flat_history = np.array(self.interaction_history_buffer, dtype=np.float32).flatten()
-            expected_history_dim = self.history_length * self.history_channels
+            expected_history_dim = self.history_length * INTERACTION_HISTORY_CHANNELS
         else:
             flat_history = np.array(self.hand_history_buffer, dtype=np.float32).flatten()
             expected_history_dim = self.history_length * HISTORY_CHANNELS
@@ -478,10 +523,14 @@ class RehabilitationEnv(gym.Env):
             flat_history,
         )).astype(np.float32)
 
-        if self.include_opponent_id:
-            opponent_id = np.zeros(self.opponent_id_dim, dtype=np.float32)
-            opponent_id[self.current_opponent_id] = 1.0
-            obs = np.concatenate((obs, opponent_id)).astype(np.float32)
+        target_opponent_id_dim = self.opponent_id_dim if opponent_id_dim is None else int(opponent_id_dim)
+        should_include_id = self.include_opponent_id if opponent_id_dim is None else target_opponent_id_dim > 0
+        if should_include_id:
+            opponent_vec = np.zeros(target_opponent_id_dim, dtype=np.float32)
+            selected_opponent_id = self.current_opponent_id if opponent_id is None else int(opponent_id)
+            if 0 <= selected_opponent_id < target_opponent_id_dim:
+                opponent_vec[selected_opponent_id] = 1.0
+            obs = np.concatenate((obs, opponent_vec)).astype(np.float32)
 
         return obs
 
@@ -528,8 +577,8 @@ class RehabilitationEnv(gym.Env):
 
     def _build_league_episode_info(self, reward, terminated, truncated, done_reason):
         distances = np.asarray(self._episode_distances, dtype=float)
-        z_min = 4.0
-        z_max = 6.0
+        z_min = self.zpd_min
+        z_max = self.zpd_max
         if distances.size == 0:
             zpd_coverage = 0.0
             tis = 0.0
@@ -547,6 +596,8 @@ class RehabilitationEnv(gym.Env):
             max_distance = float(np.max(distances))
             too_close_rate = float(np.mean(distances < z_min))
             too_far_rate = float(np.mean(distances > z_max))
+
+        pfsp_stats = self.get_pfsp_stats() if self.hand_model_pool else {}
 
         return {
             "training_mode": self.training_mode,
@@ -575,8 +626,14 @@ class RehabilitationEnv(gym.Env):
             "selected_opponent_prob": float(self._episode_selected_opponent_prob),
             "pfsp_probs": list(self._episode_pfsp_probs),
             "pfsp_pool_size": len(self._episode_pfsp_probs),
-            "pfsp_update_interval": int(self.pfsp_update_interval),
-            "pfsp_pending_episodes": int(sum(s['episodes'] for s in self.pfsp_pending_stats.values())),
+            "pfsp_window_size": int(self.pfsp_window_size),
+            "pfsp_min_episodes": int(self.pfsp_min_episodes),
+            "pfsp_length_alpha": float(self.pfsp_length_alpha),
+            "pfsp_temperature": float(self.pfsp_temperature),
+            "pfsp_min_prob": float(self.pfsp_min_prob),
+            "pfsp_total_learned_episodes": int(self.pfsp_episode_counter),
+            "pfsp_window_episodes_by_opponent": {name: int(stats['window_episodes']) for name, stats in pfsp_stats.items()},
+            "pfsp_window_avg_len_by_opponent": {name: stats['window_avg_episode_steps'] for name, stats in pfsp_stats.items()},
         }
 
     def _get_info(self):
@@ -595,8 +652,6 @@ class RehabilitationEnv(gym.Env):
             "pfsp_probs": list(self._episode_pfsp_probs),
         }
 
-
-
     def reset_patient(self):
         self.current_patient_param = self.patient.reset_randomly()
 
@@ -606,7 +661,7 @@ class RehabilitationEnv(gym.Env):
         self._sample_initial_positions()
         self._seed_history_buffer(self.hand_history_buffer, HISTORY_CHANNELS)
         self._seed_history_buffer(self.robot_history_buffer, HISTORY_CHANNELS)
-        self._seed_history_buffer(self.interaction_history_buffer, self.history_channels)
+        self._seed_history_buffer(self.interaction_history_buffer, INTERACTION_HISTORY_CHANNELS)
         self.trajectory_points = [self.robot_position.copy()]
         self.current_distance = np.linalg.norm(self.robot_position - self.hand_position)
         self.pre_distance = self.current_distance
@@ -622,6 +677,9 @@ class RehabilitationEnv(gym.Env):
         self._episode_distances = []
         self._episode_bio_costs = []
         self._episode_jerks = []
+        if self.training_mode == 'hand' and self.robot_opponent_id_dim > 0:
+            self.current_opponent_id = int(np.random.randint(0, self.robot_opponent_id_dim))
+            self.current_opponent_one_hot_dim = self.robot_opponent_id_dim
 
         # Reset biomechanical filter for new episode
         self.biomech_filter.reset()
@@ -645,17 +703,29 @@ class RehabilitationEnv(gym.Env):
             move = self.safe_normalize(vec) * scripted_stride
         return move
     
+    def _robot_history_mode_for_model(self, expected_obs_dim):
+        if expected_obs_dim is None:
+            return self.history_mode
+        base_obs_dim = int(expected_obs_dim) - int(self.robot_opponent_id_dim)
+        interaction_obs_dim = obs_dim(self.history_length, 0, INTERACTION_HISTORY_CHANNELS)
+        if base_obs_dim == interaction_obs_dim:
+            return "interaction"
+        return "motion"
+
     def _resolve_robot_move(self, action):
         if self.training_mode == 'hand':
             if self.robot_model is None:
                 return np.zeros(2)
-            obs_for_robot = self._get_robot_obs()
             expected_obs_dim = model_obs_dim(self.robot_model)
-            if expected_obs_dim is not None:
-                obs_for_robot = adapt_history_obs(
-                    obs_for_robot,
-                    target_obs_dim=expected_obs_dim,
-                    opponent_id_dim=self.robot_opponent_id_dim,
+            robot_history_mode = self._robot_history_mode_for_model(expected_obs_dim)
+            obs_for_robot = self._get_robot_obs(
+                history_mode=robot_history_mode,
+                opponent_id_dim=self.robot_opponent_id_dim,
+                opponent_id=self.current_opponent_id,
+            )
+            if expected_obs_dim is not None and obs_for_robot.shape[-1] != expected_obs_dim:
+                raise ValueError(
+                    f"Robot opponent obs shape {obs_for_robot.shape[-1]} does not match model shape {expected_obs_dim}"
                 )
             robot_action, _ = self.robot_model.predict(obs_for_robot, deterministic=False)
             # Track raw robot action for action_diff penalty
@@ -684,7 +754,7 @@ class RehabilitationEnv(gym.Env):
             expected_obs_dim = model_obs_dim(self.hand_model)
             if expected_obs_dim is not None:
                 obs_for_hand = adapt_history_obs(obs_for_hand, target_obs_dim=expected_obs_dim)
-            hand_action, _ = self.hand_model.predict(obs_for_hand, deterministic=True)
+            hand_action, _ = self.hand_model.predict(obs_for_hand, deterministic=False)
             hand_intent = hand_action * self.stride_hand
 
         # ========================================================
@@ -692,12 +762,12 @@ class RehabilitationEnv(gym.Env):
         # ========================================================
         alpha = 0.5
         smoothed_move = alpha * hand_intent + (1.0 - alpha) * self.last_hand_actual_move
-        # smoothed_move = hand_intent
+        smoothed_move = hand_intent
 
         # ========================================================
         # 3.  II (Acceleration Clipping)
         # ========================================================
-        max_accel = 1
+        max_accel = 1.5 * self.stride_hand
         delta_v = smoothed_move - self.last_hand_actual_move
         accel_magnitude = np.linalg.norm(delta_v)
 
@@ -719,6 +789,7 @@ class RehabilitationEnv(gym.Env):
         done_reason = None
 
         self.current_distance = np.linalg.norm(self.robot_position - self.hand_position)
+        dist_improvement = self.pre_distance - self.current_distance
 
         if self.training_mode == 'robot':
             reward += self._get_rehab_reward()
@@ -730,13 +801,13 @@ class RehabilitationEnv(gym.Env):
             done_reason = "Robot Out"
 
         if self.current_distance < self.distance_threshold_collision:
-            reward += self.reward_robot_caught if self.training_mode == 'robot' else self.reward_hand_catch
+            if self.training_mode == 'robot':
+                reward += self.reward_robot_caught
+            else:
+                reward += 16.0 + min(14.0, max(0.0, dist_improvement) * 8.0)
             terminated = True
             done_reason = "Robot Caught"
 
-
-
-        dist_improvement = self.pre_distance - self.current_distance
         if self.training_mode == 'robot':
             reward += self.reward_step
             # Robot erk?
@@ -748,14 +819,29 @@ class RehabilitationEnv(gym.Env):
             # action_diff_penalty = -0.05 * action_diff
             # reward += action_diff_penalty
         else:
-            # Hand 
-            # 1. ?
-            reward += dist_improvement * 0.5
-            # 2. ?bonus 
-            # max_distance ???18, min_distance = 0
-            proximity_reward = max(0, (18 - self.current_distance) / 18) * 0.1
-            reward += proximity_reward
-            # 3. ?hand ?
+            hand_speed = float(np.linalg.norm(self.last_hand_actual_move))
+            to_robot = self.robot_position - self.hand_position
+            to_robot_norm = float(np.linalg.norm(to_robot))
+            approach_speed = 0.0
+            lateral_speed = 0.0
+            if to_robot_norm > 1e-6 and hand_speed > 1e-6:
+                to_robot_dir = to_robot / to_robot_norm
+                approach_speed = float(np.dot(self.last_hand_actual_move, to_robot_dir))
+                lateral_move = self.last_hand_actual_move - approach_speed * to_robot_dir
+                lateral_speed = float(np.linalg.norm(lateral_move))
+
+            far_pressure = min(1.2, max(0.0, self.current_distance - self.distance_threshold_collision) / 5.0)
+            reward += max(0.0, dist_improvement) * (3.2 + far_pressure)
+            reward -= max(0.0, -dist_improvement - 0.03) * (1.2 + 0.4 * far_pressure)
+            reward += max(0.0, approach_speed) * (0.8 + 0.4 * far_pressure)
+            reward -= max(0.0, -approach_speed - 0.03) * 0.5
+            lateral_weight = 0.12 if dist_improvement > 0.02 else 0.35 + 0.15 * far_pressure
+            reward -= lateral_speed * lateral_weight
+            reward -= max(0.0, self.current_distance - self.distance_threshold_collision) * 0.08
+            if self.current_distance > self.distance_threshold_collision + 1.0 and hand_speed < 0.05:
+                reward -= 0.30 + 0.08 * min(6.0, self.current_distance - self.distance_threshold_collision)
+            if self.current_distance > self.distance_threshold_collision + 1.0 and dist_improvement < 0.01 and approach_speed < -0.02:
+                reward -= 0.35
             reward += self.reward_step
 
         self.pre_distance = self.current_distance
@@ -768,26 +854,12 @@ class RehabilitationEnv(gym.Env):
         # ========================================================
         if (terminated or truncated) and self.training_mode == 'robot' and self._current_hand_index is not None and self._current_hand_index >= 0:
             pool_idx = self._current_hand_index
-            if pool_idx not in self.pfsp_pending_stats:
-                self.pfsp_pending_stats[pool_idx] = {'total_steps': 0, 'episodes': 0}
-            self.pfsp_pending_stats[pool_idx]['total_steps'] += self.steps
-            self.pfsp_pending_stats[pool_idx]['episodes'] += 1
-            self.pfsp_episode_counter += 1
+            self._record_pfsp_episode(pool_idx, self.steps)
 
-            if self.pfsp_episode_counter % self.pfsp_update_interval == 0:
-                for idx, stats in self.pfsp_pending_stats.items():
-                    if idx not in self.pfsp_stats:
-                        self.pfsp_stats[idx] = {'total_steps': 0, 'episodes': 0}
-                    self.pfsp_stats[idx]['total_steps'] += stats['total_steps']
-                    self.pfsp_stats[idx]['episodes'] += stats['episodes']
-                self.pfsp_pending_stats.clear()
-
-            # Debug: ?1000 ?episode ?PFSP 
-            total_episodes = sum(s['episodes'] for s in self.pfsp_stats.values())
-            if total_episodes > 0 and total_episodes % 1000 == 0 and total_episodes != self.pfsp_last_log_episode:
-                self.pfsp_last_log_episode = total_episodes
+            if self.pfsp_episode_counter > 0 and self.pfsp_episode_counter % 1000 == 0 and self.pfsp_episode_counter != self.pfsp_last_log_episode:
+                self.pfsp_last_log_episode = self.pfsp_episode_counter
                 stats = self.get_pfsp_stats()
-                print(f"    [PFSP] Episodes: {total_episodes} | {stats}")
+                print(f"    [PFSP] Episodes: {self.pfsp_episode_counter} | {stats}")
 
         return reward, terminated, truncated, done_reason
 

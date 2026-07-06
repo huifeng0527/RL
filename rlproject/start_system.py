@@ -8,9 +8,21 @@ import argparse
 import shutil
 import urllib.request
 import urllib.error
+import socket
 
 # 项目根目录
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+
+def is_port_available(port, host='127.0.0.1'):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, port))
+            return True
+        except OSError:
+            return False
+
 
 class SystemManager:
     def __init__(self):
@@ -19,6 +31,9 @@ class SystemManager:
 
     def start_backend(self):
         """启动后端服务"""
+        if not is_port_available(8000):
+            raise RuntimeError("端口 8000 已被占用。请先关闭已有后端服务，或直接访问已运行的 http://localhost:8000")
+
         print("[启动] 后端服务 (FastAPI on port 8000)...")
         backend_dir = os.path.join(PROJECT_ROOT, 'backend')
         self.backend_process = subprocess.Popen(
@@ -47,13 +62,16 @@ class SystemManager:
 
     def start_frontend(self):
         """启动前端服务"""
+        if not is_port_available(5173):
+            raise RuntimeError("端口 5173 已被占用。请先关闭已有前端服务，或直接访问已运行的 http://localhost:5173")
+
         print("[启动] 前端服务 (Vite dev server on port 5173)...")
         frontend_dir = os.path.join(PROJECT_ROOT, 'frontend')
         npm_cmd = shutil.which('npm') or shutil.which('npm.cmd')
         if not npm_cmd:
             raise RuntimeError("npm not found in PATH")
         self.frontend_process = subprocess.Popen(
-            [npm_cmd, 'run', 'dev'],
+            [npm_cmd, 'run', 'dev', '--', '--port', '5173', '--strictPort'],
             cwd=frontend_dir
         )
         print(f"[前端] PID: {self.frontend_process.pid}")
@@ -84,10 +102,12 @@ class SystemManager:
 
     def run(self, backend_only=False, frontend_only=False):
         """运行服务"""
+        exit_code = 0
         try:
             if not frontend_only:
                 self.start_backend()
-                self.wait_for_backend()
+                if not self.wait_for_backend():
+                    raise RuntimeError("后端健康检查失败，停止启动流程")
             if not backend_only:
                 self.start_frontend()
 
@@ -111,8 +131,12 @@ class SystemManager:
 
         except KeyboardInterrupt:
             print("\n[收到] 停止信号")
+        except Exception as e:
+            exit_code = 1
+            print(f"[错误] {e}")
         finally:
             self.stop()
+        return exit_code
 
 
 def main():
@@ -122,7 +146,7 @@ def main():
     args = parser.parse_args()
 
     manager = SystemManager()
-    manager.run(backend_only=args.backend_only, frontend_only=args.frontend_only)
+    sys.exit(manager.run(backend_only=args.backend_only, frontend_only=args.frontend_only))
 
 
 if __name__ == '__main__':
