@@ -35,7 +35,7 @@ EVALUATION_TASKS = [
     ("continuous_tracking", "Continuous Tracking"),
     ("workspace_exploration", "Workspace Exploration"),
     ("rhythmic_synchronization", "Rhythmic Synchronization"),
-    ("constrained_line_tracing", "Constrained Line Tracing"),
+    # ("constrained_line_tracing", "Constrained Line Tracing"),
 ]
 EVALUATION_TASK_KEYS = [task[0] for task in EVALUATION_TASKS]
 EVALUATION_TASK_NAMES = dict(EVALUATION_TASKS)
@@ -120,7 +120,7 @@ class EvalEngine:
         self._frame_callback: Optional[Callable] = None
         self._frame_broadcast_callback: Optional[Callable] = None
 
-        self.RX_C, self.RY_C, self.RZ_C, self.z = 0.107, 0.049, 4.747, 0.112
+        self.RX_C, self.RY_C, self.RZ_C, self.z = 0.107, 0.049, 4.747, 0.114
 
         self._fps = 0.0
         self._frame_count = 0

@@ -1,0 +1,35 @@
+{
+  "episode_id": "20260611_184643",
+  "meta": {
+    "episode_id": "20260611_184643",
+    "control_freq_hz": 25,
+    "dt_seconds": 0.04,
+    "environment_bounds": {
+      "w_env": 15,
+      "h_env": 10
+    }
+  },
+  "total_steps": 1,
+  "duration_seconds": 4.8366661000764,
+  "timestamps": [
+    4.8366661000764
+  ],
+  "robot_positions": [
+    [
+      7.499504566192627,
+      5.000002384185791
+    ]
+  ],
+  "hand_positions": [
+    [
+      12.197265625,
+      7.061068534851074
+    ]
+  ],
+  "robot_vels_m_per_s": [],
+  "hand_vels_m_per_s": [],
+  "distances": [
+    5.1300048828125
+  ],
+  "extra_info": {}
+}

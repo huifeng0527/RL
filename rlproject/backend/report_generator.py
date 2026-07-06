@@ -73,7 +73,7 @@ class ReportGenerator:
         rapid = results.get('rapid_reach') or results.get('sprint')
         if rapid:
             avg_move_time = np.mean(rapid.get('movement_times') or rapid.get('catch_times') or [6.0])
-            scores['rapid_reach'] = self._normalize_score(avg_move_time, 5.0, 1.0)
+            scores['rapid_reach'] = self._normalize_score(avg_move_time, 5.0, 0.8)
         else:
             scores['rapid_reach'] = 0
 
@@ -122,7 +122,7 @@ class ReportGenerator:
             valid_times = [t for t in rhythm.get('response_times', []) if t is not None]
             if valid_times:
                 avg_response = np.mean(valid_times)
-                scores['rhythmic_synchronization'] = self._normalize_score(avg_response, 2.0, 0.3)
+                scores['rhythmic_synchronization'] = self._normalize_score(avg_response, 2.0, 0.5)
             else:
                 scores['rhythmic_synchronization'] = 0
         else:
