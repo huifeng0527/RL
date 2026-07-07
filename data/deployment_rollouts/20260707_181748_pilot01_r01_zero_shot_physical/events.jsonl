@@ -1,4 +1,0 @@
-{"t_wall_s": 1783419468.586874, "event": "rollout_created"}
-{"t_wall_s": 1783419489.3241687, "event": "snapshot_saved", "step": 131, "t_task_s": 15.094164000358433, "path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_rollouts\\20260707_181748_pilot01_r01_zero_shot_physical\\snapshot_annotated.png"}
-{"t_wall_s": 1783419504.280597, "event": "video_saved", "path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_rollouts\\20260707_181748_pilot01_r01_zero_shot_physical\\annotated_video.mp4"}
-{"t_wall_s": 1783419504.2948437, "event": "rollout_closed", "done_reason": "timeout", "summary_path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_rollouts\\20260707_181748_pilot01_r01_zero_shot_physical\\summary.json"}

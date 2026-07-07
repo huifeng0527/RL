@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# set -euo pipefail
 
 SUBJECT_PREFIX="${1:-pilot01}"
 SECONDS_PER_ROLLOUT="${2:-30}"
