@@ -12,21 +12,21 @@
   "GRU": {
     "color": "#DD8452",
     "episodes": 60,
-    "tis_mean": 0.25933333333333336,
-    "tis_std": 0.2527374571016774,
-    "workspace_mean": 0.411923250629703,
-    "workspace_std": 0.3787641566361195,
-    "mean_jerk_mean": 0.12735189245002496,
-    "mean_jerk_std": 0.041917740389314534
-  },
-  "Auxiliary GRU": {
-    "color": "#55A868",
-    "episodes": 60,
     "tis_mean": 0.19716666666666666,
     "tis_std": 0.2206663519635218,
     "workspace_mean": 0.33424633914480323,
     "workspace_std": 0.3477236588291495,
     "mean_jerk_mean": 0.14545337400648076,
     "mean_jerk_std": 0.04018397411534291
+  },
+  "Auxiliary GRU": {
+    "color": "#55A868",
+    "episodes": 60,
+    "tis_mean": 0.25933333333333336,
+    "tis_std": 0.2527374571016774,
+    "workspace_mean": 0.411923250629703,
+    "workspace_std": 0.3787641566361195,
+    "mean_jerk_mean": 0.12735189245002496,
+    "mean_jerk_std": 0.041917740389314534
   }
 }

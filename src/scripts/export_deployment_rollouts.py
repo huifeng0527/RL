@@ -66,11 +66,32 @@ def load_json(path):
         return json.load(f)
 
 
+def has_timeseries_rows(rollout_dir):
+    path = Path(rollout_dir) / "timeseries.csv"
+    if not path.exists():
+        return False
+    with path.open("r", newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        next(reader, None)
+        return next(reader, None) is not None
+
+
 def find_rollout_dirs(root):
     root = Path(root)
     if not root.exists():
         return []
-    return sorted([p for p in root.iterdir() if p.is_dir() and (p / "summary.json").exists() and (p / "timeseries.csv").exists()])
+    skipped = []
+    valid = []
+    for p in root.iterdir():
+        if not p.is_dir():
+            continue
+        if (p / "summary.json").exists() and has_timeseries_rows(p):
+            valid.append(p)
+        elif (p / "timeseries.csv").exists():
+            skipped.append(p.name)
+    if skipped:
+        print(f"Skipped empty rollout folders: {', '.join(skipped)}")
+    return sorted(valid)
 
 
 def read_timeseries_rows(path):

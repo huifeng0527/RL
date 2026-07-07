@@ -14,7 +14,30 @@ from stable_baselines3 import PPO
 
 from src.custom_env import RehabilitationEnv
 from src.observation_schema import HISTORY_CHANNELS, INTERACTION_HISTORY_CHANNELS, history_slice
-import generate_pfsp_window_aux_visual as aux
+try:
+    import generate_pfsp_window_aux_visual as aux
+except ModuleNotFoundError:
+    import generate_aux_prediction_visual as aux
+
+
+def _relative_paths(ex):
+    current_hand = np.asarray(ex["current_hand_position"], dtype=float)
+    past_hand = np.asarray(ex["past_hand_positions"], dtype=float) - current_hand
+    past_robot = np.asarray(ex["past_robot_positions"], dtype=float) - current_hand
+    current_robot = np.asarray(ex["current_robot_position"], dtype=float) - current_hand
+    future_hand = np.asarray(ex["future_hand_positions"], dtype=float) - current_hand
+    future_robot = np.asarray(ex["future_robot_positions"], dtype=float) - current_hand
+    pred_future = np.cumsum(np.asarray(ex["pred_moves"], dtype=float), axis=0)
+    return past_hand, past_robot, current_robot, np.zeros(2, dtype=float), future_robot, pred_future, future_hand
+
+
+if not hasattr(aux, "relative_paths"):
+    aux.relative_paths = _relative_paths
+
+if not Path(aux.ROBOT_PATH).exists():
+    aux_run_dir = Path("logs/league_paper_gru_multistep_aux_pfsp_window_20iter")
+    aux.ROBOT_PATH = aux_run_dir / "iteration_9" / "robot" / "robot" / "final_model.zip"
+    aux.HAND_PATH = aux_run_dir / "iteration_8" / "hand" / "hand" / "final_model.zip"
 
 ABLATION_DIR = Path("logs/ablation_gru_h1_h10_0626_2136")
 ABLATION_EXCEL = ABLATION_DIR / "ablation_review_raw.xlsx"
