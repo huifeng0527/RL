@@ -33,16 +33,15 @@ for path in [REPO_ROOT, SCRIPT_DIR, TRAINING_SRC]:
 
 W_ENV = 15.0
 H_ENV = 10.0
-DEFAULT_CONTROL_FREQ = 20.0
-RX_C, RY_C, RZ_C = 0.107, 0.049, 4.747
-DEFAULT_STRIDE = 0.3
+DEFAULT_CONTROL_FREQ = 12
+RX_C, RY_C, RZ_C,Z= 0.107, 0.049, 4.747,0.1125
+DEFAULT_STRIDE = 0.6
 DEFAULT_MAX_SAFE_STRIDE = 0.6
 OBS_SCALAR_DIM = 12
 MOTION_HISTORY_CHANNELS = 2
 INTERACTION_HISTORY_CHANNELS = 8
 
 DEFAULT_POLICY_CANDIDATES = [
-    REPO_ROOT / "logs" / "league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux" / "iteration_10" / "robot" / "robot" / "best_model.zip",
     REPO_ROOT / "logs" / "league_paper_gru_multistep_aux_pfsp_window_20iter" / "iteration_20" / "robot" / "robot" / "best_model.zip",
     REPO_ROOT / "rlproject" / "best_model.zip",
 ]
@@ -301,7 +300,7 @@ def safe_transition_to_center(robot_control, cali, w_px, h_px, countdown):
     robot_control.rtde_c.servoStop()
     center_pixel = np.array([w_px / 2, h_px / 2], dtype=np.float64)
     center_world = cali.pixel_to_world(center_pixel.astype(int))
-    target_pose = [center_world[0], center_world[1], 0.116, RX_C, RY_C, RZ_C]
+    target_pose = [center_world[0], center_world[1], Z, RX_C, RY_C, RZ_C]
     robot_control.rtde_c.moveL(target_pose, 0.2, 0.2, asynchronous=False)
     for remaining in range(int(countdown), 0, -1):
         print(f"[start] {remaining}")
@@ -505,7 +504,7 @@ def main():
                 virtual_target_pixel = desired_virtual_target.copy()
 
             target_position_world = cali.pixel_to_world(virtual_target_pixel.astype(int))
-            target_pose = [target_position_world[0], target_position_world[1], 0.116, RX_C, RY_C, RZ_C]
+            target_pose = [target_position_world[0], target_position_world[1], Z, RX_C, RY_C, RZ_C]
             safe_dt = float(np.clip(control_dt_s or (1.0 / args.control_hz), 0.01, 0.2))
             robot_control.servo_robot(target_pose, dt=safe_dt)
             last_action = action.copy()
