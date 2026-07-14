@@ -40,6 +40,8 @@ def parse_args():
     parser.add_argument("--output-name", default="fig_deployment_demo")
     parser.add_argument("--zpd-low", type=float, default=None)
     parser.add_argument("--zpd-high", type=float, default=None)
+    parser.add_argument("--event-times", default=None, help="Comma-separated marker times; use start/end or seconds, e.g. start,5,9,16,end")
+    parser.add_argument("--event-labels", default=None, help="Comma-separated marker labels matching --event-times")
     return parser.parse_args()
 
 
@@ -282,15 +284,15 @@ def smooth_values(values, window=9):
     return np.convolve(padded, kernel, mode="valid")
 
 
-def compute_hand_speed(ts):
+def compute_planar_speed(ts, x_name, y_name):
     speed = np.full_like(ts["t"], np.nan, dtype=float)
-    valid = np.flatnonzero(np.isfinite(ts["t"]) & np.isfinite(ts["hand_x"]) & np.isfinite(ts["hand_y"]))
+    valid = np.flatnonzero(np.isfinite(ts["t"]) & np.isfinite(ts[x_name]) & np.isfinite(ts[y_name]))
     if valid.size < 3:
         return speed
 
     t = ts["t"][valid]
-    x = ts["hand_x"][valid]
-    y = ts["hand_y"][valid]
+    x = ts[x_name][valid]
+    y = ts[y_name][valid]
     order = np.argsort(t)
     valid = valid[order]
     t = t[order]
@@ -308,6 +310,17 @@ def compute_hand_speed(ts):
     raw_speed = np.sqrt(vx ** 2 + vy ** 2)
     speed[valid] = smooth_values(raw_speed)
     return speed
+
+
+def compute_hand_speed(ts):
+    return compute_planar_speed(ts, "hand_x", "hand_y")
+
+
+def compute_robot_speed(ts):
+    speed = compute_planar_speed(ts, "microrobot_x", "microrobot_y")
+    if np.count_nonzero(np.isfinite(speed)) >= 3:
+        return speed
+    return compute_planar_speed(ts, "robot_x", "robot_y")
 
 
 def distance_gradient(ts):
@@ -361,6 +374,19 @@ def choose_event_index(ts, zpd_low, zpd_high, lo_frac, hi_frac, mode, grad):
     return int(candidates[np.argmin(np.abs(ts["t"][candidates] - target))])
 
 
+def build_event(ts, zpd_low, zpd_high, number, label, idx):
+    status, color = zpd_status(ts["distance"][idx], zpd_low, zpd_high)
+    return {
+        "number": number,
+        "label": label,
+        "index": int(idx),
+        "time": float(ts["t"][idx]),
+        "distance": float(ts["distance"][idx]),
+        "status": status,
+        "color": color,
+    }
+
+
 def select_key_events(ts, zpd_low, zpd_high):
     grad = distance_gradient(ts)
     specs = [
@@ -374,18 +400,33 @@ def select_key_events(ts, zpd_low, zpd_high):
     events = []
     for number, (label, lo, hi, mode) in enumerate(specs, start=1):
         idx = choose_event_index(ts, zpd_low, zpd_high, lo, hi, mode, grad)
+        if idx is not None:
+            events.append(build_event(ts, zpd_low, zpd_high, number, label, idx))
+    return events
+
+
+def select_manual_events(ts, zpd_low, zpd_high, event_times, event_labels):
+    valid = np.flatnonzero(np.isfinite(ts["t"]) & np.isfinite(ts["distance"]))
+    if valid.size == 0:
+        return []
+    t_min = float(np.nanmin(ts["t"][valid]))
+    t_max = float(np.nanmax(ts["t"][valid]))
+    tokens = [token.strip() for token in event_times.split(",") if token.strip()]
+    labels = [label.strip() for label in event_labels.split(",")] if event_labels else []
+    events = []
+    for number, token in enumerate(tokens, start=1):
+        lower = token.lower()
+        if lower == "start":
+            target_time = t_min
+        elif lower == "end":
+            target_time = t_max
+        else:
+            target_time = float(token)
+        idx = nearest_time_index(ts, target_time)
         if idx is None:
             continue
-        status, color = zpd_status(ts["distance"][idx], zpd_low, zpd_high)
-        events.append({
-            "number": number,
-            "label": label,
-            "index": int(idx),
-            "time": float(ts["t"][idx]),
-            "distance": float(ts["distance"][idx]),
-            "status": status,
-            "color": color,
-        })
+        label = labels[number - 1] if number - 1 < len(labels) and labels[number - 1] else token
+        events.append(build_event(ts, zpd_low, zpd_high, number, label, idx))
     return events
 
 
@@ -488,11 +529,10 @@ def overlay_event_points(ax, image, ts, event, metadata):
 
 def plot_event_storyboard(fig, slot, rollout_dir, ts, metadata, events):
     cols = max(len(events), 1)
-    sub = slot.subgridspec(2, cols, height_ratios=[0.17, 1.0], hspace=0.035, wspace=0.018)
+    sub = slot.subgridspec(2, cols, height_ratios=[0.12, 1.0], hspace=0.015, wspace=0.018)
     title_ax = fig.add_subplot(sub[0, :])
     title_ax.axis("off")
-    title_ax.text(0.0, 0.48, "(a) Key deployment frames matched to panel (b)", ha="left", va="center", fontsize=9, fontweight="bold")
-    title_ax.text(0.995, 0.48, "video frames from first rollout; numbered times match the ZPD plot", ha="right", va="center", fontsize=7, color=C["gray"])
+    title_ax.text(0.5, 0.52, "(a) Key deployment frames", ha="center", va="center", fontsize=9, fontweight="bold")
 
     frames = load_event_frames(rollout_dir, ts, events)
     for idx in range(cols):
@@ -501,10 +541,11 @@ def plot_event_storyboard(fig, slot, rollout_dir, ts, metadata, events):
         ax.set_yticks([])
         if idx < len(frames):
             event, image = frames[idx]
-            ax.imshow(image, aspect="auto")
+            ax.imshow(image, aspect="equal")
             image_h, image_w = image.shape[:2]
             ax.set_xlim(0, image_w)
             ax.set_ylim(image_h, 0)
+            ax.set_aspect("equal", adjustable="box")
             overlay_event_points(ax, image, ts, event, metadata)
             border_color = event["color"]
             ax.text(0.045, 0.10, str(event["number"]), transform=ax.transAxes, ha="left", va="bottom", fontsize=7.2, fontweight="bold", color="white", bbox={"boxstyle": "circle,pad=0.24", "facecolor": border_color, "edgecolor": "white", "linewidth": 0.55})
@@ -554,7 +595,7 @@ def plot_dynamics(fig, slot, ts, zpd_low, zpd_high, events):
     ax = fig.add_subplot(sub[0, 0])
     speed_ax = fig.add_subplot(sub[1, 0], sharex=ax)
 
-    ax.set_title("(b) Representative rollout dynamics", loc="left", fontsize=8.5, fontweight="bold")
+    ax.set_title("(b) Representative rollout dynamics", loc="center", fontsize=8.5, fontweight="bold")
     mask = np.isfinite(ts["t"]) & np.isfinite(ts["distance"])
     t = ts["t"][mask]
     d = ts["distance"][mask]
@@ -575,14 +616,24 @@ def plot_dynamics(fig, slot, ts, zpd_low, zpd_high, events):
     ax.set_ylim(y_min, y_max)
     ax.text(0.015, 0.90, "target ZPD band", transform=ax.transAxes, fontsize=7, color=C["green"], va="top")
 
-    speed = compute_hand_speed(ts)
-    speed_mask = np.isfinite(ts["t"]) & np.isfinite(speed)
-    if np.count_nonzero(speed_mask) >= 2:
-        speed_t = ts["t"][speed_mask]
-        speed_values = smooth_values(speed[speed_mask], window=15)
-        speed_ax.plot(speed_t, speed_values, color=C["orange"], lw=1.35, alpha=0.9)
-        speed_max = float(np.nanpercentile(speed_values, 98))
-        speed_ax.set_ylim(0, max(speed_max * 1.25, 1.0))
+    hand_speed = compute_hand_speed(ts)
+    robot_speed = compute_robot_speed(ts)
+    speed_max_values = []
+    hand_mask = np.isfinite(ts["t"]) & np.isfinite(hand_speed)
+    if np.count_nonzero(hand_mask) >= 2:
+        hand_t = ts["t"][hand_mask]
+        hand_values = smooth_values(hand_speed[hand_mask], window=15)
+        speed_ax.plot(hand_t, hand_values, color=C["orange"], lw=1.25, alpha=0.9, label="hand speed")
+        speed_max_values.append(float(np.nanpercentile(hand_values, 98)))
+    robot_mask = np.isfinite(ts["t"]) & np.isfinite(robot_speed)
+    if np.count_nonzero(robot_mask) >= 2:
+        robot_t = ts["t"][robot_mask]
+        robot_values = smooth_values(robot_speed[robot_mask], window=15)
+        speed_ax.plot(robot_t, robot_values, color=C["blue"], lw=1.25, alpha=0.9, label="robot speed")
+        speed_max_values.append(float(np.nanpercentile(robot_values, 98)))
+    if speed_max_values:
+        speed_ax.set_ylim(0, max(max(speed_max_values) * 1.25, 1.0))
+        speed_ax.legend(frameon=False, loc="upper right", fontsize=7, ncol=2)
 
     for event in events:
         et = event["time"]
@@ -606,8 +657,8 @@ def plot_dynamics(fig, slot, ts, zpd_low, zpd_high, events):
     ax.spines[["top", "right"]].set_visible(False)
 
     speed_ax.set_xlabel("time (s)")
-    speed_ax.set_ylabel("hand speed\n(cm/s)", color=C["orange"])
-    speed_ax.tick_params(axis="y", labelcolor=C["orange"], length=2, pad=1, labelsize=7)
+    speed_ax.set_ylabel("speed\n(cm/s)")
+    speed_ax.tick_params(axis="y", length=2, pad=1, labelsize=7)
     speed_ax.spines[["top", "right"]].set_visible(False)
 
 
@@ -644,10 +695,13 @@ def main():
     summary = load_json(rep_dir / "summary.json")
     zpd_low, zpd_high = choose_zpd(args, metadata, summary)
 
-    events = select_key_events(ts, zpd_low, zpd_high)
+    if args.event_times:
+        events = select_manual_events(ts, zpd_low, zpd_high, args.event_times, args.event_labels)
+    else:
+        events = select_key_events(ts, zpd_low, zpd_high)
 
     fig = plt.figure(figsize=(7.45, 4.35), dpi=450)
-    gs = fig.add_gridspec(2, 1, left=0.07, right=0.988, top=0.90, bottom=0.12, hspace=0.36, height_ratios=[1.24, 1.22])
+    gs = fig.add_gridspec(2, 1, left=0.07, right=0.988, top=0.90, bottom=0.12, hspace=0.12, height_ratios=[0.98, 1.34])
     fig.suptitle("Zero-shot physical deployment of the simulation-trained policy", fontsize=11, fontweight="bold", y=0.984)
 
     plot_event_storyboard(fig, gs[0, 0], rep_dir, ts, metadata, events)

@@ -33,12 +33,10 @@ for path in [REPO_ROOT, SCRIPT_DIR, TRAINING_SRC]:
 
 W_ENV = 15.0
 H_ENV = 10.0
-DEFAULT_CONTROL_FREQ = 10
+DEFAULT_CONTROL_FREQ = 100
 RX_C, RY_C, RZ_C,Z= 0.107, 0.049, 4.747,0.114
 DEFAULT_STRIDE = 0.6
-DEFAULT_MAX_SAFE_STRIDE = 0.4
-DEFAULT_MOVEL_SPEED = 0.04
-DEFAULT_MOVEL_ACCELERATION = 0.08
+DEFAULT_MAX_SAFE_STRIDE = 0.6
 OBS_SCALAR_DIM = 12
 MOTION_HISTORY_CHANNELS = 2
 INTERACTION_HISTORY_CHANNELS = 8
@@ -235,7 +233,7 @@ def find_default_policy():
 
 def parse_args():
     default_policy = find_default_policy()
-    parser = argparse.ArgumentParser(description="Record one real-world chase rollout with point-to-point moveL control.")
+    parser = argparse.ArgumentParser(description="Record one real-world chase rollout with direct measured-position control.")
     parser.add_argument("--model", "--policy", dest="model", default=str(default_policy) if default_policy else None, help="PPO robot policy .zip. If omitted, the script uses the default league robot model.")
     parser.add_argument("--vision-model", default=str(DEFAULT_VISION_MODEL), help=argparse.SUPPRESS)
     parser.add_argument("--out-dir", default=str(REPO_ROOT / "data" / "deployment_rollouts"), help=argparse.SUPPRESS)
@@ -247,8 +245,6 @@ def parse_args():
     parser.add_argument("--control-hz", type=float, default=DEFAULT_CONTROL_FREQ, help=argparse.SUPPRESS)
     parser.add_argument("--stride", type=float, default=DEFAULT_STRIDE, help=argparse.SUPPRESS)
     parser.add_argument("--max-step", type=float, default=DEFAULT_MAX_SAFE_STRIDE, help=argparse.SUPPRESS)
-    parser.add_argument("--movel-speed", type=float, default=DEFAULT_MOVEL_SPEED, help=argparse.SUPPRESS)
-    parser.add_argument("--movel-acceleration", type=float, default=DEFAULT_MOVEL_ACCELERATION, help=argparse.SUPPRESS)
     parser.add_argument("--robot-ip", default="192.168.1.2", help=argparse.SUPPRESS)
     parser.add_argument("--camera", type=int, default=0, help=argparse.SUPPRESS)
     parser.add_argument("--camera-width", type=int, default=2592, help=argparse.SUPPRESS)
@@ -379,9 +375,7 @@ def main():
             "history_channels": int(history_channels),
             "stride_cm": float(args.stride),
             "max_safe_step_cm": float(args.max_step),
-            "movel_speed_m_s": float(args.movel_speed),
-            "movel_acceleration_m_s2": float(args.movel_acceleration),
-            "control_mode": "point_to_point_movel_measured_robot_position",
+            "control_mode": "direct_measured_robot_position",
             "virtual_target_control": False,
             "stop_on_catch": bool(args.stop_on_catch),
             "catch_distance_cm": float(args.catch_distance),
@@ -512,12 +506,8 @@ def main():
 
             target_position_world = cali.pixel_to_world(target_pixel.astype(int))
             target_pose = [target_position_world[0], target_position_world[1], Z, RX_C, RY_C, RZ_C]
-            robot_control.rtde_c.moveL(
-                target_pose,
-                float(args.movel_speed),
-                float(args.movel_acceleration),
-                asynchronous=False,
-            )
+            safe_dt = float(np.clip(control_dt_s or (1.0 / args.control_hz), 0.01, 0.2))
+            robot_control.servo_robot(target_pose, dt=safe_dt)
             last_action = action.copy()
 
             task_finished = bool(args.stop_on_catch and distance_cm < args.catch_distance)

@@ -1,23 +1,17 @@
-"""Final comparison evaluator for scripted-only, single-hand, and league robots.
-
-Compares:
-- Baseline A: robot trained against scripted hand only
-- Baseline B: robot trained against one frozen learned hand
-- PFSP/League: robot trained with iterative league sampling
-
-Default paths target the current league run. Use command-line arguments to replace
-any model path or learned-hand test set.
-"""
+"""Repeated comparison evaluator for scripted-only, single-H1, and league robots."""
 
 import argparse
 import csv
 import json
 import os
+import random
 import sys
 import time
 from dataclasses import asdict, dataclass
+
 import numpy as np
 import pygame
+import torch
 from stable_baselines3 import PPO
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -29,32 +23,84 @@ from src.renderer import render_aesthetic
 
 DEFAULT_BASE_DIR = r"C:\Users\admin\Desktop\research\RL\logs\league_paper_gru_multistep_aux_pfsp_window_20iter"
 
-ZPD_MIN = 3.5
-ZPD_MAX = 5.5
+
+@dataclass
+class EpisodeRecord:
+    trial_index: int
+    trial_seed: int
+    episode_index: int
+    episode_seed: int
+    completed: bool
+    reward: float
+    tiz: float
+    zpd_coverage: float
+    episode_length: int
+    caught: bool
+    too_close_rate: float
+    too_far_rate: float
+    avg_distance: float
+    done_reason: str
 
 
 @dataclass
-class EvalMetrics:
+class TrialMetrics:
+    trial_index: int
+    trial_seed: int
+    requested_episodes: int
+    completed_episodes: int
+    is_complete: bool
+    reward_mean: float | None
+    reward_sample_variance: float | None
+    reward_sample_std: float | None
+    tiz_mean: float | None
+    tiz_sample_variance: float | None
+    tiz_sample_std: float | None
+    zpd_coverage_mean: float | None
+    zpd_coverage_sample_variance: float | None
+    zpd_coverage_sample_std: float | None
+    episode_length_mean: float | None
+    episode_length_sample_variance: float | None
+    episode_length_sample_std: float | None
+    catch_rate: float | None
+    too_close_rate: float | None
+    too_far_rate: float | None
+    avg_distance_mean: float | None
+    avg_distance_sample_variance: float | None
+    avg_distance_sample_std: float | None
+    episodes: list[EpisodeRecord]
+
+
+@dataclass
+class EvaluationSummary:
     robot_name: str
     robot_path: str
     test_name: str
     test_type: str
     hand_path: str | None
-    episodes: int
+    trials_requested: int
+    trials_completed: int
+    episodes_per_trial: int
     max_steps: int
-    reward_mean: float
-    reward_std: float
-    tis_mean: float
-    tis_std: float
-    zpd_coverage_mean: float
-    zpd_coverage_std: float
-    episode_length_mean: float
-    episode_length_std: float
-    catch_rate: float
-    too_close_rate: float
-    too_far_rate: float
-    avg_distance_mean: float
-    avg_distance_std: float
+    base_seed: int
+    reward_mean: float | None
+    reward_sample_variance: float | None
+    reward_sample_std: float | None
+    tiz_mean: float | None
+    tiz_sample_variance: float | None
+    tiz_sample_std: float | None
+    zpd_coverage_mean: float | None
+    zpd_coverage_sample_variance: float | None
+    zpd_coverage_sample_std: float | None
+    episode_length_mean: float | None
+    episode_length_sample_variance: float | None
+    episode_length_sample_std: float | None
+    catch_rate: float | None
+    too_close_rate: float | None
+    too_far_rate: float | None
+    avg_distance_mean: float | None
+    avg_distance_sample_variance: float | None
+    avg_distance_sample_std: float | None
+    trials: list[TrialMetrics]
 
 
 def learned_hand_path(base_dir: str, generation: int):
@@ -80,16 +126,232 @@ def make_env(robot_model: PPO, hand_model: PPO | None, history_length: int, scri
     return env
 
 
+def sample_stats(values):
+    arr = np.asarray([value for value in values if value is not None], dtype=np.float64)
+    if arr.size == 0:
+        return None, None, None
+    mean = float(np.mean(arr))
+    if arr.size < 2:
+        return mean, None, None
+    variance = float(np.var(arr, ddof=1))
+    return mean, variance, float(np.sqrt(variance))
+
+
+def seed_everything(seed: int):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def spawn_seed_plan(base_seed: int, trials: int, episodes_per_trial: int):
+    trial_sequences = np.random.SeedSequence(base_seed).spawn(trials)
+    plan = []
+    for trial_sequence in trial_sequences:
+        trial_seed = int(trial_sequence.generate_state(1, dtype=np.uint32)[0])
+        episode_sequences = trial_sequence.spawn(episodes_per_trial)
+        episode_seeds = [
+            int(sequence.generate_state(1, dtype=np.uint32)[0])
+            for sequence in episode_sequences
+        ]
+        plan.append((trial_seed, episode_seeds))
+    return plan
+
+
+def build_episode_record(
+    trial_index: int,
+    trial_seed: int,
+    episode_index: int,
+    episode_seed: int,
+    total_reward: float,
+    distances: list[float],
+    done_reason: str,
+    zpd_min: float,
+    zpd_max: float,
+    max_steps: int,
+):
+    dist_arr = np.asarray(distances, dtype=np.float32)
+    episode_length = len(distances)
+    in_zpd = (
+        (dist_arr >= zpd_min) & (dist_arr <= zpd_max)
+        if episode_length
+        else np.asarray([], dtype=bool)
+    )
+    return EpisodeRecord(
+        trial_index=trial_index,
+        trial_seed=trial_seed,
+        episode_index=episode_index,
+        episode_seed=episode_seed,
+        completed=True,
+        reward=float(total_reward),
+        tiz=float(np.sum(in_zpd) / max_steps) if episode_length else 0.0,
+        zpd_coverage=float(np.mean(in_zpd)) if episode_length else 0.0,
+        episode_length=episode_length,
+        caught=done_reason == "Robot Caught",
+        too_close_rate=float(np.mean(dist_arr < zpd_min)) if episode_length else 0.0,
+        too_far_rate=float(np.mean(dist_arr > zpd_max)) if episode_length else 0.0,
+        avg_distance=float(np.mean(dist_arr)) if episode_length else 0.0,
+        done_reason=done_reason,
+    )
+
+
+def summarize_trial(
+    trial_index: int,
+    trial_seed: int,
+    requested_episodes: int,
+    episodes: list[EpisodeRecord],
+):
+    reward_mean, reward_variance, reward_std = sample_stats([item.reward for item in episodes])
+    tiz_mean, tiz_variance, tiz_std = sample_stats([item.tiz for item in episodes])
+    zpd_mean, zpd_variance, zpd_std = sample_stats([item.zpd_coverage for item in episodes])
+    length_mean, length_variance, length_std = sample_stats([item.episode_length for item in episodes])
+    distance_mean, distance_variance, distance_std = sample_stats([item.avg_distance for item in episodes])
+    return TrialMetrics(
+        trial_index=trial_index,
+        trial_seed=trial_seed,
+        requested_episodes=requested_episodes,
+        completed_episodes=len(episodes),
+        is_complete=len(episodes) == requested_episodes,
+        reward_mean=reward_mean,
+        reward_sample_variance=reward_variance,
+        reward_sample_std=reward_std,
+        tiz_mean=tiz_mean,
+        tiz_sample_variance=tiz_variance,
+        tiz_sample_std=tiz_std,
+        zpd_coverage_mean=zpd_mean,
+        zpd_coverage_sample_variance=zpd_variance,
+        zpd_coverage_sample_std=zpd_std,
+        episode_length_mean=length_mean,
+        episode_length_sample_variance=length_variance,
+        episode_length_sample_std=length_std,
+        catch_rate=float(np.mean([item.caught for item in episodes])) if episodes else None,
+        too_close_rate=float(np.mean([item.too_close_rate for item in episodes])) if episodes else None,
+        too_far_rate=float(np.mean([item.too_far_rate for item in episodes])) if episodes else None,
+        avg_distance_mean=distance_mean,
+        avg_distance_sample_variance=distance_variance,
+        avg_distance_sample_std=distance_std,
+        episodes=episodes,
+    )
+
+
+def summarize_evaluation(
+    robot_name: str,
+    robot_path: str,
+    test_name: str,
+    test_type: str,
+    hand_path: str | None,
+    trials_requested: int,
+    episodes_per_trial: int,
+    max_steps: int,
+    base_seed: int,
+    trials: list[TrialMetrics],
+):
+    completed = [trial for trial in trials if trial.is_complete]
+    reward_mean, reward_variance, reward_std = sample_stats([trial.reward_mean for trial in completed])
+    tiz_mean, tiz_variance, tiz_std = sample_stats([trial.tiz_mean for trial in completed])
+    zpd_mean, zpd_variance, zpd_std = sample_stats([trial.zpd_coverage_mean for trial in completed])
+    length_mean, length_variance, length_std = sample_stats([trial.episode_length_mean for trial in completed])
+    distance_mean, distance_variance, distance_std = sample_stats([trial.avg_distance_mean for trial in completed])
+    return EvaluationSummary(
+        robot_name=robot_name,
+        robot_path=robot_path,
+        test_name=test_name,
+        test_type=test_type,
+        hand_path=hand_path,
+        trials_requested=trials_requested,
+        trials_completed=len(completed),
+        episodes_per_trial=episodes_per_trial,
+        max_steps=max_steps,
+        base_seed=base_seed,
+        reward_mean=reward_mean,
+        reward_sample_variance=reward_variance,
+        reward_sample_std=reward_std,
+        tiz_mean=tiz_mean,
+        tiz_sample_variance=tiz_variance,
+        tiz_sample_std=tiz_std,
+        zpd_coverage_mean=zpd_mean,
+        zpd_coverage_sample_variance=zpd_variance,
+        zpd_coverage_sample_std=zpd_std,
+        episode_length_mean=length_mean,
+        episode_length_sample_variance=length_variance,
+        episode_length_sample_std=length_std,
+        catch_rate=float(np.mean([trial.catch_rate for trial in completed])) if completed else None,
+        too_close_rate=float(np.mean([trial.too_close_rate for trial in completed])) if completed else None,
+        too_far_rate=float(np.mean([trial.too_far_rate for trial in completed])) if completed else None,
+        avg_distance_mean=distance_mean,
+        avg_distance_sample_variance=distance_variance,
+        avg_distance_sample_std=distance_std,
+        trials=trials,
+    )
+
+
+def run_automatic_trial(
+    robot_model: PPO,
+    hand_model: PPO | None,
+    test_type: str,
+    history_length: int,
+    max_steps: int,
+    trial_index: int,
+    trial_seed: int,
+    episode_seeds: list[int],
+):
+    env = make_env(
+        robot_model=robot_model,
+        hand_model=hand_model,
+        history_length=history_length,
+        scripted_prob=0.0 if test_type == "learned" else 1.0,
+    )
+    env.max_steps = max_steps
+    episodes = []
+    try:
+        for episode_index, episode_seed in enumerate(episode_seeds):
+            seed_everything(episode_seed)
+            obs, _ = env.reset(seed=episode_seed)
+            terminated = False
+            truncated = False
+            total_reward = 0.0
+            distances = []
+            done_reason = ""
+
+            while not (terminated or truncated):
+                action, _ = robot_model.predict(obs, deterministic=True)
+                obs, reward, terminated, truncated, info = env.step(action)
+                total_reward += float(reward)
+                distances.append(float(info.get("dist", 0.0)))
+                done_reason = str(info.get("done_reason", ""))
+
+            episodes.append(
+                build_episode_record(
+                    trial_index=trial_index,
+                    trial_seed=trial_seed,
+                    episode_index=episode_index,
+                    episode_seed=episode_seed,
+                    total_reward=total_reward,
+                    distances=distances,
+                    done_reason=done_reason,
+                    zpd_min=float(env.zpd_min),
+                    zpd_max=float(env.zpd_max),
+                    max_steps=max_steps,
+                )
+            )
+    finally:
+        env.close()
+
+    return summarize_trial(trial_index, trial_seed, len(episode_seeds), episodes)
+
+
 def evaluate_robot_on_test(
     robot_name: str,
     robot_path: str,
     test_name: str,
     test_type: str,
     hand_path: str | None,
-    episodes: int,
+    trials: int,
+    episodes_per_trial: int,
     max_steps: int,
     history_length: int,
-    seed: int,
+    base_seed: int,
 ):
     robot_model = PPO.load(robot_path, verbose=0)
     hand_model = None
@@ -100,90 +362,53 @@ def evaluate_robot_on_test(
             verbose=0,
         )
 
-    env = make_env(
-        robot_model=robot_model,
-        hand_model=hand_model,
-        history_length=history_length,
-        scripted_prob=0.0 if test_type == "learned" else 1.0,
-    )
-    env.max_steps = max_steps
+    trial_results = []
+    for trial_index, (trial_seed, episode_seeds) in enumerate(
+        spawn_seed_plan(base_seed, trials, episodes_per_trial)
+    ):
+        trial_result = run_automatic_trial(
+            robot_model=robot_model,
+            hand_model=hand_model,
+            test_type=test_type,
+            history_length=history_length,
+            max_steps=max_steps,
+            trial_index=trial_index,
+            trial_seed=trial_seed,
+            episode_seeds=episode_seeds,
+        )
+        trial_results.append(trial_result)
+        print(
+            f"  Trial {trial_index + 1}/{trials}: "
+            f"TIZ={trial_result.tiz_mean:.3f} | Len={trial_result.episode_length_mean:.1f}"
+        )
 
-    rewards = []
-    tis_scores = []
-    zpd_coverages = []
-    episode_lengths = []
-    catch_flags = []
-    too_close_rates = []
-    too_far_rates = []
-    avg_distances = []
-
-    for ep in range(episodes):
-        np.random.seed(seed + ep)
-        obs, _ = env.reset(seed=seed + ep)
-
-        terminated = False
-        truncated = False
-        total_reward = 0.0
-        distances = []
-        done_reason = ""
-
-        while not (terminated or truncated):
-            action, _ = robot_model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, info = env.step(action)
-            total_reward += float(reward)
-            distances.append(float(info.get("dist", 0.0)))
-            done_reason = str(info.get("done_reason", ""))
-
-        dist_arr = np.asarray(distances, dtype=np.float32)
-        episode_len = len(distances)
-        zpd_min = float(env.zpd_min)
-        zpd_max = float(env.zpd_max)
-        in_zpd = (dist_arr >= zpd_min) & (dist_arr <= zpd_max) if episode_len else np.asarray([], dtype=bool)
-        rewards.append(total_reward)
-        tis_scores.append(float(np.sum(in_zpd) / max_steps) if episode_len else 0.0)
-        zpd_coverages.append(float(np.mean(in_zpd)) if episode_len else 0.0)
-        episode_lengths.append(episode_len)
-        catch_flags.append(done_reason == "Robot Caught")
-        too_close_rates.append(float(np.mean(dist_arr < zpd_min)) if episode_len else 0.0)
-        too_far_rates.append(float(np.mean(dist_arr > zpd_max)) if episode_len else 0.0)
-        avg_distances.append(float(np.mean(dist_arr)) if episode_len else 0.0)
-
-    env.close()
-
-    return EvalMetrics(
+    return summarize_evaluation(
         robot_name=robot_name,
         robot_path=robot_path,
         test_name=test_name,
         test_type=test_type,
         hand_path=hand_path,
-        episodes=episodes,
+        trials_requested=trials,
+        episodes_per_trial=episodes_per_trial,
         max_steps=max_steps,
-        reward_mean=float(np.mean(rewards)),
-        reward_std=float(np.std(rewards)),
-        tis_mean=float(np.mean(tis_scores)),
-        tis_std=float(np.std(tis_scores)),
-        zpd_coverage_mean=float(np.mean(zpd_coverages)),
-        zpd_coverage_std=float(np.std(zpd_coverages)),
-        episode_length_mean=float(np.mean(episode_lengths)),
-        episode_length_std=float(np.std(episode_lengths)),
-        catch_rate=float(np.mean(catch_flags)),
-        too_close_rate=float(np.mean(too_close_rates)),
-        too_far_rate=float(np.mean(too_far_rates)),
-        avg_distance_mean=float(np.mean(avg_distances)),
-        avg_distance_std=float(np.std(avg_distances)),
+        base_seed=base_seed,
+        trials=trial_results,
     )
 
 
-def run_mouse_hand_test(
+def run_mouse_trial(
     robot_name: str,
-    robot_path: str,
-    episodes: int,
-    max_steps: int,
+    robot_model: PPO,
     history_length: int,
-    seed: int,
+    max_steps: int,
     fps: int,
+    trial_index: int,
+    trial_seed: int,
+    episode_seeds: list[int],
+    screen,
+    clock,
+    font,
 ):
-    robot_model = PPO.load(robot_path, verbose=0)
     env = make_env(
         robot_model=robot_model,
         hand_model=None,
@@ -193,150 +418,207 @@ def run_mouse_hand_test(
     env.max_steps = max_steps
     env.random_noise = False
     env.distance_threshold_collision = 1.5
-    env.stride_hand = 0.3
-    env.stride_robot = 0.6
-
-    pygame.init()
-    width_px = int(env.grid_size * env.cell_size * 1.5)
-    height_px = int(env.grid_size * env.cell_size)
-    screen = pygame.display.set_mode((width_px, height_px))
-    clock = pygame.time.Clock()
-    font = pygame.font.SysFont("arial", 18)
 
     current_mouse_move = {"value": np.zeros(2, dtype=np.float32)}
     original_resolve_hand_move = env._resolve_hand_move
     env._resolve_hand_move = lambda action: current_mouse_move["value"].copy()
-
-    rewards = []
-    tis_scores = []
-    zpd_coverages = []
-    episode_lengths = []
-    catch_flags = []
-    too_close_rates = []
-    too_far_rates = []
-    avg_distances = []
+    episodes = []
+    quit_requested = False
 
     try:
-        for ep in range(episodes):
-            np.random.seed(seed + ep)
-            obs, _ = env.reset(seed=seed + ep)
-            env.stride_hand = 0.5
-            env.stride_robot = 0.6
-            pygame.display.set_caption(f"Mouse hand test: {robot_name} | Episode {ep + 1}/{episodes}")
+        for episode_index, episode_seed in enumerate(episode_seeds):
+            while True:
+                seed_everything(episode_seed)
+                obs, _ = env.reset(seed=episode_seed)
+                env.stride_hand = 0.5
+                env.stride_robot = 0.6
+                pygame.display.set_caption(
+                    f"Mouse hand test: {robot_name} | Trial {trial_index + 1} | "
+                    f"Episode {episode_index + 1}/{len(episode_seeds)}"
+                )
 
-            terminated = False
-            truncated = False
-            quit_requested = False
-            total_reward = 0.0
-            distances = []
-            done_reason = ""
-
-            print(f"\nMouse hand episode {ep + 1}/{episodes}: control the HAND with the mouse. Press Q to quit, R to restart episode.")
-
-            while not (terminated or truncated or quit_requested):
+                terminated = False
+                truncated = False
                 restart_requested = False
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        quit_requested = True
-                    elif event.type == pygame.KEYDOWN:
-                        if event.key == pygame.K_q:
+                total_reward = 0.0
+                distances = []
+                done_reason = ""
+
+                print(
+                    f"\nMouse trial {trial_index + 1}, episode {episode_index + 1}/{len(episode_seeds)}. "
+                    "Press Q to quit or R to restart the episode."
+                )
+
+                while not (terminated or truncated or quit_requested or restart_requested):
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
                             quit_requested = True
-                        elif event.key == pygame.K_r:
-                            restart_requested = True
-                if restart_requested:
+                        elif event.type == pygame.KEYDOWN:
+                            if event.key == pygame.K_q:
+                                quit_requested = True
+                            elif event.key == pygame.K_r:
+                                restart_requested = True
+
+                    if quit_requested or restart_requested:
+                        continue
+
+                    mouse_x, mouse_y = pygame.mouse.get_pos()
+                    target = np.array([
+                        np.clip(mouse_x / env.cell_size, env.margin, env.env_width - env.margin),
+                        np.clip(mouse_y / env.cell_size, env.margin, env.env_height - env.margin),
+                    ], dtype=np.float32)
+                    vec = target - env.hand_position
+                    distance_to_target = float(np.linalg.norm(vec))
+                    if distance_to_target > 1e-8:
+                        current_mouse_move["value"] = (
+                            vec / distance_to_target * min(distance_to_target, env.stride_hand)
+                        ).astype(np.float32)
+                    else:
+                        current_mouse_move["value"] = np.zeros(2, dtype=np.float32)
+
+                    action, _ = robot_model.predict(obs, deterministic=True)
+                    obs, reward, terminated, truncated, info = env.step(action)
+                    total_reward += float(reward)
+                    distances.append(float(info.get("dist", 0.0)))
+                    done_reason = str(info.get("done_reason", ""))
+
+                    render_aesthetic(
+                        env.robot_position,
+                        env.hand_position,
+                        env.fixed_point,
+                        env.trajectory_points,
+                        grid_size=env.grid_size,
+                        cell_size=env.cell_size,
+                        window=screen,
+                    )
+                    text = font.render(
+                        f"{robot_name} | trial {trial_index + 1} | "
+                        f"ep {episode_index + 1}/{len(episode_seeds)} | "
+                        f"dist {info.get('dist', 0):.2f} | step {len(distances)}/{max_steps}",
+                        True,
+                        (0, 0, 0),
+                    )
+                    screen.blit(text, (10, 10))
+                    pygame.display.flip()
+                    clock.tick(fps)
+
+                if quit_requested:
                     break
+                if restart_requested:
+                    print("  Episode restarted; the same episode seed will be reused.")
+                    continue
 
-                mouse_x, mouse_y = pygame.mouse.get_pos()
-                target = np.array([
-                    np.clip(mouse_x / env.cell_size, env.margin, env.env_width - env.margin),
-                    np.clip(mouse_y / env.cell_size, env.margin, env.env_height - env.margin),
-                ], dtype=np.float32)
-                vec = target - env.hand_position
-                dist = float(np.linalg.norm(vec))
-                if dist > 1e-8:
-                    current_mouse_move["value"] = (vec / dist * min(dist, env.stride_hand)).astype(np.float32)
-                else:
-                    current_mouse_move["value"] = np.zeros(2, dtype=np.float32)
-
-                action, _ = robot_model.predict(obs, deterministic=True)
-                obs, reward, terminated, truncated, info = env.step(action)
-                total_reward += float(reward)
-                distances.append(float(info.get("dist", 0.0)))
-                done_reason = str(info.get("done_reason", ""))
-
-                render_aesthetic(
-                    env.robot_position,
-                    env.hand_position,
-                    env.fixed_point,
-                    env.trajectory_points,
-                    grid_size=env.grid_size,
-                    cell_size=env.cell_size,
-                    window=screen,
+                episodes.append(
+                    build_episode_record(
+                        trial_index=trial_index,
+                        trial_seed=trial_seed,
+                        episode_index=episode_index,
+                        episode_seed=episode_seed,
+                        total_reward=total_reward,
+                        distances=distances,
+                        done_reason=done_reason,
+                        zpd_min=float(env.zpd_min),
+                        zpd_max=float(env.zpd_max),
+                        max_steps=max_steps,
+                    )
                 )
-                text = font.render(
-                    f"{robot_name} | ep {ep + 1}/{episodes} | dist {info.get('dist', 0):.2f} | step {len(distances)}/{max_steps}",
-                    True,
-                    (0, 0, 0),
-                )
-                screen.blit(text, (10, 10))
-                pygame.display.flip()
-                clock.tick(fps)
+                break
 
             if quit_requested:
                 break
-
-            dist_arr = np.asarray(distances, dtype=np.float32)
-            episode_len = len(distances)
-            zpd_min = float(env.zpd_min)
-            zpd_max = float(env.zpd_max)
-            in_zpd = (dist_arr >= zpd_min) & (dist_arr <= zpd_max) if episode_len else np.asarray([], dtype=bool)
-            rewards.append(total_reward)
-            tis_scores.append(float(np.sum(in_zpd) / max_steps) if episode_len else 0.0)
-            zpd_coverages.append(float(np.mean(in_zpd)) if episode_len else 0.0)
-            episode_lengths.append(episode_len)
-            catch_flags.append(done_reason == "Robot Caught")
-            too_close_rates.append(float(np.mean(dist_arr < zpd_min)) if episode_len else 0.0)
-            too_far_rates.append(float(np.mean(dist_arr > zpd_max)) if episode_len else 0.0)
-            avg_distances.append(float(np.mean(dist_arr)) if episode_len else 0.0)
     finally:
         env._resolve_hand_move = original_resolve_hand_move
         env.close()
+
+    return summarize_trial(trial_index, trial_seed, len(episode_seeds), episodes), quit_requested
+
+
+def wait_for_mouse_trial(screen, clock, font, robot_name: str, trial_index: int, trials: int):
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_q:
+                    return False
+                if event.key in {pygame.K_RETURN, pygame.K_SPACE}:
+                    return True
+
+        screen.fill((245, 247, 250))
+        lines = [
+            f"{robot_name}: mouse trial {trial_index + 1}/{trials}",
+            "Press Enter or Space to start; press Q to quit.",
+        ]
+        for line_index, line in enumerate(lines):
+            text = font.render(line, True, (0, 0, 0))
+            screen.blit(text, (30, 210 + line_index * 32))
+        pygame.display.flip()
+        clock.tick(30)
+
+
+def run_mouse_hand_test(
+    robot_name: str,
+    robot_path: str,
+    trials: int,
+    episodes_per_trial: int,
+    max_steps: int,
+    history_length: int,
+    base_seed: int,
+    fps: int,
+):
+    robot_model = PPO.load(robot_path, verbose=0)
+    pygame.init()
+    screen = pygame.display.set_mode((750, 500))
+    clock = pygame.time.Clock()
+    font = pygame.font.SysFont("arial", 18)
+    trial_results = []
+    quit_requested = False
+
+    try:
+        for trial_index, (trial_seed, episode_seeds) in enumerate(
+            spawn_seed_plan(base_seed, trials, episodes_per_trial)
+        ):
+            if not wait_for_mouse_trial(screen, clock, font, robot_name, trial_index, trials):
+                quit_requested = True
+                break
+            print(
+                f"\nStarting mouse trial {trial_index + 1}/{trials} for {robot_name} "
+                f"with {episodes_per_trial} episodes."
+            )
+            trial_result, quit_requested = run_mouse_trial(
+                robot_name=robot_name,
+                robot_model=robot_model,
+                history_length=history_length,
+                max_steps=max_steps,
+                fps=fps,
+                trial_index=trial_index,
+                trial_seed=trial_seed,
+                episode_seeds=episode_seeds,
+                screen=screen,
+                clock=clock,
+                font=font,
+            )
+            trial_results.append(trial_result)
+            status = "complete" if trial_result.is_complete else "incomplete"
+            print(f"  Mouse trial {trial_index + 1}: {status}")
+            if quit_requested:
+                break
+    finally:
         pygame.quit()
 
-    completed = len(episode_lengths)
-    if completed == 0:
-        completed = 1
-        rewards = [0.0]
-        tis_scores = [0.0]
-        zpd_coverages = [0.0]
-        episode_lengths = [0]
-        catch_flags = [False]
-        too_close_rates = [0.0]
-        too_far_rates = [0.0]
-        avg_distances = [0.0]
-
-    return EvalMetrics(
+    summary = summarize_evaluation(
         robot_name=robot_name,
         robot_path=robot_path,
         test_name="mouse_hand",
         test_type="mouse",
         hand_path=None,
-        episodes=completed,
+        trials_requested=trials,
+        episodes_per_trial=episodes_per_trial,
         max_steps=max_steps,
-        reward_mean=float(np.mean(rewards)),
-        reward_std=float(np.std(rewards)),
-        tis_mean=float(np.mean(tis_scores)),
-        tis_std=float(np.std(tis_scores)),
-        zpd_coverage_mean=float(np.mean(zpd_coverages)),
-        zpd_coverage_std=float(np.std(zpd_coverages)),
-        episode_length_mean=float(np.mean(episode_lengths)),
-        episode_length_std=float(np.std(episode_lengths)),
-        catch_rate=float(np.mean(catch_flags)),
-        too_close_rate=float(np.mean(too_close_rates)),
-        too_far_rate=float(np.mean(too_far_rates)),
-        avg_distance_mean=float(np.mean(avg_distances)),
-        avg_distance_std=float(np.std(avg_distances)),
+        base_seed=base_seed,
+        trials=trial_results,
     )
+    return summary, quit_requested
 
 
 def parse_generations(raw: str):
@@ -351,10 +633,9 @@ def build_tests(args):
         tests.append(("scripted_hand", "scripted", None))
     if args.test_set in {"agent", "learned", "all"}:
         generations = parse_generations(args.learned_hand_generations)
-        for gen in generations:
-            path = learned_hand_path(args.base_dir, gen)
-            name = "agent_hand" if len(generations) == 1 else f"agent_H{gen}"
-            tests.append((name, "learned", path))
+        for generation in generations:
+            path = learned_hand_path(args.base_dir, generation)
+            tests.append((f"agent_H{generation}", "learned", path))
     if args.test_set == "mouse":
         tests.append(("mouse_hand", "mouse", None))
     return tests
@@ -363,7 +644,7 @@ def build_tests(args):
 def default_robot_paths(base_dir: str):
     return {
         "scripted_only": os.path.join(base_dir, "baselines", "scripted_only_5m", "robot", "best_model.zip"),
-        "single_h10": os.path.join(base_dir, "baselines", "single_hand_h1_5m", "robot", "best_model.zip"),
+        "single_h1": os.path.join(base_dir, "baselines", "single_hand_h1_5m", "robot", "best_model.zip"),
         "league": os.path.join(base_dir, "iteration_10", "robot", "robot", "best_model.zip"),
     }
 
@@ -372,77 +653,151 @@ def build_robots(args):
     defaults = default_robot_paths(args.base_dir)
     candidates = {
         "scripted_only": args.scripted_only_path or defaults["scripted_only"],
-        "single_h10": args.single_hand_path or defaults["single_h10"],
+        "single_h1": args.single_hand_path or defaults["single_h1"],
         "league": args.league_path or defaults["league"],
     }
-    selected = candidates if args.robot == "all" else {args.robot: candidates[args.robot]}
-    return selected
+    return candidates if args.robot == "all" else {args.robot: candidates[args.robot]}
 
 
-def save_results(results: list[EvalMetrics], output_dir: str):
-    os.makedirs(output_dir, exist_ok=True)
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    json_path = os.path.join(output_dir, f"comparison_results_{timestamp}.json")
-    csv_path = os.path.join(output_dir, f"comparison_results_{timestamp}.csv")
+def summary_row(result: EvaluationSummary):
+    row = asdict(result)
+    row.pop("trials")
+    return row
 
-    rows = [asdict(r) for r in results]
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump(rows, f, indent=2)
 
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+def trial_rows(results: list[EvaluationSummary]):
+    rows = []
+    for result in results:
+        metadata = {
+            "robot_name": result.robot_name,
+            "robot_path": result.robot_path,
+            "test_name": result.test_name,
+            "test_type": result.test_type,
+            "hand_path": result.hand_path,
+            "base_seed": result.base_seed,
+            "max_steps": result.max_steps,
+        }
+        for trial in result.trials:
+            row = asdict(trial)
+            row.pop("episodes")
+            rows.append({**metadata, **row})
+    return rows
+
+
+def episode_rows(results: list[EvaluationSummary]):
+    rows = []
+    for result in results:
+        metadata = {
+            "robot_name": result.robot_name,
+            "robot_path": result.robot_path,
+            "test_name": result.test_name,
+            "test_type": result.test_type,
+            "hand_path": result.hand_path,
+            "base_seed": result.base_seed,
+            "max_steps": result.max_steps,
+        }
+        for trial in result.trials:
+            for episode in trial.episodes:
+                rows.append({**metadata, **asdict(episode)})
+    return rows
+
+
+def write_csv(path: str, rows: list[dict]):
+    if not rows:
+        return
+    with open(path, "w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
 
-    print(f"\nSaved JSON: {json_path}")
-    print(f"Saved CSV:  {csv_path}")
+
+def save_results(results: list[EvaluationSummary], output_dir: str, configuration: dict):
+    os.makedirs(output_dir, exist_ok=True)
+    run_id = time.strftime("%Y%m%d_%H%M%S")
+    json_path = os.path.join(output_dir, f"comparison_results_{run_id}.json")
+    summary_path = os.path.join(output_dir, f"comparison_results_{run_id}.csv")
+    trials_path = os.path.join(output_dir, f"comparison_trials_{run_id}.csv")
+    episodes_path = os.path.join(output_dir, f"comparison_episodes_{run_id}.csv")
+
+    payload = {
+        "schema_version": 2,
+        "run_id": run_id,
+        "configuration": configuration,
+        "evaluations": [asdict(result) for result in results],
+    }
+    with open(json_path, "w", encoding="utf-8") as file:
+        json.dump(payload, file, indent=2)
+
+    write_csv(summary_path, [summary_row(result) for result in results])
+    write_csv(trials_path, trial_rows(results))
+    write_csv(episodes_path, episode_rows(results))
+
+    print(f"\nSaved JSON:    {json_path}")
+    print(f"Saved summary: {summary_path}")
+    print(f"Saved trials:  {trials_path}")
+    print(f"Saved episodes:{episodes_path}")
+    return {
+        "json": json_path,
+        "summary": summary_path,
+        "trials": trials_path,
+        "episodes": episodes_path,
+    }
 
 
-def print_summary(results: list[EvalMetrics]):
-    tests = []
-    robots = []
-    for item in results:
-        if item.test_name not in tests:
-            tests.append(item.test_name)
-        if item.robot_name not in robots:
-            robots.append(item.robot_name)
+def format_mean_std(mean: float | None, std: float | None, digits: int = 3):
+    if mean is None:
+        return "N/A"
+    if std is None:
+        return f"{mean:.{digits}f} +/- N/A"
+    return f"{mean:.{digits}f} +/- {std:.{digits}f}"
 
-    by_key = {(r.robot_name, r.test_name): r for r in results}
+
+def print_summary(results: list[EvaluationSummary]):
     print("\n" + "=" * 100)
-    print("FINAL POLICY COMPARISON: TIS / ZPD / Length / Catch")
+    print("FINAL POLICY COMPARISON: MEAN +/- SAMPLE SD ACROSS COMPLETE TRIAL MEANS")
     print("=" * 100)
-    print(f"{'Robot':<16}" + "".join(f"{test:>24}" for test in tests))
-    print("-" * 100)
-    for robot in robots:
-        row = f"{robot:<16}"
-        for test in tests:
-            r = by_key.get((robot, test))
-            if r is None:
-                row += f"{'N/A':>24}"
-            else:
-                cell = f"{r.tis_mean:.2f}/{r.zpd_coverage_mean:.2f}/{r.episode_length_mean:.0f}/{r.catch_rate:.0%}"
-                row += f"{cell:>24}"
-        print(row)
+    for result in results:
+        print(f"{result.robot_name} vs {result.test_name}")
+        print(
+            f"  TIZ:    {format_mean_std(result.tiz_mean, result.tiz_sample_std)} "
+            f"(variance={result.tiz_sample_variance})"
+        )
+        print(
+            f"  Length: {format_mean_std(result.episode_length_mean, result.episode_length_sample_std, 1)} "
+            f"(variance={result.episode_length_sample_variance})"
+        )
+        print(
+            f"  Complete trials: {result.trials_completed}/{result.trials_requested}; "
+            f"episodes per trial: {result.episodes_per_trial}"
+        )
     print("=" * 100)
-    print("Cell format: TIS / ZPD coverage / episode length / catch rate")
+    print("Episodes estimate each trial mean and are not treated as independent trial replications.")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate robot policies on scripted hand, agent hand, and mouse-hand tests.")
+    parser = argparse.ArgumentParser(
+        description="Evaluate robot policies over repeated independent trials."
+    )
     parser.add_argument("--base_dir", default=DEFAULT_BASE_DIR)
-    parser.add_argument("--robot", choices=["scripted_only", "single_h10", "league", "all"], default="all")
+    parser.add_argument("--robot", choices=["scripted_only", "single_h1", "league", "all"], default="all")
     parser.add_argument("--test_set", choices=["scripted", "agent", "learned", "mouse", "all"], default="all")
     parser.add_argument("--learned_hand_generations", default="1")
     parser.add_argument("--scripted_only_path", default=None)
     parser.add_argument("--single_hand_path", default=None)
     parser.add_argument("--league_path", default=None)
-    parser.add_argument("--episodes", type=int, default=100)
+    parser.add_argument("--trials", type=int, default=10)
+    parser.add_argument("--episodes_per_trial", type=int, default=100)
     parser.add_argument("--max_steps", type=int, default=100)
     parser.add_argument("--fps", type=int, default=20)
     parser.add_argument("--history_length", type=int, default=16)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--output", default=None)
     args = parser.parse_args()
+
+    if args.trials < 1:
+        raise ValueError("--trials must be at least 1.")
+    if args.episodes_per_trial < 1:
+        raise ValueError("--episodes_per_trial must be at least 1.")
     if args.output is None:
         args.output = os.path.join(args.base_dir, "comparison_tests")
 
@@ -452,6 +807,7 @@ def main():
         raise ValueError("No tests selected.")
 
     results = []
+    stop_requested = False
     for robot_name, robot_path in robots.items():
         if not os.path.exists(robot_path):
             print(f"[Skip] Missing robot {robot_name}: {robot_path}")
@@ -462,13 +818,14 @@ def main():
                 continue
             print(f"\nEvaluating {robot_name} vs {test_name}")
             if test_type == "mouse":
-                metrics = run_mouse_hand_test(
+                metrics, stop_requested = run_mouse_hand_test(
                     robot_name=robot_name,
                     robot_path=robot_path,
-                    episodes=args.episodes,
+                    trials=args.trials,
+                    episodes_per_trial=args.episodes_per_trial,
                     max_steps=args.max_steps,
                     history_length=args.history_length,
-                    seed=args.seed,
+                    base_seed=args.seed,
                     fps=args.fps,
                 )
             else:
@@ -478,22 +835,41 @@ def main():
                     test_name=test_name,
                     test_type=test_type,
                     hand_path=hand_path,
-                    episodes=args.episodes,
+                    trials=args.trials,
+                    episodes_per_trial=args.episodes_per_trial,
                     max_steps=args.max_steps,
                     history_length=args.history_length,
-                    seed=args.seed,
+                    base_seed=args.seed,
                 )
             results.append(metrics)
             print(
-                f"  TIS={metrics.tis_mean:.3f} | ZPD={metrics.zpd_coverage_mean:.3f} | "
-                f"Len={metrics.episode_length_mean:.1f} | Catch={metrics.catch_rate:.1%}"
+                f"  Across trials: TIZ={format_mean_std(metrics.tiz_mean, metrics.tiz_sample_std)} | "
+                f"Len={format_mean_std(metrics.episode_length_mean, metrics.episode_length_sample_std, 1)}"
             )
+            if stop_requested:
+                break
+        if stop_requested:
+            break
 
     if not results:
         print("No results generated.")
         return
 
-    save_results(results, args.output)
+    configuration = {
+        "base_dir": os.path.abspath(args.base_dir),
+        "base_seed": args.seed,
+        "seed_strategy": "numpy.SeedSequence.spawn with Python, NumPy, PyTorch, and Gym reset seeding",
+        "trials_requested": args.trials,
+        "episodes_per_trial": args.episodes_per_trial,
+        "max_steps": args.max_steps,
+        "history_length": args.history_length,
+        "learned_hand_generations": parse_generations(args.learned_hand_generations),
+        "robot_predict_deterministic": True,
+        "learned_hand_predict_deterministic": False,
+        "tiz_definition": "steps_in_zpd / max_steps",
+        "sample_variance_ddof": 1,
+    }
+    save_results(results, args.output, configuration)
     print_summary(results)
 
 

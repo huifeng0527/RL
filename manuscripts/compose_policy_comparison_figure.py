@@ -23,15 +23,15 @@ plt.rcParams.update({
 })
 
 
-ROBOT_ORDER = ["scripted_only", "single_h10", "league"]
+ROBOT_ORDER = ["scripted_only", "single_h1", "league"]
 ROBOT_LABELS = {
     "scripted_only": "Scripted-only",
-    "single_h10": "Single-hand",
+    "single_h1": "Single-hand",
     "league": "League",
 }
 COLORS = {
     "scripted_only": "#4C78A8",
-    "single_h10": "#F58518",
+    "single_h1": "#F58518",
     "league": "#54A24B",
 }
 
@@ -87,20 +87,22 @@ def summarize(rows: list[dict]) -> list[dict]:
         if not robot_rows:
             continue
         for group in groups:
-            vals = [f(r, "tis_mean") for r in robot_rows if group_name(r) == group]
-            zpd = [f(r, "zpd_coverage_mean") for r in robot_rows if group_name(r) == group]
-            close = [f(r, "too_close_rate") for r in robot_rows if group_name(r) == group]
-            far = [f(r, "too_far_rate") for r in robot_rows if group_name(r) == group]
-            if not vals:
+            group_rows = [r for r in robot_rows if group_name(r) == group]
+            valid_rows = [r for r in group_rows if np.isfinite(f(r, "tiz_mean"))]
+            if not valid_rows:
                 continue
+            vals = [f(r, "tiz_mean") for r in valid_rows]
+            zpd = [f(r, "zpd_coverage_mean") for r in valid_rows]
+            close = [f(r, "too_close_rate") for r in valid_rows]
+            far = [f(r, "too_far_rate") for r in valid_rows]
             summary.append({
                 "robot_name": robot,
                 "robot_label": ROBOT_LABELS.get(robot, robot),
                 "test_group": group,
                 "n_tests": len(vals),
-                "tis_mean": float(np.mean(vals)),
-                "tis_worst": float(np.min(vals)),
-                "tis_std": float(np.std(vals)),
+                "tiz_mean": float(np.mean(vals)),
+                "tiz_worst": float(np.min(vals)),
+                "tiz_std": float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0,
                 "zpd_coverage_mean": float(np.mean(zpd)),
                 "too_close_rate": float(np.mean(close)),
                 "too_far_rate": float(np.mean(far)),
@@ -175,9 +177,9 @@ def plot_failure_decomp(ax, summary: list[dict]):
 
 def make_figure(out_dir: Path, summary: list[dict], with_title: bool):
     fig, axes = plt.subplots(1, 3, figsize=(12.5, 3.9), dpi=300, constrained_layout=True)
-    plot_grouped_bars(axes[0], summary, "tis_mean", "Mean TIS", "Mean robustness", ylim=(0, 0.8))
+    plot_grouped_bars(axes[0], summary, "tiz_mean", "Mean TIZ", "Mean robustness", ylim=(0, 0.8))
     panel_label(axes[0], "a")
-    plot_grouped_bars(axes[1], summary, "tis_worst", "Worst-test TIS", "Worst-case robustness", ylim=(0, 0.8))
+    plot_grouped_bars(axes[1], summary, "tiz_worst", "Worst-test TIZ", "Worst-case robustness", ylim=(0, 0.8))
     panel_label(axes[1], "b")
     plot_failure_decomp(axes[2], summary)
     panel_label(axes[2], "c")

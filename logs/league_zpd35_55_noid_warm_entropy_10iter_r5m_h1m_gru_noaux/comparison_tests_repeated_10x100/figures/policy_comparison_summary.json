@@ -1,0 +1,74 @@
+[
+  {
+    "robot_name": "scripted_only",
+    "robot_label": "Scripted-only",
+    "test_group": "Scripted tests",
+    "n_tests": 1,
+    "tiz_mean": 0.3146,
+    "tiz_worst": 0.3146,
+    "tiz_std": 0.0,
+    "zpd_coverage_mean": 0.5473872584857916,
+    "too_close_rate": 0.38613707893612226,
+    "too_far_rate": 0.06647566257808614
+  },
+  {
+    "robot_name": "scripted_only",
+    "robot_label": "Scripted-only",
+    "test_group": "Learned-hand tests",
+    "n_tests": 1,
+    "tiz_mean": 0.20599999999999996,
+    "tiz_worst": 0.20599999999999996,
+    "tiz_std": 0.0,
+    "zpd_coverage_mean": 0.5845922267134697,
+    "too_close_rate": 0.28422658532270184,
+    "too_far_rate": 0.13118118796382855
+  },
+  {
+    "robot_name": "single_h1",
+    "robot_label": "Single-hand",
+    "test_group": "Scripted tests",
+    "n_tests": 1,
+    "tiz_mean": 0.11038,
+    "tiz_worst": 0.11038,
+    "tiz_std": 0.0,
+    "zpd_coverage_mean": 0.40360168666486124,
+    "too_close_rate": 0.498822669702219,
+    "too_far_rate": 0.0975756436329196
+  },
+  {
+    "robot_name": "single_h1",
+    "robot_label": "Single-hand",
+    "test_group": "Learned-hand tests",
+    "n_tests": 1,
+    "tiz_mean": 0.5123300000000001,
+    "tiz_worst": 0.5123300000000001,
+    "tiz_std": 0.0,
+    "zpd_coverage_mean": 0.6077657088920031,
+    "too_close_rate": 0.3481364721650059,
+    "too_far_rate": 0.04409781894299111
+  },
+  {
+    "robot_name": "league",
+    "robot_label": "League",
+    "test_group": "Scripted tests",
+    "n_tests": 1,
+    "tiz_mean": 0.35968000000000006,
+    "tiz_worst": 0.35968000000000006,
+    "tiz_std": 0.0,
+    "zpd_coverage_mean": 0.5549879782704399,
+    "too_close_rate": 0.378367542470075,
+    "too_far_rate": 0.06664447925948518
+  },
+  {
+    "robot_name": "league",
+    "robot_label": "League",
+    "test_group": "Learned-hand tests",
+    "n_tests": 1,
+    "tiz_mean": 0.44969000000000003,
+    "tiz_worst": 0.44969000000000003,
+    "tiz_std": 0.0,
+    "zpd_coverage_mean": 0.6641610607100807,
+    "too_close_rate": 0.25937805059939906,
+    "too_far_rate": 0.07646088869052012
+  }
+]
