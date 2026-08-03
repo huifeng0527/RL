@@ -1,0 +1,159 @@
+{
+  "schema_version": 2,
+  "run_id": "20260729_100232",
+  "configuration": {
+    "base_dir": "C:\\Users\\admin\\Desktop\\research\\RL\\logs\\league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux",
+    "base_seed": 2026,
+    "seed_strategy": "numpy.SeedSequence.spawn with Python, NumPy, PyTorch, and Gym reset seeding",
+    "trials_requested": 1,
+    "episodes_per_trial": 20,
+    "max_steps": 100,
+    "history_length": 16,
+    "learned_hand_generations": [
+      1
+    ],
+    "robot_predict_deterministic": true,
+    "learned_hand_predict_deterministic": false,
+    "tiz_definition": "steps_in_zpd / max_steps",
+    "sample_variance_ddof": 1,
+    "mouse_robot_order": [
+      "reactive_apf"
+    ],
+    "mouse_action_mapping": "component-wise action clipping to [-1, 1], then shared hand execution physics",
+    "mouse_collision_threshold": 2.0,
+    "mouse_stride_hand_range": [
+      0.3,
+      0.6
+    ],
+    "mouse_stride_robot_range": [
+      0.58,
+      0.62
+    ],
+    "mouse_settings_shared_across_robot_controllers": true
+  },
+  "evaluations": [
+    {
+      "robot_name": "reactive_apf",
+      "robot_path": "ReactiveAPFController(radial+tangent+boundary)",
+      "test_name": "mouse_hand",
+      "test_type": "mouse",
+      "hand_path": null,
+      "trials_requested": 1,
+      "trials_completed": 0,
+      "episodes_per_trial": 20,
+      "max_steps": 100,
+      "base_seed": 2026,
+      "reward_mean": null,
+      "reward_sample_variance": null,
+      "reward_sample_std": null,
+      "tiz_mean": null,
+      "tiz_sample_variance": null,
+      "tiz_sample_std": null,
+      "zpd_coverage_mean": null,
+      "zpd_coverage_sample_variance": null,
+      "zpd_coverage_sample_std": null,
+      "episode_length_mean": null,
+      "episode_length_sample_variance": null,
+      "episode_length_sample_std": null,
+      "catch_rate": null,
+      "too_close_rate": null,
+      "too_far_rate": null,
+      "avg_distance_mean": null,
+      "avg_distance_sample_variance": null,
+      "avg_distance_sample_std": null,
+      "trials": [
+        {
+          "trial_index": 0,
+          "trial_seed": 479243620,
+          "requested_episodes": 20,
+          "completed_episodes": 4,
+          "is_complete": false,
+          "reward_mean": -41.41658382665058,
+          "reward_sample_variance": 50.17182523148069,
+          "reward_sample_std": 7.08320727011999,
+          "tiz_mean": 0.09250000000000001,
+          "tiz_sample_variance": 0.0008916666666666668,
+          "tiz_sample_std": 0.029860788111948196,
+          "zpd_coverage_mean": 0.37406673181627814,
+          "zpd_coverage_sample_variance": 0.01148272915322715,
+          "zpd_coverage_sample_std": 0.10715749695297641,
+          "episode_length_mean": 24.75,
+          "episode_length_sample_variance": 17.583333333333332,
+          "episode_length_sample_std": 4.193248541803041,
+          "catch_rate": 1.0,
+          "too_close_rate": 0.34861859556051933,
+          "too_far_rate": 0.27731467262320253,
+          "avg_distance_mean": 4.654245615005493,
+          "avg_distance_sample_variance": 0.5268949313287976,
+          "avg_distance_sample_std": 0.7258752863466269,
+          "episodes": [
+            {
+              "trial_index": 0,
+              "trial_seed": 479243620,
+              "episode_index": 0,
+              "episode_seed": 1848137023,
+              "completed": true,
+              "reward": -42.846614183861746,
+              "tiz": 0.06,
+              "zpd_coverage": 0.3157894736842105,
+              "episode_length": 19,
+              "caught": true,
+              "too_close_rate": 0.42105263157894735,
+              "too_far_rate": 0.2631578947368421,
+              "avg_distance": 4.1400299072265625,
+              "done_reason": "Robot Caught"
+            },
+            {
+              "trial_index": 0,
+              "trial_seed": 479243620,
+              "episode_index": 1,
+              "episode_seed": 2684447528,
+              "completed": true,
+              "reward": -34.217969388422866,
+              "tiz": 0.13,
+              "zpd_coverage": 0.52,
+              "episode_length": 25,
+              "caught": true,
+              "too_close_rate": 0.24,
+              "too_far_rate": 0.24,
+              "avg_distance": 4.751401901245117,
+              "done_reason": "Robot Caught"
+            },
+            {
+              "trial_index": 0,
+              "trial_seed": 479243620,
+              "episode_index": 2,
+              "episode_seed": 2514023370,
+              "completed": true,
+              "reward": -37.975839982210935,
+              "tiz": 0.1,
+              "zpd_coverage": 0.38461538461538464,
+              "episode_length": 26,
+              "caught": true,
+              "too_close_rate": 0.4230769230769231,
+              "too_far_rate": 0.19230769230769232,
+              "avg_distance": 4.081795692443848,
+              "done_reason": "Robot Caught"
+            },
+            {
+              "trial_index": 0,
+              "trial_seed": 479243620,
+              "episode_index": 3,
+              "episode_seed": 6406368,
+              "completed": true,
+              "reward": -50.625911752106745,
+              "tiz": 0.08,
+              "zpd_coverage": 0.27586206896551724,
+              "episode_length": 29,
+              "caught": true,
+              "too_close_rate": 0.3103448275862069,
+              "too_far_rate": 0.41379310344827586,
+              "avg_distance": 5.643754959106445,
+              "done_reason": "Robot Caught"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

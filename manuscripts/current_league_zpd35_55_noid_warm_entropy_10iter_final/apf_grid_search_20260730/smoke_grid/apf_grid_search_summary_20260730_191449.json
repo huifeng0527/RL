@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "run_id": "20260730_191449",
+  "run_dir": "C:\\Users\\admin\\Desktop\\research\\RL\\logs\\league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux",
+  "base_seed": 2026,
+  "h1_path": "C:\\Users\\admin\\Desktop\\research\\RL\\logs\\league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux\\iteration_1\\hand\\hand\\best_model.zip",
+  "validation_trials": 1,
+  "validation_episodes_per_trial": 5,
+  "max_steps": 100,
+  "selection_metric": "maximize mean validation TIZ over scripted_hand and agent_H1",
+  "grid": {
+    "radial_gain": [
+      1.2
+    ],
+    "tangent_gain": [
+      0.3
+    ],
+    "boundary_gain": [
+      1.35
+    ],
+    "smoothing": [
+      0.1
+    ],
+    "boundary_band": 1.25,
+    "boundary_guard": 0.2
+  },
+  "selected_config": {
+    "radial_gain": 1.2,
+    "tangent_gain": 0.3,
+    "boundary_gain": 1.35,
+    "boundary_band": 1.25,
+    "boundary_guard": 0.2,
+    "smoothing": 0.1
+  },
+  "top_10": [
+    {
+      "rank_input_order": 1,
+      "radial_gain": 1.2,
+      "tangent_gain": 0.3,
+      "boundary_gain": 1.35,
+      "boundary_band": 1.25,
+      "boundary_guard": 0.2,
+      "smoothing": 0.1,
+      "score_mean_tiz": 0.11499999999999999,
+      "score_min_tiz": 0.05800000000000001,
+      "scripted_tiz_mean": 0.05800000000000001,
+      "scripted_tiz_std": 0.0,
+      "scripted_episode_length_mean": 12.8,
+      "scripted_episode_length_std": 0.0,
+      "scripted_catch_rate": 1.0,
+      "scripted_too_close_rate": 0.3760631525337408,
+      "scripted_too_far_rate": 0.17666921313980138,
+      "scripted_avg_distance_mean": 4.099610152281567,
+      "h1_tiz_mean": 0.172,
+      "h1_tiz_std": 0.0,
+      "h1_episode_length_mean": 33.8,
+      "h1_episode_length_std": 0.0,
+      "h1_catch_rate": 0.8,
+      "h1_too_close_rate": 0.44633986928104574,
+      "h1_too_far_rate": 0.0737516339869281,
+      "h1_avg_distance_mean": 3.747170916788771
+    }
+  ],
+  "grid_results": [
+    {
+      "rank_input_order": 1,
+      "radial_gain": 1.2,
+      "tangent_gain": 0.3,
+      "boundary_gain": 1.35,
+      "boundary_band": 1.25,
+      "boundary_guard": 0.2,
+      "smoothing": 0.1,
+      "score_mean_tiz": 0.11499999999999999,
+      "score_min_tiz": 0.05800000000000001,
+      "scripted_tiz_mean": 0.05800000000000001,
+      "scripted_tiz_std": 0.0,
+      "scripted_episode_length_mean": 12.8,
+      "scripted_episode_length_std": 0.0,
+      "scripted_catch_rate": 1.0,
+      "scripted_too_close_rate": 0.3760631525337408,
+      "scripted_too_far_rate": 0.17666921313980138,
+      "scripted_avg_distance_mean": 4.099610152281567,
+      "h1_tiz_mean": 0.172,
+      "h1_tiz_std": 0.0,
+      "h1_episode_length_mean": 33.8,
+      "h1_episode_length_std": 0.0,
+      "h1_catch_rate": 0.8,
+      "h1_too_close_rate": 0.44633986928104574,
+      "h1_too_far_rate": 0.0737516339869281,
+      "h1_avg_distance_mean": 3.747170916788771
+    }
+  ],
+  "final_results": null
+}

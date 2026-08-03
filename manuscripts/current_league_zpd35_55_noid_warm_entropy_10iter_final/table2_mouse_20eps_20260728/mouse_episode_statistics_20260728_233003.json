@@ -1,0 +1,44 @@
+{
+  "source": "C:\\Users\\admin\\Desktop\\research\\RL\\manuscripts\\current_league_zpd35_55_noid_warm_entropy_10iter_final\\table2_mouse_20eps_20260728\\comparison_episodes_20260728_233003.csv",
+  "statistics": [
+    {
+      "robot_name": "scripted_only",
+      "episodes": 20,
+      "tiz_mean": 0.22900000000000004,
+      "tiz_sample_variance": 0.03949368421052632,
+      "tiz_sample_sd": 0.1987301794155239,
+      "tiz_95ci_halfwidth": 0.0870973413093528,
+      "episode_length_mean": 43.3,
+      "episode_length_sample_variance": 1043.0631578947366,
+      "episode_length_sample_sd": 32.29648832140635,
+      "episode_length_95ci_halfwidth": 14.154560090953764,
+      "catch_rate": 0.8
+    },
+    {
+      "robot_name": "single_h1",
+      "episodes": 20,
+      "tiz_mean": 0.2875,
+      "tiz_sample_variance": 0.05986184210526315,
+      "tiz_sample_sd": 0.24466679812607012,
+      "tiz_95ci_halfwidth": 0.10722995211963374,
+      "episode_length_mean": 54.55,
+      "episode_length_sample_variance": 1358.4710526315787,
+      "episode_length_sample_sd": 36.8574422963881,
+      "episode_length_95ci_halfwidth": 16.15348630449395,
+      "catch_rate": 0.7
+    },
+    {
+      "robot_name": "league",
+      "episodes": 20,
+      "tiz_mean": 0.518,
+      "tiz_sample_variance": 0.09645894736842106,
+      "tiz_sample_sd": 0.31057840776271145,
+      "tiz_95ci_halfwidth": 0.13611698869180994,
+      "episode_length_mean": 71.3,
+      "episode_length_sample_variance": 1162.2210526315787,
+      "episode_length_sample_sd": 34.091363314358354,
+      "episode_length_95ci_halfwidth": 14.94119874004337,
+      "catch_rate": 0.5
+    }
+  ]
+}

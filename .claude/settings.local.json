@@ -18,7 +18,8 @@
       "Skill(update-config)",
       "Bash(git commit *)",
       "Bash(xargs grep *)",
-      "Bash(where npm *)"
+      "Bash(where npm *)",
+      "mcp__MiniMax__understand_image"
     ]
   }
 }

@@ -38,17 +38,15 @@ def scalar_input_dim(observation_space: gym.spaces.Box):
 class MLPOnlyExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: gym.spaces.Box):
         super().__init__(observation_space, features_dim=64)
-        # 只取前 16 维的标量数据，完全无视后面的历史数据
         self.net = nn.Sequential(
-            nn.Linear(scalar_input_dim(observation_space), 64),
+            nn.Linear(SCALAR_DIM, 64),
             nn.ReLU(),
             nn.Linear(64, 64),
             nn.ReLU()
         )
 
     def forward(self, observations: th.Tensor) -> th.Tensor:
-        scalar_part, _ = observation_parts(observations)
-        return self.net(scalar_part)
+        return self.net(observations[:, :SCALAR_DIM])
     
 class BiResidualGatedExtractor(BaseFeaturesExtractor):
     """

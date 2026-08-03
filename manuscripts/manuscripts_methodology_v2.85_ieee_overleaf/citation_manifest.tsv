@@ -1,0 +1,52 @@
+number	key	title	DOI_or_URL
+1	gbdStrokeBurden2021	Global, regional, and national burden of stroke and its risk factors, 1990--2019: a systematic analysis for the {Global Burden of Disease Study 2019}	10.1016/S1474-4422(21)00252-0
+2	stinearStrokeRehab2020	Advances and challenges in stroke rehabilitation	10.1016/S1474-4422(19)30415-6
+3	maierNeurorehabPrinciples2019	Principles of neurorehabilitation after stroke based on motor learning and brain plasticity mechanisms	10.3389/fnsys.2019.00074
+4	leeTaskOrientedTraining2024	Effectiveness of activity-based task-oriented training on upper extremity recovery for adults with stroke: A systematic review	10.5014/ajot.2024.050391
+5	rozevinkTaskSpecificTraining2023	Effectiveness of task-specific training using assistive devices and task-specific usual care on upper limb performance after stroke: A systematic review and meta-analysis	10.1080/17483107.2021.2001061
+6	guadagnoliChallengePoint2004	Challenge point: A framework for conceptualizing the effects of various practice conditions in motor learning	10.3200/JMBR.36.2.212-224
+7	gomesTaskChallenge2025	Understanding task `challenge' in stroke rehabilitation: An interdisciplinary concept analysis	10.1080/09638288.2024.2356010
+8	mehrholzRobotArmTraining2018	Electromechanical and robot-assisted arm training for improving activities of daily living, arm function, and arm muscle strength after stroke	10.1002/14651858.CD006876.pub5
+9	rodgersRATULS2019	Robot assisted training for the upper limb after stroke ({RATULS}): A multicentre randomised controlled trial	10.1016/S0140-6736(19)31055-4
+10	suUpperRobotTraining2024	Effect of upper robot-assisted training on upper limb motor, daily life activities, and muscular tone in patients with stroke: A systematic review and meta-analysis	10.1002/brb3.70117
+11	boardsworthUpperLimbRobotic2025	Upper limb robotic rehabilitation following stroke: A systematic review and meta-analysis investigating efficacy and the influence of device features and program parameters	10.1186/s12984-025-01662-4
+12	wangRobotAssistedNetwork2025	Efficacy of robot-assisted training on upper limb motor function after stroke: A systematic review and network meta-analysis	10.1016/j.arrct.2024.100387
+13	aiMachineLearningRehab2023	Machine learning in robot-assisted upper limb rehabilitation: A focused review	10.1109/TCDS.2021.3098350
+14	doumasSeriousGames2021	Serious games for upper limb rehabilitation after stroke: A meta-analysis	10.1186/s12984-021-00889-1
+15	keneaImmersiveVR2025	Immersive virtual reality in stroke rehabilitation: A systematic review and meta-analysis of its efficacy in upper limb recovery	10.3390/jcm14061783
+16	altawilAdaptiveVR2026	Machine learning-based adaptive personalization in virtual reality stroke rehabilitation: A systematic review	10.3389/fresc.2026.1827658
+17	arantesAdaptiveAAN2023	Evaluation of a novel real-time adaptive assist-as-needed controller for robot-assisted upper extremity rehabilitation following stroke	10.1371/journal.pone.0292627
+18	sittiBiomedicalMicrorobots2015	Biomedical applications of untethered mobile milli/microrobots	10.1109/JPROC.2014.2385105
+19	yangMagneticActuation2020	Magnetic actuation systems for miniature robots: A review	10.1002/aisy.202000082
+20	miaoSoftMagneticRobots2023	Design, actuation, and functionalization of untethered soft magnetic robots with life-like motions: A review	10.1016/j.jmmm.2023.171160
+21	vygotskyMindSociety1978	Mind in Society: The Development of Higher Psychological Processes	https://www.hup.harvard.edu/books/9780674576292
+22	hocineSeriousGameAdaptation2015	Adaptation in serious games for upper-limb rehabilitation: An approach to improve training outcomes	10.1007/s11257-015-9154-6
+23	shangDynamicDifficulty2025	General purpose haptic/biometric-based dynamic difficulty adjustment for post-stroke upper-limb rehabilitation games	10.1109/ICORR66766.2025.11062998
+24	ajaniParetoDDA2023	Pareto-based dynamic difficulty adjustment of a competitive exergame for arm rehabilitation	10.1016/j.ijhcs.2023.103100
+25	vitekovaDDAReview2026	Dynamic difficulty adjustment in serious games: A literature review	10.3390/info17010096
+26	suttonBartoRL2018	Reinforcement Learning: An Introduction	http://incompleteideas.net/book/the-book-2nd.html
+27	koberRLRobotics2013	Reinforcement learning in robotics: A survey	10.1177/0278364913495721
+28	schulmanPPO2017	Proximal policy optimization algorithms	https://arxiv.org/abs/1707.06347
+29	molleOnlineRLRehab2025	An online reinforcement learning method to improve control adaptability in robot-aided rehabilitation	10.1016/j.engappai.2025.112248
+30	pareekAR3n2024	{AR3n}: A reinforcement learning-based assist-as-needed controller for robotic rehabilitation	10.1109/MRA.2023.3282434
+31	zhangImpedanceLandscapes2022	Shaping individualized impedance landscapes for gait training via reinforcement learning	10.1109/TMRB.2021.3137971
+32	pelosiPersonalizedRehab2024	Personalized rehabilitation approach for reaching movement using reinforcement learning	10.1038/s41598-024-64514-6
+33	khatibObstacleAvoidance1986	Real-time obstacle avoidance for manipulators and mobile robots	10.1177/027836498600500106
+34	leeVirtualHillAPF2024	Path planning based on artificial potential field with an enhanced virtual hill algorithm	10.3390/app14188292
+35	tobinDomainRandomization2017	Domain randomization for transferring deep neural networks from simulation to the real world	10.1109/IROS.2017.8202133
+36	pengDynamicsRandomization2018	Sim-to-real transfer of robotic control with dynamics randomization	10.1109/ICRA.2018.8460528
+37	muratoreRandomizedSimulations2022	Robot learning from randomized simulations: A review	10.3389/frobt.2022.799893
+38	chebotarClosingSimReal2019	Closing the sim-to-real loop: Adapting simulation randomization with real world experience	10.1109/ICRA.2019.8793789
+39	tiboniDROPO2023	{DROPO}: Sim-to-real transfer with offline domain randomization	10.1016/j.robot.2023.104432
+40	choRNNEncoderDecoder2014	Learning phrase representations using {RNN} encoder--decoder for statistical machine translation	10.3115/v1/D14-1179
+41	jaderbergAuxiliaryTasks2017	Reinforcement learning with unsupervised auxiliary tasks	https://arxiv.org/abs/1611.05397
+42	schwarzerSPR2021	Data-efficient reinforcement learning with self-predictive representations	https://arxiv.org/abs/2007.05929
+43	pathakCuriosity2017	Curiosity-driven exploration by self-supervised prediction	https://proceedings.mlr.press/v70/pathak17a.html
+44	lanctotUnifiedMARL2017	A unified game-theoretic approach to multiagent reinforcement learning	https://arxiv.org/abs/1711.00832
+45	vinyalsAlphaStar2019	Grandmaster level in {StarCraft II} using multi-agent reinforcement learning	10.1038/s41586-019-1724-z
+46	jaderbergPopulationGames2019	Human-level performance in {3D} multiplayer games with population-based reinforcement learning	10.1126/science.aau6249
+47	huangOpponentAwareLeague2023	A robust and opponent-aware league training method for {StarCraft II}	https://proceedings.neurips.cc/paper_files/paper/2023/hash/94796017d01c5a171bdac520c199d9ed-Abstract-Conference.html
+48	redmonYOLO2016	You only look once: Unified, real-time object detection	10.1109/CVPR.2016.91
+49	zhangMediaPipeHands2020	{MediaPipe Hands}: On-device real-time hand tracking	https://arxiv.org/abs/2006.10214
+50	zhangCameraCalibration2000	A flexible new technique for camera calibration	10.1109/34.888718
+51	balasubramanianSmoothness2015	On the analysis of movement smoothness	10.1186/s12984-015-0090-9

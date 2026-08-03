@@ -1,0 +1,164 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyperFirstAtBeginDocument{\AtBeginDocument}
+\HyperFirstAtBeginDocument{\ifx\hyper@anchor\@undefined
+\global\let\oldcontentsline\contentsline
+\gdef\contentsline#1#2#3#4{\oldcontentsline{#1}{#2}{#3}}
+\global\let\oldnewlabel\newlabel
+\gdef\newlabel#1#2{\newlabelxx{#1}#2}
+\gdef\newlabelxx#1#2#3#4#5#6{\oldnewlabel{#1}{{#2}{#3}}}
+\AtEndDocument{\ifx\hyper@anchor\@undefined
+\let\contentsline\oldcontentsline
+\let\newlabel\oldnewlabel
+\fi}
+\fi}
+\global\let\hyper@last\relax 
+\gdef\HyperFirstAtBeginDocument#1{#1}
+\providecommand*\HyPL@Entry[1]{}
+\HyPL@Entry{0<</S/D>>}
+\@writefile{toc}{\contentsline {section}{\numberline {I}Introduction}{1}{section.1}\protected@file@percent }
+\newlabel{sec:introduction}{{I}{1}{Introduction}{section.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {II}System Overview and Problem Formulation}{2}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {II-A}Hardware Platform}{2}{subsection.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {II-B}Problem Formulation}{2}{subsection.2.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces System framework for noncontact rehabilitation from simulation to physical deployment. The simulation environment defines the pursuit interaction, the policy network maps spatial and temporal observations to microrobot actions, the observation module converts camera measurements into policy inputs, and the physical platform executes the learned policy through magnetic actuation.}}{3}{figure.1}\protected@file@percent }
+\newlabel{fig:system}{{1}{3}{System framework for noncontact rehabilitation from simulation to physical deployment. The simulation environment defines the pursuit interaction, the policy network maps spatial and temporal observations to microrobot actions, the observation module converts camera measurements into policy inputs, and the physical platform executes the learned policy through magnetic actuation}{figure.1}{}}
+\newlabel{eq:robot_reward}{{1}{3}{Problem Formulation}{equation.2.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {III}Methodology}{3}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {III-A}Decoupled Randomization of Cognitive and Motor Factors}{4}{subsection.3.1}\protected@file@percent }
+\newlabel{eq:spc_displacement}{{2}{4}{Decoupled Randomization of Cognitive and Motor Factors}{equation.3.2}{}}
+\newlabel{eq:filtered_displacement}{{3}{4}{Decoupled Randomization of Cognitive and Motor Factors}{equation.3.3}{}}
+\newlabel{eq:clipped_displacement}{{4}{4}{Decoupled Randomization of Cognitive and Motor Factors}{equation.3.4}{}}
+\newlabel{eq:hand_update}{{5}{4}{Decoupled Randomization of Cognitive and Motor Factors}{equation.3.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {III-B}Dual-Stream Encoder with Auxiliary Dynamics Prediction}{4}{subsection.3.2}\protected@file@percent }
+\newlabel{eq:observation}{{6}{4}{Dual-Stream Encoder with Auxiliary Dynamics Prediction}{equation.3.6}{}}
+\newlabel{eq:scalar_state}{{7}{4}{Dual-Stream Encoder with Auxiliary Dynamics Prediction}{equation.3.7}{}}
+\newlabel{eq:trajectory_loss}{{8}{4}{Dual-Stream Encoder with Auxiliary Dynamics Prediction}{equation.3.8}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {I}{\ignorespaces Motor Randomization Parameters}}{5}{table.1}\protected@file@percent }
+\newlabel{tab:randomization}{{I}{5}{Motor Randomization Parameters}{table.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Dual-stream policy architecture with auxiliary dynamics prediction. The spatial branch encodes the geometric state, the temporal branch encodes recent interaction history with a recurrent module, and the fused representation supports the policy head, value head, and auxiliary prediction head.}}{5}{figure.2}\protected@file@percent }
+\newlabel{fig:architecture}{{2}{5}{Dual-stream policy architecture with auxiliary dynamics prediction. The spatial branch encodes the geometric state, the temporal branch encodes recent interaction history with a recurrent module, and the fused representation supports the policy head, value head, and auxiliary prediction head}{figure.2}{}}
+\newlabel{eq:total_loss}{{9}{5}{Dual-Stream Encoder with Auxiliary Dynamics Prediction}{equation.3.9}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {III-C}League Training}{5}{subsection.3.3}\protected@file@percent }
+\newlabel{eq:opponent_sampling}{{10}{6}{League Training}{equation.3.10}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {IV}Experiments and Results}{6}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {IV-A}Simulation Protocol and Metrics}{6}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {IV-B}League Training and Robustness Across Hand Policies}{6}{subsection.4.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Validation of robot policies trained through league across learned hand generations using the target ZPD band. (a) TIZ matrix obtained by evaluating each robot generation against each learned hand generation. Rows correspond to robot generations, and columns correspond to learned hand generations. (b) Mean TIZ and lowest TIZ across the learned hand test policies for each robot generation.}}{7}{figure.3}\protected@file@percent }
+\newlabel{fig:league}{{3}{7}{Validation of robot policies trained through league across learned hand generations using the target ZPD band. (a) TIZ matrix obtained by evaluating each robot generation against each learned hand generation. Rows correspond to robot generations, and columns correspond to learned hand generations. (b) Mean TIZ and lowest TIZ across the learned hand test policies for each robot generation}{figure.3}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {II}{\ignorespaces Policy Comparison Across Three Pursuit Conditions}}{7}{table.2}\protected@file@percent }
+\newlabel{tab:policy_comparison}{{II}{7}{Policy Comparison Across Three Pursuit Conditions}{table.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {IV-C}Network Ablation and Auxiliary Dynamics Analysis}{7}{subsection.4.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {4}{\ignorespaces Network ablation for temporal encoding and auxiliary dynamics prediction. (a) Smoothed episode reward during training for the MLP, GRU, and auxiliary GRU policies. (b) Smoothed episode length during training for the same policies. (c) Representative predictions from the auxiliary head over a short horizon compared with observed future hand motion. (d) Final performance metrics normalized to the MLP baseline; higher values are better for time within the ZPD and workspace coverage, whereas lower values are better for mean jerk.}}{8}{figure.4}\protected@file@percent }
+\newlabel{fig:ablation}{{4}{8}{Network ablation for temporal encoding and auxiliary dynamics prediction. (a) Smoothed episode reward during training for the MLP, GRU, and auxiliary GRU policies. (b) Smoothed episode length during training for the same policies. (c) Representative predictions from the auxiliary head over a short horizon compared with observed future hand motion. (d) Final performance metrics normalized to the MLP baseline; higher values are better for time within the ZPD and workspace coverage, whereas lower values are better for mean jerk}{figure.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {IV-D}Online Physical Deployment}{8}{subsection.4.4}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {5}{\ignorespaces Zero-shot physical deployment on the microrobot platform. (a) Representative frames from one of nine physical rollouts. (b) Smoothed hand-microrobot distance, target ZPD band, and measured hand and microrobot speeds from the same rollout.}}{9}{figure.5}\protected@file@percent }
+\newlabel{fig:deployment}{{5}{9}{Zero-shot physical deployment on the microrobot platform. (a) Representative frames from one of nine physical rollouts. (b) Smoothed hand-microrobot distance, target ZPD band, and measured hand and microrobot speeds from the same rollout}{figure.5}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {V}Discussion}{9}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {VI}Conclusion}{10}{section.6}\protected@file@percent }
+\bibcite{b1}{1}
+\bibcite{b2}{2}
+\bibcite{b3}{3}
+\bibcite{b4}{4}
+\bibcite{b5}{5}
+\bibcite{b6}{6}
+\bibcite{b7}{7}
+\bibcite{b8}{8}
+\bibcite{b9}{9}
+\bibcite{b10}{10}
+\bibcite{b11}{11}
+\bibcite{b12}{12}
+\bibcite{b13}{13}
+\bibcite{b14}{14}
+\bibcite{b15}{15}
+\bibcite{b16}{16}
+\bibcite{b17}{17}
+\bibcite{b18}{18}
+\bibcite{b19}{19}
+\bibcite{b20}{20}
+\bibcite{b21}{21}
+\bibcite{b22}{22}
+\bibcite{b23}{23}
+\bibcite{b24}{24}
+\bibcite{b25}{25}
+\bibcite{b26}{26}
+\bibcite{b27}{27}
+\bibcite{b28}{28}
+\bibcite{b29}{29}
+\bibcite{b30}{30}
+\bibcite{b31}{31}
+\bibcite{b32}{32}
+\bibcite{b33}{33}
+\bibcite{b34}{34}
+\bibcite{b35}{35}
+\bibcite{b36}{36}
+\bibcite{b37}{37}
+\bibcite{b38}{38}
+\bibcite{b39}{39}
+\bibcite{b40}{40}
+\bibcite{b41}{41}
+\bibcite{b42}{42}
+\@writefile{toc}{\contentsline {section}{References}{11}{section*.1}\protected@file@percent }
+\newlabel{bib:b1}{{1}{11}{References\color {black}}{section*.2}{}}
+\newlabel{bib:b2}{{2}{11}{References\color {black}}{section*.3}{}}
+\newlabel{bib:b3}{{3}{11}{References\color {black}}{section*.4}{}}
+\newlabel{bib:b4}{{4}{11}{References\color {black}}{section*.5}{}}
+\newlabel{bib:b5}{{5}{11}{References\color {black}}{section*.6}{}}
+\newlabel{bib:b6}{{6}{11}{References\color {black}}{section*.7}{}}
+\newlabel{bib:b7}{{7}{11}{References\color {black}}{section*.8}{}}
+\newlabel{bib:b8}{{8}{11}{References\color {black}}{section*.9}{}}
+\newlabel{bib:b9}{{9}{11}{References\color {black}}{section*.10}{}}
+\newlabel{bib:b10}{{10}{11}{References\color {black}}{section*.11}{}}
+\newlabel{bib:b11}{{11}{11}{References\color {black}}{section*.12}{}}
+\newlabel{bib:b12}{{12}{11}{References\color {black}}{section*.13}{}}
+\newlabel{bib:b13}{{13}{11}{References\color {black}}{section*.14}{}}
+\newlabel{bib:b14}{{14}{11}{References\color {black}}{section*.15}{}}
+\newlabel{bib:b15}{{15}{11}{References\color {black}}{section*.16}{}}
+\newlabel{bib:b16}{{16}{11}{References\color {black}}{section*.17}{}}
+\newlabel{bib:b17}{{17}{11}{References\color {black}}{section*.18}{}}
+\newlabel{bib:b18}{{18}{11}{References\color {black}}{section*.19}{}}
+\newlabel{bib:b19}{{19}{11}{References\color {black}}{section*.20}{}}
+\newlabel{bib:b20}{{20}{11}{References\color {black}}{section*.21}{}}
+\newlabel{bib:b21}{{21}{11}{References\color {black}}{section*.22}{}}
+\newlabel{bib:b22}{{22}{11}{References\color {black}}{section*.23}{}}
+\newlabel{bib:b23}{{23}{11}{References\color {black}}{section*.24}{}}
+\newlabel{bib:b24}{{24}{11}{References\color {black}}{section*.25}{}}
+\newlabel{bib:b25}{{25}{11}{References\color {black}}{section*.26}{}}
+\newlabel{bib:b26}{{26}{11}{References\color {black}}{section*.27}{}}
+\newlabel{bib:b27}{{27}{11}{References\color {black}}{section*.28}{}}
+\newlabel{bib:b28}{{28}{11}{References\color {black}}{section*.29}{}}
+\newlabel{bib:b29}{{29}{11}{References\color {black}}{section*.30}{}}
+\newlabel{bib:b30}{{30}{11}{References\color {black}}{section*.31}{}}
+\newlabel{bib:b31}{{31}{11}{References\color {black}}{section*.32}{}}
+\newlabel{bib:b32}{{32}{11}{References\color {black}}{section*.33}{}}
+\newlabel{bib:b33}{{33}{11}{References\color {black}}{section*.34}{}}
+\newlabel{bib:b34}{{34}{11}{References\color {black}}{section*.35}{}}
+\newlabel{bib:b35}{{35}{11}{References\color {black}}{section*.36}{}}
+\newlabel{bib:b36}{{36}{11}{References\color {black}}{section*.37}{}}
+\newlabel{bib:b37}{{37}{11}{References\color {black}}{section*.38}{}}
+\newlabel{bib:b38}{{38}{11}{References\color {black}}{section*.39}{}}
+\newlabel{bib:b39}{{39}{11}{References\color {black}}{section*.40}{}}
+\newlabel{bib:b40}{{40}{11}{References\color {black}}{section*.41}{}}
+\newlabel{bib:b41}{{41}{11}{References\color {black}}{section*.42}{}}
+\newlabel{bib:b42}{{42}{11}{References\color {black}}{section*.43}{}}
+\bibcite{b43}{43}
+\bibcite{b44}{44}
+\bibcite{b45}{45}
+\bibcite{b46}{46}
+\bibcite{b47}{47}
+\bibcite{b48}{48}
+\bibcite{b49}{49}
+\bibcite{b50}{50}
+\bibcite{b51}{51}
+\bibcite{b52}{52}
+\newlabel{bib:b43}{{43}{12}{References\color {black}}{section*.44}{}}
+\newlabel{bib:b44}{{44}{12}{References\color {black}}{section*.45}{}}
+\newlabel{bib:b45}{{45}{12}{References\color {black}}{section*.46}{}}
+\newlabel{bib:b46}{{46}{12}{References\color {black}}{section*.47}{}}
+\newlabel{bib:b47}{{47}{12}{References\color {black}}{section*.48}{}}
+\newlabel{bib:b48}{{48}{12}{References\color {black}}{section*.49}{}}
+\newlabel{bib:b49}{{49}{12}{References\color {black}}{section*.50}{}}
+\newlabel{bib:b50}{{50}{12}{References\color {black}}{section*.51}{}}
+\newlabel{bib:b51}{{51}{12}{References\color {black}}{section*.52}{}}
+\newlabel{bib:b52}{{52}{12}{References\color {black}}{section*.53}{}}
+\gdef \@abspage@last{12}

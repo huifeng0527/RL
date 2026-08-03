@@ -1,0 +1,120 @@
+{
+  "schema_version": 1,
+  "run_id": "20260730_203053",
+  "run_dir": "C:\\Users\\admin\\Desktop\\research\\RL\\logs\\league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux",
+  "base_seed": 2026,
+  "h1_path": "C:\\Users\\admin\\Desktop\\research\\RL\\logs\\league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux\\iteration_1\\hand\\hand\\best_model.zip",
+  "validation_trials": 1,
+  "validation_episodes_per_trial": 5,
+  "max_steps": 100,
+  "selection_metric": "maximize mean validation TIZ over scripted_hand and agent_H1",
+  "grid": {
+    "horizon": [
+      3
+    ],
+    "velocity_window": [
+      2
+    ],
+    "effort_weight": [
+      0.0
+    ],
+    "smoothness_weight": [
+      0.0
+    ],
+    "collision_penalty": [
+      40.0
+    ],
+    "action_grid": [
+      -1.0,
+      -0.5,
+      0.0,
+      0.5,
+      1.0
+    ],
+    "discount": 0.95,
+    "boundary_guard": 0.2,
+    "oob_penalty": 80.0
+  },
+  "selected_config": {
+    "horizon": 3,
+    "velocity_window": 2,
+    "action_grid": [
+      -1.0,
+      -0.5,
+      0.0,
+      0.5,
+      1.0
+    ],
+    "discount": 0.95,
+    "boundary_guard": 0.2,
+    "effort_weight": 0.0,
+    "smoothness_weight": 0.0,
+    "collision_penalty": 40.0,
+    "oob_penalty": 80.0
+  },
+  "top_10": [
+    {
+      "rank_input_order": 1,
+      "horizon": 3,
+      "velocity_window": 2,
+      "action_grid": "-1.0,-0.5,0.0,0.5,1.0",
+      "discount": 0.95,
+      "boundary_guard": 0.2,
+      "effort_weight": 0.0,
+      "smoothness_weight": 0.0,
+      "collision_penalty": 40.0,
+      "oob_penalty": 80.0,
+      "score_mean_tiz": 0.11499999999999999,
+      "score_min_tiz": 0.098,
+      "scripted_tiz_mean": 0.098,
+      "scripted_tiz_std": 0.0,
+      "scripted_episode_length_mean": 15.8,
+      "scripted_episode_length_std": 0.0,
+      "scripted_catch_rate": 1.0,
+      "scripted_too_close_rate": 0.3332900432900433,
+      "scripted_too_far_rate": 0.056666666666666664,
+      "scripted_avg_distance_mean": 3.767554815354125,
+      "h1_tiz_mean": 0.13199999999999998,
+      "h1_tiz_std": 0.0,
+      "h1_episode_length_mean": 23.8,
+      "h1_episode_length_std": 0.0,
+      "h1_catch_rate": 1.0,
+      "h1_too_close_rate": 0.4428888823782179,
+      "h1_too_far_rate": 0.053540665651002,
+      "h1_avg_distance_mean": 3.6108655677265658
+    }
+  ],
+  "grid_results": [
+    {
+      "rank_input_order": 1,
+      "horizon": 3,
+      "velocity_window": 2,
+      "action_grid": "-1.0,-0.5,0.0,0.5,1.0",
+      "discount": 0.95,
+      "boundary_guard": 0.2,
+      "effort_weight": 0.0,
+      "smoothness_weight": 0.0,
+      "collision_penalty": 40.0,
+      "oob_penalty": 80.0,
+      "score_mean_tiz": 0.11499999999999999,
+      "score_min_tiz": 0.098,
+      "scripted_tiz_mean": 0.098,
+      "scripted_tiz_std": 0.0,
+      "scripted_episode_length_mean": 15.8,
+      "scripted_episode_length_std": 0.0,
+      "scripted_catch_rate": 1.0,
+      "scripted_too_close_rate": 0.3332900432900433,
+      "scripted_too_far_rate": 0.056666666666666664,
+      "scripted_avg_distance_mean": 3.767554815354125,
+      "h1_tiz_mean": 0.13199999999999998,
+      "h1_tiz_std": 0.0,
+      "h1_episode_length_mean": 23.8,
+      "h1_episode_length_std": 0.0,
+      "h1_catch_rate": 1.0,
+      "h1_too_close_rate": 0.4428888823782179,
+      "h1_too_far_rate": 0.053540665651002,
+      "h1_avg_distance_mean": 3.6108655677265658
+    }
+  ],
+  "final_results": null
+}

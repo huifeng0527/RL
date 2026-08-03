@@ -1,0 +1,17 @@
+{
+  "hand_path": "logs/league_paper_gru_multistep_aux_pfsp_window_20iter/iteration_10/hand/hand/best_model.zip",
+  "total_steps": 8000000,
+  "n_envs": 8,
+  "eval_freq": 50000,
+  "n_eval_episodes": 50,
+  "history_length": 16,
+  "history_mode": "motion",
+  "history_channels": 2,
+  "future_horizon": 8,
+  "scripted_hand_sample_prob": 0.2,
+  "methods": [
+    "1_MLP_Only",
+    "4_StrategyGRU",
+    "5_StrategyGRU"
+  ]
+}

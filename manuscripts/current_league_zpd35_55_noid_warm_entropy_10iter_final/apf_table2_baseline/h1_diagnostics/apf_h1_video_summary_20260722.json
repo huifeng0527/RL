@@ -1,0 +1,31 @@
+{
+  "ranking_csv": "C:\\Users\\admin\\Desktop\\research\\RL\\manuscripts\\current_league_zpd35_55_noid_warm_entropy_10iter_final\\apf_table2_baseline\\h1_diagnostics\\apf_h1_episode_ranking_20260722.csv",
+  "summaries": [
+    {
+      "seed": 6557985,
+      "episode_length": 41,
+      "tiz": 0.22,
+      "zpd_coverage": 0.5365853658536586,
+      "too_close_rate": 0.2682926829268293,
+      "too_far_rate": 0.1951219512195122,
+      "avg_distance": 4.634179765351353,
+      "done_reason": "Robot Caught",
+      "label": "representative",
+      "video_path": "C:\\Users\\admin\\Desktop\\research\\RL\\manuscripts\\current_league_zpd35_55_noid_warm_entropy_10iter_final\\apf_table2_baseline\\h1_diagnostics\\reactive_apf_h1_representative_seed6557985.mp4",
+      "distance_csv": "C:\\Users\\admin\\Desktop\\research\\RL\\manuscripts\\current_league_zpd35_55_noid_warm_entropy_10iter_final\\apf_table2_baseline\\h1_diagnostics\\reactive_apf_h1_representative_seed6557985_distance.csv"
+    },
+    {
+      "seed": 1028702856,
+      "episode_length": 100,
+      "tiz": 0.93,
+      "zpd_coverage": 0.93,
+      "too_close_rate": 0.05,
+      "too_far_rate": 0.02,
+      "avg_distance": 4.392995312855063,
+      "done_reason": "None",
+      "label": "highest_tiz",
+      "video_path": "C:\\Users\\admin\\Desktop\\research\\RL\\manuscripts\\current_league_zpd35_55_noid_warm_entropy_10iter_final\\apf_table2_baseline\\h1_diagnostics\\reactive_apf_h1_highest_tiz_seed1028702856.mp4",
+      "distance_csv": "C:\\Users\\admin\\Desktop\\research\\RL\\manuscripts\\current_league_zpd35_55_noid_warm_entropy_10iter_final\\apf_table2_baseline\\h1_diagnostics\\reactive_apf_h1_highest_tiz_seed1028702856_distance.csv"
+    }
+  ]
+}

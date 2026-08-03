@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from src.custom_env import RehabilitationEnv
 from src.observation_schema import INTERACTION_HISTORY_CHANNELS, model_obs_dim, obs_dim
 from src.renderer import render_aesthetic
+from src.utils.apf_controller import ReactiveAPFController
 
 
 DEFAULT_BASE_DIR = r"C:\Users\admin\Desktop\research\RL\logs\league_paper_gru_multistep_aux_pfsp_window_20iter"
@@ -107,13 +108,15 @@ def learned_hand_path(base_dir: str, generation: int):
     return os.path.join(base_dir, f"iteration_{generation}", "hand", "hand", "best_model.zip")
 
 
-def infer_robot_history_mode(robot_model: PPO, history_length: int):
+def infer_robot_history_mode(robot_model: PPO | None, history_length: int):
+    if robot_model is None:
+        return "motion"
     expected_dim = model_obs_dim(robot_model)
     interaction_dim = obs_dim(history_length, 0, INTERACTION_HISTORY_CHANNELS)
     return "interaction" if expected_dim == interaction_dim else "motion"
 
 
-def make_env(robot_model: PPO, hand_model: PPO | None, history_length: int, scripted_prob: float):
+def make_env(robot_model: PPO | None, hand_model: PPO | None, history_length: int, scripted_prob: float):
     history_mode = infer_robot_history_mode(robot_model, history_length)
     env = RehabilitationEnv(
         training_mode="robot",
@@ -124,6 +127,16 @@ def make_env(robot_model: PPO, hand_model: PPO | None, history_length: int, scri
     env.scripted_hand_sample_prob = scripted_prob
     env.random_noise = False
     return env
+
+
+def mouse_action_from_target(
+    hand_position: np.ndarray,
+    target_position: np.ndarray,
+    stride_hand: float,
+) -> np.ndarray:
+    stride = max(float(stride_hand), 1e-8)
+    action = (target_position - hand_position) / stride
+    return np.clip(action, -1.0, 1.0).astype(np.float32)
 
 
 def sample_stats(values):
@@ -398,7 +411,8 @@ def evaluate_robot_on_test(
 
 def run_mouse_trial(
     robot_name: str,
-    robot_model: PPO,
+    robot_model: PPO | None,
+    apf_controller: ReactiveAPFController | None,
     history_length: int,
     max_steps: int,
     fps: int,
@@ -417,11 +431,15 @@ def run_mouse_trial(
     )
     env.max_steps = max_steps
     env.random_noise = False
-    env.distance_threshold_collision = 1.5
 
-    current_mouse_move = {"value": np.zeros(2, dtype=np.float32)}
+    current_mouse_action = {"value": np.zeros(2, dtype=np.float32)}
     original_resolve_hand_move = env._resolve_hand_move
-    env._resolve_hand_move = lambda action: current_mouse_move["value"].copy()
+
+    def resolve_mouse_move(_action):
+        hand_intent = current_mouse_action["value"] * env.stride_hand
+        return env._apply_hand_execution(hand_intent)
+
+    env._resolve_hand_move = resolve_mouse_move
     episodes = []
     quit_requested = False
 
@@ -430,8 +448,9 @@ def run_mouse_trial(
             while True:
                 seed_everything(episode_seed)
                 obs, _ = env.reset(seed=episode_seed)
-                env.stride_hand = 0.5
-                env.stride_robot = 0.6
+                current_mouse_action["value"] = np.zeros(2, dtype=np.float32)
+                if apf_controller is not None:
+                    apf_controller.reset()
                 pygame.display.set_caption(
                     f"Mouse hand test: {robot_name} | Trial {trial_index + 1} | "
                     f"Episode {episode_index + 1}/{len(episode_seeds)}"
@@ -442,10 +461,14 @@ def run_mouse_trial(
                 restart_requested = False
                 total_reward = 0.0
                 distances = []
+                mouse_action_magnitudes = []
+                hand_step_magnitudes = []
                 done_reason = ""
 
                 print(
                     f"\nMouse trial {trial_index + 1}, episode {episode_index + 1}/{len(episode_seeds)}. "
+                    f"stride_hand={env.stride_hand:.3f}, stride_robot={env.stride_robot:.3f}, "
+                    f"collision_threshold={env.distance_threshold_collision:.3f}, fps={fps}. "
                     "Press Q to quit or R to restart the episode."
                 )
 
@@ -467,17 +490,28 @@ def run_mouse_trial(
                         np.clip(mouse_x / env.cell_size, env.margin, env.env_width - env.margin),
                         np.clip(mouse_y / env.cell_size, env.margin, env.env_height - env.margin),
                     ], dtype=np.float32)
-                    vec = target - env.hand_position
-                    distance_to_target = float(np.linalg.norm(vec))
-                    if distance_to_target > 1e-8:
-                        current_mouse_move["value"] = (
-                            vec / distance_to_target * min(distance_to_target, env.stride_hand)
-                        ).astype(np.float32)
-                    else:
-                        current_mouse_move["value"] = np.zeros(2, dtype=np.float32)
+                    current_mouse_action["value"] = mouse_action_from_target(
+                        hand_position=np.asarray(env.hand_position, dtype=np.float32),
+                        target_position=target,
+                        stride_hand=float(env.stride_hand),
+                    )
+                    mouse_action_magnitudes.append(
+                        float(np.linalg.norm(current_mouse_action["value"]))
+                    )
 
-                    action, _ = robot_model.predict(obs, deterministic=True)
+                    old_hand_position = np.asarray(env.hand_position, dtype=np.float32).copy()
+                    if apf_controller is not None:
+                        action = apf_controller.predict(env)
+                    elif robot_model is not None:
+                        action, _ = robot_model.predict(obs, deterministic=True)
+                    else:
+                        raise RuntimeError("No robot controller is available for mouse evaluation.")
                     obs, reward, terminated, truncated, info = env.step(action)
+                    actual_hand_move = (
+                        np.asarray(env.hand_position, dtype=np.float32)
+                        - old_hand_position
+                    )
+                    hand_step_magnitudes.append(float(np.linalg.norm(actual_hand_move)))
                     total_reward += float(reward)
                     distances.append(float(info.get("dist", 0.0)))
                     done_reason = str(info.get("done_reason", ""))
@@ -507,6 +541,24 @@ def run_mouse_trial(
                 if restart_requested:
                     print("  Episode restarted; the same episode seed will be reused.")
                     continue
+
+                if hand_step_magnitudes:
+                    mouse_actions = np.asarray(
+                        mouse_action_magnitudes,
+                        dtype=np.float64,
+                    )
+                    hand_steps = np.asarray(hand_step_magnitudes, dtype=np.float64)
+                    print(
+                        "  Hand-step debug: "
+                        f"axis_max={env.stride_hand:.3f}, "
+                        f"l2_max={np.sqrt(2.0) * env.stride_hand:.3f}, "
+                        f"action_norm_mean={mouse_actions.mean():.3f}, "
+                        f"actual_mean={hand_steps.mean():.3f}, "
+                        f"actual_std={hand_steps.std():.3f}, "
+                        f"actual_min={hand_steps.min():.3f}, "
+                        f"actual_max={hand_steps.max():.3f}, "
+                        f"mean_rate@{fps}Hz={hand_steps.mean() * fps:.3f}/s"
+                    )
 
                 episodes.append(
                     build_episode_record(
@@ -558,7 +610,7 @@ def wait_for_mouse_trial(screen, clock, font, robot_name: str, trial_index: int,
 
 def run_mouse_hand_test(
     robot_name: str,
-    robot_path: str,
+    robot_path: str | None,
     trials: int,
     episodes_per_trial: int,
     max_steps: int,
@@ -566,7 +618,15 @@ def run_mouse_hand_test(
     base_seed: int,
     fps: int,
 ):
-    robot_model = PPO.load(robot_path, verbose=0)
+    if robot_name == "reactive_apf":
+        robot_model = None
+        apf_controller = ReactiveAPFController()
+        controller_path = "ReactiveAPFController(radial+tangent+boundary)"
+    else:
+        robot_model = PPO.load(robot_path, verbose=0)
+        apf_controller = None
+        controller_path = str(robot_path)
+
     pygame.init()
     screen = pygame.display.set_mode((750, 500))
     clock = pygame.time.Clock()
@@ -588,6 +648,7 @@ def run_mouse_hand_test(
             trial_result, quit_requested = run_mouse_trial(
                 robot_name=robot_name,
                 robot_model=robot_model,
+                apf_controller=apf_controller,
                 history_length=history_length,
                 max_steps=max_steps,
                 fps=fps,
@@ -608,7 +669,7 @@ def run_mouse_hand_test(
 
     summary = summarize_evaluation(
         robot_name=robot_name,
-        robot_path=robot_path,
+        robot_path=controller_path,
         test_name="mouse_hand",
         test_type="mouse",
         hand_path=None,
@@ -656,6 +717,10 @@ def build_robots(args):
         "single_h1": args.single_hand_path or defaults["single_h1"],
         "league": args.league_path or defaults["league"],
     }
+    if args.test_set == "mouse":
+        candidates = {"reactive_apf": None, **candidates}
+    elif args.robot == "reactive_apf":
+        raise ValueError("reactive_apf is currently supported only with --test_set mouse.")
     return candidates if args.robot == "all" else {args.robot: candidates[args.robot]}
 
 
@@ -779,7 +844,11 @@ def main():
         description="Evaluate robot policies over repeated independent trials."
     )
     parser.add_argument("--base_dir", default=DEFAULT_BASE_DIR)
-    parser.add_argument("--robot", choices=["scripted_only", "single_h1", "league", "all"], default="all")
+    parser.add_argument(
+        "--robot",
+        choices=["reactive_apf", "scripted_only", "single_h1", "league", "all"],
+        default="all",
+    )
     parser.add_argument("--test_set", choices=["scripted", "agent", "learned", "mouse", "all"], default="all")
     parser.add_argument("--learned_hand_generations", default="1")
     parser.add_argument("--scripted_only_path", default=None)
@@ -809,7 +878,7 @@ def main():
     results = []
     stop_requested = False
     for robot_name, robot_path in robots.items():
-        if not os.path.exists(robot_path):
+        if robot_name != "reactive_apf" and not os.path.exists(robot_path):
             print(f"[Skip] Missing robot {robot_name}: {robot_path}")
             continue
         for test_name, test_type, hand_path in tests:
@@ -869,6 +938,17 @@ def main():
         "tiz_definition": "steps_in_zpd / max_steps",
         "sample_variance_ddof": 1,
     }
+    if args.test_set == "mouse":
+        configuration.update(
+            {
+                "mouse_robot_order": list(robots.keys()),
+                "mouse_action_mapping": "component-wise action clipping to [-1, 1], then shared hand execution physics",
+                "mouse_collision_threshold": 2.0,
+                "mouse_stride_hand_range": [0.3, 0.6],
+                "mouse_stride_robot_range": [0.58, 0.62],
+                "mouse_settings_shared_across_robot_controllers": True,
+            }
+        )
     save_results(results, args.output, configuration)
     print_summary(results)
 

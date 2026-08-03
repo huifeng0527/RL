@@ -1,0 +1,1192 @@
+[
+  {
+    "id": 1,
+    "link": "https://doi.org/10.1016/S1474-4422(21)00252-0",
+    "doi": "10.1016/S1474-4422(21)00252-0",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Global, regional, and national burden of stroke and its risk factors, 1990–2019: a systematic analysis for the Global Burden of Disease Study 2019",
+      "container": "The Lancet Neurology",
+      "published": {
+        "date-parts": [
+          [
+            2021,
+            10
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Elsevier BV",
+      "author_count": 417,
+      "DOI": "10.1016/s1474-4422(21)00252-0"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 2,
+    "link": "https://doi.org/10.1016/S1474-4422(19)30415-6",
+    "doi": "10.1016/S1474-4422(19)30415-6",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Advances and challenges in stroke rehabilitation",
+      "container": "The Lancet Neurology",
+      "published": {
+        "date-parts": [
+          [
+            2020,
+            4
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Elsevier BV",
+      "author_count": 4,
+      "DOI": "10.1016/s1474-4422(19)30415-6"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 3,
+    "link": "https://doi.org/10.3389/fnsys.2019.00074",
+    "doi": "10.3389/fnsys.2019.00074",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Principles of Neurorehabilitation After Stroke Based on Motor Learning and Brain Plasticity Mechanisms",
+      "container": "Frontiers in Systems Neuroscience",
+      "published": {
+        "date-parts": [
+          [
+            2019,
+            12,
+            17
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Frontiers Media SA",
+      "author_count": 3,
+      "DOI": "10.3389/fnsys.2019.00074"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 4,
+    "link": "https://doi.org/10.5014/ajot.2024.050391",
+    "doi": "10.5014/ajot.2024.050391",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Effectiveness of Activity-Based Task-Oriented Training on Upper Extremity Recovery for Adults With Stroke: A Systematic Review",
+      "container": "The American Journal of Occupational Therapy",
+      "published": {
+        "date-parts": [
+          [
+            2024,
+            3,
+            1
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "SAGE Publications",
+      "author_count": 2,
+      "DOI": "10.5014/ajot.2024.050391"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 5,
+    "link": "https://doi.org/10.1080/17483107.2021.2001061",
+    "doi": "10.1080/17483107.2021.2001061",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Effectiveness of task-specific training using assistive devices and task-specific usual care on upper limb performance after stroke: a systematic review and meta-analysis",
+      "container": "Disability and Rehabilitation: Assistive Technology",
+      "published": {
+        "date-parts": [
+          [
+            2023,
+            10,
+            3
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Informa UK Limited",
+      "author_count": 4,
+      "DOI": "10.1080/17483107.2021.2001061"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 6,
+    "link": "https://doi.org/10.3200/JMBR.36.2.212-224",
+    "doi": "10.3200/JMBR.36.2.212-224",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Challenge Point: A Framework for Conceptualizing the Effects of Various Practice Conditions in Motor Learning",
+      "container": "Journal of Motor Behavior",
+      "published": {
+        "date-parts": [
+          [
+            2004,
+            6
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Informa UK Limited",
+      "author_count": 2,
+      "DOI": "10.3200/jmbr.36.2.212-224"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 7,
+    "link": "https://doi.org/10.1080/09638288.2024.2356010",
+    "doi": "10.1080/09638288.2024.2356010",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Understanding task “challenge” in stroke rehabilitation: an interdisciplinary concept analysis",
+      "container": "Disability and Rehabilitation",
+      "published": {
+        "date-parts": [
+          [
+            2025,
+            1,
+            30
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Informa UK Limited",
+      "author_count": 4,
+      "DOI": "10.1080/09638288.2024.2356010"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 8,
+    "link": "https://doi.org/10.1002/14651858.CD006876.pub5",
+    "doi": "10.1002/14651858.CD006876.pub5",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Electromechanical and robot-assisted arm training for improving activities of daily living, arm function, and arm muscle strength after stroke",
+      "container": "Cochrane Database of Systematic Reviews",
+      "published": {
+        "date-parts": [
+          [
+            2018,
+            9,
+            3
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Wiley",
+      "author_count": 5,
+      "DOI": "10.1002/14651858.cd006876.pub5"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 9,
+    "link": "https://doi.org/10.1016/S0140-6736(19)31055-4",
+    "doi": "10.1016/S0140-6736(19)31055-4",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Robot assisted training for the upper limb after stroke (RATULS): a multicentre randomised controlled trial",
+      "container": "The Lancet",
+      "published": {
+        "date-parts": [
+          [
+            2019,
+            7
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Elsevier BV",
+      "author_count": 23,
+      "DOI": "10.1016/s0140-6736(19)31055-4"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 10,
+    "link": "https://doi.org/10.1002/brb3.70117",
+    "doi": "10.1002/brb3.70117",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Effect of Upper Robot‐Assisted Training on Upper Limb Motor, Daily Life Activities, and Muscular Tone in Patients With Stroke: A Systematic Review and Meta‐Analysis",
+      "container": "Brain and Behavior",
+      "published": {
+        "date-parts": [
+          [
+            2024,
+            11
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Wiley",
+      "author_count": 4,
+      "DOI": "10.1002/brb3.70117"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 11,
+    "link": "https://doi.org/10.1186/s12984-025-01662-4",
+    "doi": "10.1186/s12984-025-01662-4",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Upper limb robotic rehabilitation following stroke: a systematic review and meta-analysis investigating efficacy and the influence of device features and program parameters",
+      "container": "Journal of NeuroEngineering and Rehabilitation",
+      "published": {
+        "date-parts": [
+          [
+            2025,
+            7,
+            16
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Springer Science and Business Media LLC",
+      "author_count": 7,
+      "DOI": "10.1186/s12984-025-01662-4"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 12,
+    "link": "https://doi.org/10.1016/j.arrct.2024.100387",
+    "doi": "10.1016/j.arrct.2024.100387",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Efficacy of Robot-assisted Training on Upper Limb Motor Function After Stroke: A Systematic Review and Network Meta-analysis",
+      "container": "Archives of Rehabilitation Research and Clinical Translation",
+      "published": {
+        "date-parts": [
+          [
+            2025,
+            3
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Elsevier BV",
+      "author_count": 4,
+      "DOI": "10.1016/j.arrct.2024.100387"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 13,
+    "link": "https://doi.org/10.1109/TCDS.2021.3098350",
+    "doi": "10.1109/TCDS.2021.3098350",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Machine Learning in Robot-Assisted Upper Limb Rehabilitation: A Focused Review",
+      "container": "IEEE Transactions on Cognitive and Developmental Systems",
+      "published": {
+        "date-parts": [
+          [
+            2023,
+            12
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+      "author_count": 5,
+      "DOI": "10.1109/tcds.2021.3098350"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 14,
+    "link": "https://doi.org/10.1186/s12984-021-00889-1",
+    "doi": "10.1186/s12984-021-00889-1",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Serious games for upper limb rehabilitation after stroke: a meta-analysis",
+      "container": "Journal of NeuroEngineering and Rehabilitation",
+      "published": {
+        "date-parts": [
+          [
+            2021,
+            12
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Springer Science and Business Media LLC",
+      "author_count": 4,
+      "DOI": "10.1186/s12984-021-00889-1"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 15,
+    "link": "https://doi.org/10.3390/jcm14061783",
+    "doi": "10.3390/jcm14061783",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Immersive Virtual Reality in Stroke Rehabilitation: A Systematic Review and Meta-Analysis of Its Efficacy in Upper Limb Recovery",
+      "container": "Journal of Clinical Medicine",
+      "published": {
+        "date-parts": [
+          [
+            2025,
+            3,
+            7
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "MDPI AG",
+      "author_count": 4,
+      "DOI": "10.3390/jcm14061783"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 16,
+    "link": "https://doi.org/10.3389/fresc.2026.1827658",
+    "doi": "10.3389/fresc.2026.1827658",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Machine learning-based adaptive personalization in virtual reality stroke rehabilitation: a systematic review",
+      "container": "Frontiers in Rehabilitation Sciences",
+      "published": {
+        "date-parts": [
+          [
+            2026,
+            6,
+            16
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Frontiers Media SA",
+      "author_count": 6,
+      "DOI": "10.3389/fresc.2026.1827658"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 17,
+    "link": "https://doi.org/10.1371/journal.pone.0292627",
+    "doi": "10.1371/journal.pone.0292627",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Evaluation of a novel real-time adaptive assist-as-needed controller for robot-assisted upper extremity rehabilitation following stroke",
+      "container": "PLOS ONE",
+      "published": {
+        "date-parts": [
+          [
+            2023,
+            10,
+            11
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Public Library of Science (PLoS)",
+      "author_count": 4,
+      "DOI": "10.1371/journal.pone.0292627"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 18,
+    "link": "https://doi.org/10.1109/JPROC.2014.2385105",
+    "doi": "10.1109/JPROC.2014.2385105",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Biomedical Applications of Untethered Mobile Milli/Microrobots",
+      "container": "Proceedings of the IEEE",
+      "published": {
+        "date-parts": [
+          [
+            2015,
+            2
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+      "author_count": 7,
+      "DOI": "10.1109/jproc.2014.2385105"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 19,
+    "link": "https://doi.org/10.1002/aisy.202000082",
+    "doi": "10.1002/aisy.202000082",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Magnetic Actuation Systems for Miniature Robots: A Review",
+      "container": "Advanced Intelligent Systems",
+      "published": {
+        "date-parts": [
+          [
+            2020,
+            9
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Wiley",
+      "author_count": 2,
+      "DOI": "10.1002/aisy.202000082"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 20,
+    "link": "https://doi.org/10.1016/j.jmmm.2023.171160",
+    "doi": "10.1016/j.jmmm.2023.171160",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Design, actuation, and functionalization of untethered soft magnetic robots with life-like motions: A review",
+      "container": "Journal of Magnetism and Magnetic Materials",
+      "published": {
+        "date-parts": [
+          [
+            2023,
+            11
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Elsevier BV",
+      "author_count": 2,
+      "DOI": "10.1016/j.jmmm.2023.171160"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 21,
+    "link": "https://www.hup.harvard.edu/books/9780674576292",
+    "doi": null,
+    "status": "no_doi",
+    "metadata": {
+      "title": "",
+      "source": "official_url"
+    },
+    "url_check": [
+      202,
+      "https://www.hup.harvard.edu/books/9780674576292",
+      "text/html; charset=UTF-8"
+    ],
+    "error": null
+  },
+  {
+    "id": 22,
+    "link": "https://doi.org/10.1007/s11257-015-9154-6",
+    "doi": "10.1007/s11257-015-9154-6",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Adaptation in serious games for upper-limb rehabilitation: an approach to improve training outcomes",
+      "container": "User Modeling and User-Adapted Interaction",
+      "published": {
+        "date-parts": [
+          [
+            2015,
+            3
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Springer Science and Business Media LLC",
+      "author_count": 6,
+      "DOI": "10.1007/s11257-015-9154-6"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 23,
+    "link": "https://doi.org/10.1109/ICORR66766.2025.11062998",
+    "doi": "10.1109/ICORR66766.2025.11062998",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "General Purpose Haptic/Biometric-Based Dynamic Difficulty Adjustment for Post-Stroke Upper-Limb Rehabilitation Games",
+      "container": "2025 International Conference On Rehabilitation Robotics (ICORR)",
+      "published": {
+        "date-parts": [
+          [
+            2025,
+            5,
+            12
+          ]
+        ]
+      },
+      "type": "proceedings-article",
+      "publisher": "IEEE",
+      "author_count": 6,
+      "DOI": "10.1109/icorr66766.2025.11062998"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 24,
+    "link": "https://doi.org/10.1016/j.ijhcs.2023.103100",
+    "doi": "10.1016/j.ijhcs.2023.103100",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Pareto-based Dynamic Difficulty Adjustment of a competitive exergame for arm rehabilitation",
+      "container": "International Journal of Human-Computer Studies",
+      "published": {
+        "date-parts": [
+          [
+            2023,
+            10
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Elsevier BV",
+      "author_count": 2,
+      "DOI": "10.1016/j.ijhcs.2023.103100"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 25,
+    "link": "https://doi.org/10.3390/info17010096",
+    "doi": "10.3390/info17010096",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Dynamic Difficulty Adjustment in Serious Games: A Literature Review",
+      "container": "Information",
+      "published": {
+        "date-parts": [
+          [
+            2026,
+            1,
+            17
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "MDPI AG",
+      "author_count": 4,
+      "DOI": "10.3390/info17010096"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 26,
+    "link": "http://incompleteideas.net/book/the-book-2nd.html",
+    "doi": null,
+    "status": "no_doi",
+    "metadata": {
+      "title": "Sutton & Barto Book: Reinforcement Learning: An Introduction",
+      "source": "official_url"
+    },
+    "url_check": [
+      200,
+      "http://incompleteideas.net/book/the-book-2nd.html",
+      "text/html"
+    ],
+    "error": null
+  },
+  {
+    "id": 27,
+    "link": "https://doi.org/10.1177/0278364913495721",
+    "doi": "10.1177/0278364913495721",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Reinforcement learning in robotics: A survey",
+      "container": "The International Journal of Robotics Research",
+      "published": {
+        "date-parts": [
+          [
+            2013,
+            9
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "SAGE Publications",
+      "author_count": 3,
+      "DOI": "10.1177/0278364913495721"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 28,
+    "link": "https://arxiv.org/abs/1707.06347",
+    "doi": null,
+    "status": "no_doi",
+    "metadata": {
+      "title": "Proximal Policy Optimization Algorithms",
+      "source": "official_url"
+    },
+    "url_check": [
+      200,
+      "https://arxiv.org/abs/1707.06347",
+      "text/html; charset=utf-8"
+    ],
+    "error": null
+  },
+  {
+    "id": 29,
+    "link": "https://doi.org/10.1016/j.engappai.2025.112248",
+    "doi": "10.1016/j.engappai.2025.112248",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "An online reinforcement learning method to improve control adaptability in robot-aided rehabilitation",
+      "container": "Engineering Applications of Artificial Intelligence",
+      "published": {
+        "date-parts": [
+          [
+            2025,
+            12
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Elsevier BV",
+      "author_count": 5,
+      "DOI": "10.1016/j.engappai.2025.112248"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 30,
+    "link": "https://doi.org/10.1109/MRA.2023.3282434",
+    "doi": "10.1109/MRA.2023.3282434",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "AR3n: A Reinforcement Learning-Based Assist-as-Needed Controller for Robotic Rehabilitation",
+      "container": "IEEE Robotics &amp; Automation Magazine",
+      "published": {
+        "date-parts": [
+          [
+            2024,
+            9
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+      "author_count": 3,
+      "DOI": "10.1109/mra.2023.3282434"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 31,
+    "link": "https://doi.org/10.1109/TMRB.2021.3137971",
+    "doi": "10.1109/TMRB.2021.3137971",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Shaping Individualized Impedance Landscapes for Gait Training via Reinforcement Learning",
+      "container": "IEEE Transactions on Medical Robotics and Bionics",
+      "published": {
+        "date-parts": [
+          [
+            2022,
+            2
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+      "author_count": 4,
+      "DOI": "10.1109/tmrb.2021.3137971"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 32,
+    "link": "https://doi.org/10.1038/s41598-024-64514-6",
+    "doi": "10.1038/s41598-024-64514-6",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Personalized rehabilitation approach for reaching movement using reinforcement learning",
+      "container": "Scientific Reports",
+      "published": {
+        "date-parts": [
+          [
+            2024,
+            7,
+            30
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Springer Science and Business Media LLC",
+      "author_count": 6,
+      "DOI": "10.1038/s41598-024-64514-6"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 33,
+    "link": "https://doi.org/10.1177/027836498600500106",
+    "doi": "10.1177/027836498600500106",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Real-Time Obstacle Avoidance for Manipulators and Mobile Robots",
+      "container": "The International Journal of Robotics Research",
+      "published": {
+        "date-parts": [
+          [
+            1986,
+            3
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "SAGE Publications",
+      "author_count": 1,
+      "DOI": "10.1177/027836498600500106"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 34,
+    "link": "https://doi.org/10.3390/app14188292",
+    "doi": "10.3390/app14188292",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Path Planning Based on Artificial Potential Field with an Enhanced Virtual Hill Algorithm",
+      "container": "Applied Sciences",
+      "published": {
+        "date-parts": [
+          [
+            2024,
+            9,
+            14
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "MDPI AG",
+      "author_count": 3,
+      "DOI": "10.3390/app14188292"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 35,
+    "link": "https://doi.org/10.1109/IROS.2017.8202133",
+    "doi": "10.1109/IROS.2017.8202133",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Domain randomization for transferring deep neural networks from simulation to the real world",
+      "container": "2017 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS)",
+      "published": {
+        "date-parts": [
+          [
+            2017,
+            9
+          ]
+        ]
+      },
+      "type": "proceedings-article",
+      "publisher": "IEEE",
+      "author_count": 6,
+      "DOI": "10.1109/iros.2017.8202133"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 36,
+    "link": "https://doi.org/10.1109/ICRA.2018.8460528",
+    "doi": "10.1109/ICRA.2018.8460528",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Sim-to-Real Transfer of Robotic Control with Dynamics Randomization",
+      "container": "2018 IEEE International Conference on Robotics and Automation (ICRA)",
+      "published": {
+        "date-parts": [
+          [
+            2018,
+            5
+          ]
+        ]
+      },
+      "type": "proceedings-article",
+      "publisher": "IEEE",
+      "author_count": 4,
+      "DOI": "10.1109/icra.2018.8460528"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 37,
+    "link": "https://doi.org/10.3389/frobt.2022.799893",
+    "doi": "10.3389/frobt.2022.799893",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Robot Learning From Randomized Simulations: A Review",
+      "container": "Frontiers in Robotics and AI",
+      "published": {
+        "date-parts": [
+          [
+            2022,
+            4,
+            11
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Frontiers Media SA",
+      "author_count": 6,
+      "DOI": "10.3389/frobt.2022.799893"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 38,
+    "link": "https://doi.org/10.1109/ICRA.2019.8793789",
+    "doi": "10.1109/ICRA.2019.8793789",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Closing the Sim-to-Real Loop: Adapting Simulation Randomization with Real World Experience",
+      "container": "2019 International Conference on Robotics and Automation (ICRA)",
+      "published": {
+        "date-parts": [
+          [
+            2019,
+            5
+          ]
+        ]
+      },
+      "type": "proceedings-article",
+      "publisher": "IEEE",
+      "author_count": 7,
+      "DOI": "10.1109/icra.2019.8793789"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 39,
+    "link": "https://doi.org/10.1016/j.robot.2023.104432",
+    "doi": "10.1016/j.robot.2023.104432",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "DROPO: Sim-to-real transfer with offline domain randomization",
+      "container": "Robotics and Autonomous Systems",
+      "published": {
+        "date-parts": [
+          [
+            2023,
+            8
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Elsevier BV",
+      "author_count": 3,
+      "DOI": "10.1016/j.robot.2023.104432"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 40,
+    "link": "https://doi.org/10.3115/v1/D14-1179",
+    "doi": "10.3115/v1/D14-1179",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Learning Phrase Representations using RNN Encoder–Decoder for Statistical Machine Translation",
+      "container": "Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP)",
+      "published": {
+        "date-parts": [
+          [
+            2014
+          ]
+        ]
+      },
+      "type": "proceedings-article",
+      "publisher": "Association for Computational Linguistics",
+      "author_count": 7,
+      "DOI": "10.3115/v1/d14-1179"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 41,
+    "link": "https://arxiv.org/abs/1611.05397",
+    "doi": null,
+    "status": "no_doi",
+    "metadata": {
+      "title": "ERR HTTPError: HTTP Error 429: Unknown Error",
+      "source": "official_url"
+    },
+    "url_check": [
+      200,
+      "https://arxiv.org/abs/1611.05397",
+      "text/html; charset=utf-8"
+    ],
+    "error": null
+  },
+  {
+    "id": 42,
+    "link": "https://arxiv.org/abs/2007.05929",
+    "doi": null,
+    "status": "no_doi",
+    "metadata": {
+      "title": "ERR TimeoutError: The read operation timed out",
+      "source": "official_url"
+    },
+    "url_check": [
+      200,
+      "https://arxiv.org/abs/2007.05929",
+      "text/html; charset=utf-8"
+    ],
+    "error": null
+  },
+  {
+    "id": 43,
+    "link": "https://proceedings.mlr.press/v70/pathak17a.html",
+    "doi": null,
+    "status": "no_doi",
+    "metadata": {
+      "title": "Curiosity-driven Exploration by Self-supervised Prediction",
+      "source": "official_url"
+    },
+    "url_check": [
+      200,
+      "https://proceedings.mlr.press/v70/pathak17a.html",
+      "text/html; charset=utf-8"
+    ],
+    "error": null
+  },
+  {
+    "id": 44,
+    "link": "https://arxiv.org/abs/1711.00832",
+    "doi": null,
+    "status": "no_doi",
+    "metadata": {
+      "title": "ERR HTTPError: HTTP Error 429: Unknown Error",
+      "source": "official_url"
+    },
+    "url_check": [
+      200,
+      "https://arxiv.org/abs/1711.00832",
+      "text/html; charset=utf-8"
+    ],
+    "error": null
+  },
+  {
+    "id": 45,
+    "link": "https://doi.org/10.1038/s41586-019-1724-z",
+    "doi": "10.1038/s41586-019-1724-z",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Grandmaster level in StarCraft II using multi-agent reinforcement learning",
+      "container": "Nature",
+      "published": {
+        "date-parts": [
+          [
+            2019,
+            11,
+            14
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Springer Science and Business Media LLC",
+      "author_count": 42,
+      "DOI": "10.1038/s41586-019-1724-z"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 46,
+    "link": "https://doi.org/10.1126/science.aau6249",
+    "doi": "10.1126/science.aau6249",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "Human-level performance in 3D multiplayer games with population-based reinforcement learning",
+      "container": "Science",
+      "published": {
+        "date-parts": [
+          [
+            2019,
+            5,
+            31
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "American Association for the Advancement of Science (AAAS)",
+      "author_count": 18,
+      "DOI": "10.1126/science.aau6249"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 47,
+    "link": "https://proceedings.neurips.cc/paper_files/paper/2023/hash/94796017d01c5a171bdac520c199d9ed-Abstract-Conference.html",
+    "doi": null,
+    "status": "no_doi",
+    "metadata": {
+      "title": "A Robust and Opponent-Aware League Training Method for StarCraft II",
+      "source": "official_url"
+    },
+    "url_check": [
+      200,
+      "https://proceedings.neurips.cc/paper_files/paper/2023/hash/94796017d01c5a171bdac520c199d9ed-Abstract-Conference.html",
+      "text/html; charset=utf-8"
+    ],
+    "error": null
+  },
+  {
+    "id": 48,
+    "link": "https://doi.org/10.1109/CVPR.2016.91",
+    "doi": "10.1109/CVPR.2016.91",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "You Only Look Once: Unified, Real-Time Object Detection",
+      "container": "2016 IEEE Conference on Computer Vision and Pattern Recognition (CVPR)",
+      "published": {
+        "date-parts": [
+          [
+            2016,
+            6
+          ]
+        ]
+      },
+      "type": "proceedings-article",
+      "publisher": "IEEE",
+      "author_count": 4,
+      "DOI": "10.1109/cvpr.2016.91"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 49,
+    "link": "https://doi.org/10.1109/CVPR52729.2023.00721",
+    "doi": "10.1109/CVPR52729.2023.00721",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "YOLOv7: Trainable Bag-of-Freebies Sets New State-of-the-Art for Real-Time Object Detectors",
+      "container": "2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)",
+      "published": {
+        "date-parts": [
+          [
+            2023,
+            6
+          ]
+        ]
+      },
+      "type": "proceedings-article",
+      "publisher": "IEEE",
+      "author_count": 3,
+      "DOI": "10.1109/cvpr52729.2023.00721"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 50,
+    "link": "https://arxiv.org/abs/1906.08172",
+    "doi": null,
+    "status": "no_doi",
+    "metadata": {
+      "title": "ERR TimeoutError: The read operation timed out",
+      "source": "official_url"
+    },
+    "url_check": [
+      200,
+      "https://arxiv.org/abs/1906.08172",
+      "text/html; charset=utf-8"
+    ],
+    "error": null
+  },
+  {
+    "id": 51,
+    "link": "https://doi.org/10.1109/34.888718",
+    "doi": "10.1109/34.888718",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "A flexible new technique for camera calibration",
+      "container": "IEEE Transactions on Pattern Analysis and Machine Intelligence",
+      "published": {
+        "date-parts": [
+          [
+            2000
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+      "author_count": 1,
+      "DOI": "10.1109/34.888718"
+    },
+    "url_check": null,
+    "error": null
+  },
+  {
+    "id": 52,
+    "link": "https://doi.org/10.1186/s12984-015-0090-9",
+    "doi": "10.1186/s12984-015-0090-9",
+    "status": "crossref_ok",
+    "metadata": {
+      "title": "On the analysis of movement smoothness",
+      "container": "Journal of NeuroEngineering and Rehabilitation",
+      "published": {
+        "date-parts": [
+          [
+            2015,
+            12
+          ]
+        ]
+      },
+      "type": "journal-article",
+      "publisher": "Springer Science and Business Media LLC",
+      "author_count": 4,
+      "DOI": "10.1186/s12984-015-0090-9"
+    },
+    "url_check": null,
+    "error": null
+  }
+]

@@ -1,0 +1,355 @@
+\documentclass[journal,twoside,web]{ieeecolor2}
+
+\usepackage{generic}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{url}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\algrenewcommand\algorithmicrequire{\textbf{Input:}}
+\usepackage{balance}
+\usepackage[hidelinks,bookmarksnumbered=true]{hyperref}
+
+\graphicspath{{figures/}}
+\hypersetup{
+  pdftitle={Adaptive Difficulty Regulation for Noncontact Upper-Limb Rehabilitation Using Reinforcement Learning},
+  pdfauthor={[First Author Name]; [Second Author Name]; [Corresponding Author Name]},
+  pdfsubject={Adaptive difficulty regulation for noncontact upper-limb rehabilitation}
+}
+\hyphenation{re-ha-bil-i-ta-tion mic-ro-robot inter-action ran-dom-iza-tion}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+  T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\markboth{\journalname, VOL. XX, NO. XX, XXXX 2026}
+{[First Author Name] \MakeLowercase{\textit{et al.}}: Adaptive Difficulty Regulation for Noncontact Upper-Limb Rehabilitation Using Reinforcement Learning}
+
+\begin{document}
+
+\title{Adaptive Difficulty Regulation for Noncontact Upper-Limb Rehabilitation Using Reinforcement Learning}
+\author{[First Author Name], [Second Author Name], and [Corresponding Author Name]
+\thanks{Manuscript received [Month Day, Year]; revised [Month Day, Year]. This work was supported by [Funding Agency/Program] under Grant [Grant Number].}
+\thanks{[First Author Name] and [Second Author Name] are with [Department], [Institution], [City], [Country] (e-mail: [author@email.edu]).}
+\thanks{[Corresponding Author Name] is with [Department], [Institution], [City], [Country] and is the corresponding author (e-mail: [corresponding-author@email.edu]).}}
+\maketitle
+
+\begin{abstract}
+Adaptive rehabilitation requires task difficulty to remain challenging and attainable as user behavior changes, which fixed trajectories and hand-tuned controllers cannot reliably achieve. This study presents a reinforcement learning framework for a tabletop upper-limb pursuit task in which a participant attempts to catch an unpowered microrobot moved by noncontact magnetic actuation. The controller regulates the hand-microrobot distance within a platform-specific Zone of Proximal Development band. Decoupled randomization separates pursuit strategy from motor execution to generate diverse virtual hand behaviors. A dual-stream encoder combines current geometry with recent relative motion, and an auxiliary prediction task strengthens the representation of short-term hand dynamics. Iterative league training exposes the controller to an expanding pool of pursuit policies through prioritized opponent sampling. Simulation experiments showed that league training improved robustness across pursuit behaviors, while temporal encoding and auxiliary prediction supported smoother difficulty regulation. Transferred to the physical microrobot platform without additional training, the policy responded online to changes in hand motion through the complete vision-control loop. These results demonstrate the feasibility of learned, interaction-responsive difficulty regulation for noncontact upper-limb rehabilitation.
+\end{abstract}
+
+\begin{IEEEkeywords}
+adaptive difficulty, domain randomization, league training, magnetic microrobot, reinforcement learning, robot-assisted rehabilitation, zero-shot transfer
+\end{IEEEkeywords}
+
+\section{Introduction}
+\label{sec:introduction}
+\IEEEPARstart{R}{ehabilitation} after neurological injury aims to restore upper-limb motor function, which supports independence in self-care, work, and daily activity. Stroke and related neurological conditions can impair voluntary control, coordination, movement speed, and purposeful action, often requiring prolonged rehabilitation \cite{gbdStrokeBurden2021,stinearStrokeRehab2020}. Repetitive task-oriented practice supports motor relearning by requiring users to generate movements, evaluate outcomes, and correct errors through repeated attempts \cite{maierNeurorehabPrinciples2019,leeTaskOrientedTraining2024,rozevinkTaskSpecificTraining2023}. However, the effectiveness of such practice depends not only on training volume but also on the difficulty of each trial. Tasks that are too easy may not elicit enough corrective effort, while tasks that are too difficult can produce repeated failure and reduce engagement \cite{guadagnoliChallengePoint2004,gomesTaskChallenge2025}. Upper-limb training therefore needs to keep users actively involved while preserving a challenge that is demanding but still attainable. Maintaining this balance is difficult because motor performance varies across individuals and can fluctuate within a single session.
+
+Current upper-limb rehabilitation relies on several forms of training. Therapist-guided exercise gives clinicians direct access to movement quality, so task difficulty and feedback can be adjusted for each user. Conventional tabletop devices and rehabilitation equipment make repeated practice accessible across reaching, tracking, grasping, and coordination tasks. Robotic systems, including exoskeletons and end-effector devices, add repeatable task execution, programmable assistance or resistance, and quantitative measurement of movement and force \cite{mehrholzRobotArmTraining2018,rodgersRATULS2019,suUpperRobotTraining2024,boardsworthUpperLimbRobotic2025,wangRobotAssistedNetwork2025,aiMachineLearningRehab2023}. Virtual reality systems, motion-capture games, and screen-based exercises broaden the training environment through visual feedback and staged progression \cite{doumasSeriousGames2021,keneaImmersiveVR2025,altawilAdaptiveVR2026}. Together, these approaches support individualized guidance, intensive repetition, objective assessment, and varied task practice.
+
+Despite these advantages, each approach carries practical limits. Therapist-led training is adaptable, but therapist availability constrains both intensity and scale. Conventional devices are easy to use, but they usually provide limited sensing and little real-time adaptation or quantitative feedback. Contact-based robotic systems can precisely regulate physical interaction \cite{arantesAdaptiveAAN2023}. However, they often require the user to wear or hold mechanical components, which increases setup burden and narrows the available forms of interaction. Fully virtual systems are flexible, but they mainly act through visual interfaces rather than through physical target interaction. We therefore develop a noncontact tabletop system in which the user pursues a physical target without wearing or holding a powered device. The target is actuated remotely, and its behavior is defined in software, so the path and difficulty can be adjusted during interaction \cite{sittiBiomedicalMicrorobots2015,yangMagneticActuation2020,miaoSoftMagneticRobots2023}. This design preserves physical interaction while reducing user-worn equipment and supporting programmable adaptive training.
+
+The effectiveness of this interface depends on how the microrobot target is controlled during pursuit. The target should not simply escape the user, nor should it move so predictably that the task becomes trivial. Its motion should instead keep the hand-microrobot distance within a working Zone of Proximal Development (ZPD), where the task remains challenging but reachable \cite{vygotskyMindSociety1978,hocineSeriousGameAdaptation2015}. This requires continuous adjustment as the user's speed, reaction delay, and pursuit strategy change over time. Prior work on dynamic difficulty adjustment in rehabilitation games similarly motivates adaptive controllers for variable user behavior \cite{shangDynamicDifficulty2025,ajaniParetoDDA2023,vitekovaDDAReview2026}. Rule-based reactive controllers, such as artificial potential field (APF) methods, can respond to the current hand-microrobot geometry, but they depend on manually selected gains, thresholds, or reference motions and often do not represent recent pursuit dynamics. A short-term increase in distance can also create later failures, such as workspace exit or excessive task difficulty. These limitations make the task better suited to a learning-based controller that can use interaction data to optimize future consequences rather than only reacting to the current distance. Reinforcement learning (RL) provides such a framework, because it can learn state-dependent control policies through interaction and optimize long-term outcomes \cite{suttonBartoRL2018}. RL has been applied successfully to robotic manipulation, locomotion, human-robot interaction, and adaptive rehabilitation control \cite{koberRLRobotics2013,schulmanPPO2017,molleOnlineRLRehab2025,pareekAR3n2024,zhangImpedanceLandscapes2022,pelosiPersonalizedRehab2024}. However, this task also requires diverse simulated hand behaviors and a state representation that captures motion dynamics over time.
+
+Accordingly, we develop an adaptive RL framework for regulating pursuit difficulty under variable hand behavior. The framework combines randomized virtual hands, temporal motion representation, and population-based policy training. To increase behavioral diversity in simulation, the hand model separates pursuit strategy from motor execution. Scripted and learned hand policies generate intended motion, while an execution layer adds inertia, motion-change limits, observation noise, and delay. The robot policy uses the current interaction geometry together with recent relative hand motion, allowing it to represent both workspace layout and short-term pursuit dynamics. An auxiliary prediction objective further encourages the policy encoder to learn these dynamics. Robustness across pursuit strategies is improved through iterative league training, where the robot is trained against a growing pool of scripted and learned hand policies. We evaluate the framework in simulation by testing robustness across pursuit behaviors and isolating the contributions of temporal encoding and auxiliary prediction. We then deploy the learned policy on the magnetic microrobot platform without additional physical training, testing the full loop from visual observation to physical actuation. The evaluation focuses on adaptive difficulty regulation, robustness, motion smoothness, system responsiveness, and physical deployment feasibility, rather than clinical effectiveness or motor recovery.
+
+The remainder of this paper is organized as follows. Section~\ref{sec:system-overview} introduces the magnetic tabletop platform and formulates the adaptive pursuit control problem. Section~\ref{sec:methodology} describes virtual hand modeling, policy architecture, and iterative league training. Section~\ref{sec:experiments-results} reports the simulation experiments, ablation studies, and zero-shot physical deployment results. Section~\ref{sec:discussion} discusses the findings and limitations. Section~\ref{sec:conclusion} concludes the paper.
+
+\section{System Overview and Problem Formulation}
+\label{sec:system-overview}
+We introduce a magnetically actuated noncontact rehabilitation system for active upper-limb training. In magnetic milli/microrobotics terminology, the interaction target is an unpowered magnetic body actuated across a desktop workspace, not a self-propelled onboard device. The user pursues the target on the tabletop as a robotic arm moves a permanent magnet below the surface. This layout preserves a physical pursuit task without rigid coupling between the robot and the human body. The user therefore remains an active pursuer rather than a passive follower, which supports engagement during motor training. Because the appropriate challenge level changes with the participant's pursuit behavior, we formulate microrobot motion control as an RL problem for adaptive difficulty regulation.
+
+\subsection{Hardware Platform}
+\label{subsec:hardware-platform}
+The platform is organized into actuation, interaction, and perception layers. The actuation layer places a UR10 robotic arm beneath the workspace, with a permanent magnet mounted on the end effector to drive the microrobot above the surface \cite{sittiBiomedicalMicrorobots2015,yangMagneticActuation2020,miaoSoftMagneticRobots2023}. The interaction layer uses a 5-mm acrylic sheet to support the unpowered microrobot and physically separate the robotic arm from the user. The perception layer uses an overhead camera connected to a host computer. The computer estimates the microrobot and hand positions, then sends target pose commands to the robotic arm through Ethernet.
+
+This layout supports interaction safety while keeping the hardware simple. Fig.~\ref{fig:system-framework} summarizes the workflow from simulation training to visual observation, policy inference, and physical magnetic actuation. The acrylic sheet provides fixed separation between the participant and the robotic arm, so the participant interacts only with the lightweight unpowered microrobot on the tabletop. The robotic arm remains below the surface, with software motion limits and its standard emergency stop available during operation. The platform runs as a vision-based closed loop: the overhead camera tracks the hand and microrobot, the learned policy generates motion commands from these observations, and the robotic arm actuates the microrobot through the permanent magnet.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.94\textwidth]{fig01_system_framework.png}
+\caption{System framework for noncontact rehabilitation from simulation to physical deployment. The simulation environment defines the pursuit interaction, the policy network maps spatial and temporal observations to microrobot actions, the observation module converts camera measurements into policy inputs, and the physical platform executes the learned policy through magnetic actuation.}
+\label{fig:system-framework}
+\end{figure*}
+
+\subsection{Problem Formulation}
+\label{subsec:problem-formulation}
+The task is formulated as a pursuit interaction with continuous feedback on a flat workspace. The participant's hand acts as the pursuer, and the microrobot serves as a moving target driven through magnetic actuation beneath the acrylic surface. The participant attempts to approach and catch the microrobot, while the controller adjusts target motion to keep the task challenging but reachable. Unlike static reaching, the target continues to move after the participant initiates movement. The task therefore requires continuous tracking, anticipation, and correction rather than a single reach.
+
+To keep this pursuit task challenging but reachable, the hand-microrobot distance is regulated within an operational ZPD band \cite{vygotskyMindSociety1978,hocineSeriousGameAdaptation2015}. The term ZPD is used as a control analogy for maintaining the task between trivial pursuit and unreachable escape, not as a psychometric estimate of learning potential. In this study, the target band was set after workspace calibration. It was chosen for the desktop pilot platform to prevent immediate catch while keeping the microrobot visually and physically reachable. This band is platform specific, not a universal clinical threshold. Patient use would require session-level calibration based on movement range, speed, and therapeutic goal. The controller is intended to keep the interaction inside the target band rather than escaping completely or yielding passively. Because hand speed, pursuit strategy, response delay, and motion noise can change during interaction, fixed difficulty settings are inadequate.
+
+A natural baseline for this pursuit problem is a rule-based reactive controller, with artificial potential fields as a representative example \cite{khatibObstacleAvoidance1986,leeVirtualHillAPF2024}. Such controllers are intuitive because the target motion can be defined directly from the current hand-microrobot geometry. However, this reactive assumption is poorly matched to an interactive task in which the participant may change pursuit behavior over time. A distance-based potential field can push the microrobot away from the hand, but it does not explicitly represent the hand's direction, velocity, or recent motion pattern. If the participant shifts from direct pursuit to interception, the controller may respond only after the relative geometry has already changed. This delay can produce oscillatory motion, push the microrobot toward the workspace boundary, or lead to an early catch. More broadly, rule-based control depends on manually specified gains, thresholds, and motion patterns. With camera delay, noisy hand estimates, and abrupt pursuit changes, fixed rules have limited ability to separate transient measurement variation from meaningful changes in hand behavior. These limitations motivate an RL policy that uses both current geometry and recent motion history to regulate interaction difficulty over a longer horizon.
+
+For robot training, the environment provides a scalar reward that combines distance regulation, action smoothness, workspace safety, and catch avoidance. Let $d_t$ denote the hand-microrobot distance, $a_t$ denote the robot action, and $p_{R,t}$ denote the microrobot position. The reward signal used for policy learning with proximal policy optimization (PPO) \cite{schulmanPPO2017} is defined as follows:
+
+\begin{equation}
+r_t = r_{\mathrm{dist}}(d_t)
++ r_{\mathrm{smooth}}(a_t)
++ r_{\mathrm{bound}}(p_{R,t})
++ r_{\mathrm{catch}}(d_t)
+\label{eq:robot-reward}
+\end{equation}
+
+Equation~\eqref{eq:robot-reward} defines the reward as four components. The distance term $r_{\mathrm{dist}}(d_t)$ encourages the hand-microrobot distance to remain inside the target ZPD band and penalizes deviations on either side. The smoothness term $r_{\mathrm{smooth}}(a_t)$ discourages abrupt commanded motion. The boundary term $r_{\mathrm{bound}}(p_{R,t})$ penalizes microrobot positions outside the valid workspace, and the catch term $r_{\mathrm{catch}}(d_t)$ penalizes contact between the hand and microrobot. Episodes terminate when a catch occurs, when the microrobot exits the workspace, or when the maximum horizon is reached. Additional implementation details, including simulation settings, reward functions, and coefficient values, are provided in the Supplementary Material.
+
+\section{Methodology}
+\label{sec:methodology}
+To improve robustness against variations in pursuit strategy and motor execution, the framework combines three elements. Decoupled domain randomization separates movement intent from execution constraints, allowing virtual hands to differ in both strategy and motor behavior. A dual-stream encoder combines instantaneous geometry with recent hand motion, and an auxiliary dynamics head encourages short-horizon motion prediction. Iterative league training further exposes the robot to an expanding pool of hand policies, reducing overfitting to any single hand policy.
+
+\subsection{Decoupled Randomization of Cognitive and Motor Factors}
+\label{subsec:domain-randomization}
+To improve robustness to diverse hand behaviors, we apply domain randomization to both pursuit strategy and motor execution \cite{tobinDomainRandomization2017,pengDynamicsRandomization2018,muratoreRandomizedSimulations2022,chebotarClosingSimReal2019,tiboniDROPO2023}. Rather than perturbing the resulting hand trajectory as a single process, we separate intended motion generation from its execution. A hand policy first generates the intended displacement, and a motor execution layer then applies motion constraints, observation noise, and temporal delay. The hand policy is sampled from a pool containing a stochastic scripted pursuit controller (SPC) and trained RL policies, representing direct pursuit and more anticipatory interception behaviors.
+
+For the SPC, let $\rho_{\mathrm{ep}}$ denote the stride length sampled for each episode and $q_t$ denote a planar unit direction. The intended displacement is
+
+\begin{equation}
+u_t^{\mathrm{SPC}} = \rho_{\mathrm{ep}} q_t
+\label{eq:spc-displacement}
+\end{equation}
+
+Equation~\eqref{eq:spc-displacement} scales the pursuit direction by the episode-specific stride. The stride $\rho_{\mathrm{ep}}$ is sampled once at episode reset and then held fixed. The direction $q_t$ follows a pursuit rule with $\epsilon$ exploration. With probability $1-\epsilon$, $q_t$ points from the current hand position toward the microrobot. With probability $\epsilon$, $q_t$ is sampled uniformly from all planar unit directions. In the experiments, $\rho_{\mathrm{ep}}$ is sampled uniformly between 0.45 and 0.70, and $\epsilon$ is fixed at 0.05. Learned hand policies output the intended displacement directly, and the same motor execution model is applied afterward.
+
+Let $u_t$ denote the intended hand displacement per simulation step, $m_t$ denote the executed displacement, and $\widetilde{m}_t$ denote the filtered target displacement. The coefficient $\alpha$ controls temporal smoothing, with smaller values placing more weight on the preceding executed displacement. The filtered target is defined in \eqref{eq:filtered-displacement} as
+
+\begin{equation}
+\widetilde{m}_t = \alpha u_t + (1-\alpha)m_{t-1}
+\label{eq:filtered-displacement}
+\end{equation}
+
+The change from the preceding executed displacement is then limited by its Euclidean norm as shown in \eqref{eq:clipped-displacement}.
+
+\begin{equation}
+m_t = m_{t-1}
++ \operatorname{clip}_{\mathrm{norm}}
+  \!\left(\widetilde{m}_t-m_{t-1},c_{\max}\right)
+\label{eq:clipped-displacement}
+\end{equation}
+
+Here, $\operatorname{clip}_{\mathrm{norm}}(z,c)$ returns $z$ when its Euclidean norm does not exceed $c$ and otherwise rescales $z$ to have norm $c$. The scalar $c_{\max}$ therefore bounds the Euclidean norm of the change in executed displacement between consecutive simulation steps. The resulting per-step displacement updates the simulated hand position.
+
+\begin{equation}
+p_{H,t+1} = p_{H,t} + m_t
+\label{eq:hand-update}
+\end{equation}
+
+Equation~\eqref{eq:hand-update} applies the executed displacement to the hand position. Delay and observation noise are introduced separately by the motor execution layer. Under a constant intended displacement, the filtered and executed increments converge to a constant value rather than decaying toward zero. The motor-execution randomization ranges are summarized in Table~\ref{tab:motor-randomization}.
+
+\begin{table*}[!t]
+\caption{MOTOR-EXECUTION RANDOMIZATION RANGES}
+\label{tab:motor-randomization}
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{1.12}
+\begin{tabularx}{0.88\textwidth}{@{}>{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X@{}}
+\toprule
+Parameter & Range \\
+\midrule
+Motion smoothing coefficient, $\alpha$ & $0.5$--$0.9$ \\
+Maximum inter-step displacement change, $c_{\max}$ & $0.10$--$0.25$ workspace units/step \\
+Gaussian observation noise, $\sigma$ & $\mathcal{U}(0.01,0.08)$ workspace units \\
+Neural delay, $\delta$ & 0--3 frames \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+\subsection{Dual-Stream Encoder with Auxiliary Dynamics Prediction}
+\label{subsec:dual-stream-encoder}
+Domain randomization exposes the robot to hand motions with different strategies, delays, and execution characteristics. Under this variability, the instantaneous interaction state alone may not be sufficient to determine the hand's motion trend. We therefore use a dual-stream encoder that combines the current geometric state with a recent history of hand motion. An auxiliary dynamics prediction task further encourages the shared representation to capture short-term motion patterns.
+
+At each timestep, the observation vector has 44 dimensions and is divided into a scalar vector with 12 dimensions and a temporal buffer with 32 dimensions, as shown in \eqref{eq:observation}.
+
+\begin{equation}
+o_t = [s_t;h_{t-T:t}]
+\label{eq:observation}
+\end{equation}
+
+The scalar component represents the instantaneous geometry of the interaction and is defined in \eqref{eq:scalar-state}.
+
+\begin{equation}
+s_t = [p_R;p_H;d(R,H);b_N,b_S,b_E,b_W;\mathrm{stride};a_{t-1}]
+\label{eq:scalar-state}
+\end{equation}
+
+Here, $p_R$ and $p_H$ denote the 2D positions of the microrobot and the hand. $d(R,H)$ is their Euclidean distance. $b_N$, $b_S$, $b_E$, and $b_W$ denote signed distances to the workspace boundaries. The variables stride and $a_{t-1}$ represent the current movement step size and the previous robot action, respectively.
+
+The temporal buffer $h_{t-T:t}$ contains the $T=16$ most recent relative hand displacement vectors, forming a sequence with 32 dimensions. This sequence helps the encoder estimate motion direction, response delay, and oscillatory behavior that are unavailable from the current position alone. Relative displacements make the representation invariant to translation, so the recurrent stream focuses on how the hand is moving rather than where the interaction occurs in the workspace.
+
+The scalar vector and temporal buffer are encoded in separate streams, as shown in Fig.~\ref{fig:dual-stream-architecture}. A multilayer perceptron (MLP) extracts geometric information from the scalar state, while a gated recurrent unit (GRU) processes the displacement sequence \cite{choRNNEncoderDecoder2014}. The two stream outputs are concatenated and passed through a fusion MLP to produce the shared representation used by the policy and value heads.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.94\textwidth]{fig02_dual_stream_architecture.png}
+\caption{Dual-stream policy architecture with auxiliary dynamics prediction. The spatial branch encodes the geometric state, the temporal branch encodes recent interaction history with a recurrent module, and the fused representation supports the policy head, value head, and auxiliary prediction head.}
+\label{fig:dual-stream-architecture}
+\end{figure*}
+
+The environment reward provides the main control signal for policy learning, but the encoder receives this signal only indirectly through policy optimization. An auxiliary dynamics head adds a denser learning signal for motion representation \cite{jaderbergAuxiliaryTasks2017,schwarzerSPR2021}. The head predicts relative hand displacement over a horizon of eight steps. Future displacements are available from the rollout, so this self-supervised auxiliary task requires no additional annotation \cite{pathakCuriosity2017}.
+
+The trajectory prediction loss is given in \eqref{eq:trajectory-loss}.
+
+\begin{equation}
+\mathcal{L}_{\mathrm{traj}}
+= \mathbb{E}\!\left[
+\left\|\widehat{D}_{t+1:t+H}-D_{t+1:t+H}\right\|_2^2
+\right], \quad H=8
+\label{eq:trajectory-loss}
+\end{equation}
+
+Here, $\widehat{D}_{t+1:t+H}$ is the predicted future displacement sequence, and $D_{t+1:t+H}$ is the observed future displacement sequence. The full training objective combines the PPO loss with the auxiliary trajectory prediction loss in \eqref{eq:total-loss}.
+
+\begin{equation}
+\mathcal{L}_{\mathrm{total}} = \mathcal{L}_{\mathrm{PPO}} + \lambda_{\mathrm{traj}}\mathcal{L}_{\mathrm{traj}}
+\label{eq:total-loss}
+\end{equation}
+
+The coefficient $\lambda_{\mathrm{traj}}$ controls the auxiliary loss weight. Because the auxiliary dynamics head shares the encoder with the policy, its gradients also update the spatial and temporal streams. These gradients encourage the encoder to capture motion inertia, delay, and interaction dynamics, helping the policy anticipate upcoming hand motion from recent history.
+
+\subsection{League Training}
+\label{subsec:league-training}
+After defining the temporal encoder, the next issue is the range of hand behaviors used during training. Generalization across pursuit strategies depends not only on representation but also on the policies encountered by the robot. Training against a single hand policy can lead to overspecialization and poor transfer when the hand changes strategy. Training the robot and hand simultaneously creates a different difficulty. Because both policies influence the next state and return, updating them together makes each learner's effective environment nonstationary, which is poorly matched to on-policy PPO updates. In practice, the interaction can cycle as the robot exploits the current hand policy, the hand adapts, and the robot loses strategies that were useful against earlier hands \cite{lanctotUnifiedMARL2017}.
+
+The training schedule addresses this nonstationarity by alternating the two sides of learning and retaining older hand policies in a shared pool \cite{vinyalsAlphaStar2019,jaderbergPopulationGames2019}. During robot training, sampled hand policies remain fixed and are treated as part of the environment. During hand training, the robot policy is fixed in the same way. The robot is trained against a pool $\mathcal{P}$ that contains the SPC and learned hand policies from previous stages. This pool exposes the robot to direct pursuit as well as interception-oriented behavior. It broadens the hand-behavior distribution without turning the task into pure evasion, because the robot is rewarded for maintaining the ZPD interaction rather than simply escaping from the hand.
+
+Asynchronous multi-stage RL has similarly reduced policy nonstationarity in pursuit--evasion by alternating optimization between frozen pursuer and evader policies \cite{xiaoAMSDRL2024}. Population-based training retains historical opponents to reduce forgetting and overfitting to the latest adversary \cite{vinyalsAlphaStar2019,jaderbergPopulationGames2019}, while AMSPB applies this principle to pursuit--evasion by sampling from a growing population of current and previously trained policies \cite{sanchezRonceroAMSPB2025}. Our formulation follows this broader principle of staged optimization with policy retention, but uses the opponent pool to maintain the interaction within a target ZPD band rather than to maximize capture or escape. It also retains scripted pursuit in the pool and prioritizes learned hands according to their recent competitiveness against the robot policy.
+
+Algorithm~\ref{alg:iterative-league} summarizes this iterative schedule. In each iteration, the robot is first trained against hand policies sampled from the fixed pool. A new hand policy is then trained against the frozen robot, initialized from the previous learned hand when available, and added to the pool before the next robot-training phase. The experiments use $N=10$ league iterations, producing a final pool that contains the SPC and ten learned hand policies. At this scale, policy storage and episode-length-based prioritized opponent sampling were not computational bottlenecks, since each rollout uses a single sampled hand policy. Larger leagues could prune or down-weight redundant policies based on behavioral similarity, persistently low sampling probability, or low exploitability against the current robot.
+
+\begin{algorithm}[!t]
+\caption{Iterative League Training}
+\label{alg:iterative-league}
+\footnotesize
+\begin{algorithmic}[1]
+\Require initial robot policy $\pi_R^{(0)}$, SPC policy $\pi_H^{\mathrm{SPC}}$, number of league iterations $N$
+\Statex \textbf{Initialize:} pool of hand policies $\mathcal{P}\leftarrow\{\pi_H^{\mathrm{SPC}}\}$.
+\For{$n=1,2,\ldots,N$}
+  \State Train robot policy $\pi_R^{(n)}$ with PPO against hand policies
+  \Statex \hspace{\algorithmicindent} sampled from $\mathcal{P}$.
+  \State Initialize hand policy $\pi_H^{(n)}$ from $\pi_H^{(n-1)}$ when available.
+  \State Train $\pi_H^{(n)}$ against the frozen robot policy $\pi_R^{(n)}$.
+  \State Update pool of hand policies $\mathcal{P}\leftarrow\mathcal{P}\cup\{\pi_H^{(n)}\}$.
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+After each pool update, hand policies are not sampled uniformly. Different learned hands challenge the current robot to different degrees \cite{huangOpponentAwareLeague2023}, so the training schedule uses recent episode length as a simple competitiveness signal. Shorter episodes usually indicate that a hand policy catches the microrobot quickly or forces early termination. That policy is therefore sampled more often in the next robot-training phase. For learned hand $i$, let $\bar{\ell}_i$ denote its recent mean episode length. Its sampling score is inversely related to $\bar{\ell}_i$ and smoothed by a uniform mixture.
+
+\begin{equation}
+s_i = \frac{1}{\bar{\ell}_i+\epsilon_{\ell}},
+\qquad
+\widetilde{p}_i = (1-\mu)\frac{s_i}{\sum_j s_j}+\frac{\mu}{m}
+\label{eq:opponent-sampling}
+\end{equation}
+
+In \eqref{eq:opponent-sampling}, $m$ denotes the number of learned hand policies, $\epsilon_{\ell}$ is a small stabilizing constant, and $\mu$ controls the uniform exploration mass. The SPC remains in the pool with a fixed sampling probability, while learned-hand probabilities are assigned according to \eqref{eq:opponent-sampling}. This preserves the scripted pursuit behavior and allocates the remaining robot-training episodes toward learned hand policies that still expose weaknesses in the current robot policy. The Supplementary Material provides the PPO hyperparameters, together with the settings used for the auxiliary prediction loss and league sampling.
+
+\section{Experiments and Results}
+\label{sec:experiments-results}
+
+\subsection{Evaluation Protocol}
+\label{subsec:simulation-protocol}
+The evaluation examines robustness across pursuit behaviors, the contribution of temporal hand-motion encoding, and zero-shot operation through the physical perception-control loop. Simulation experiments compare training protocols and encoder designs, whereas physical deployment tests whether the learned policy can regulate microrobot motion coherently from measured hand movement without additional training.
+
+All simulation evaluations use the planar workspace and target ZPD band defined in Section~\ref{subsec:problem-formulation}. A timestep is counted as within the zone when the hand-microrobot distance falls inside this band. The same band is retained during physical deployment to preserve consistency between simulation and hardware. It represents a platform-specific evaluation setting rather than a clinically optimal threshold for every user. Further details on the evaluation and deployment protocols are provided in the Supplementary Material.
+
+Time in Zone (TIZ) is the primary metric. It is defined as the fraction of the episode horizon during which the hand-microrobot distance remains inside the target ZPD band. Episode length is reported in simulation steps and measures how long the interaction remains active before catch, workspace exit, or the maximum horizon. In the league analysis, robustness across learned hand policies is summarized using the mean TIZ and the lowest TIZ among tested hands. In the network ablation, TIZ is reported together with workspace coverage and mean jerk. These two additional metrics measure task coverage and motion smoothness in the final policy evaluation.
+
+The training-protocol comparison considers an SPC-only baseline, a single-opponent baseline, and the league policy, with the reactive APF controller serving as a nonlearning geometric reference in Table~\ref{tab:policy-comparison}. The learned policies are evaluated across hand generations in Fig.~\ref{fig:league-cross-generation} and under three representative pursuit conditions in Table~\ref{tab:policy-comparison}. The encoder comparison retains the same training setting and changes only the policy representation. The MLP baseline uses instantaneous geometry, the GRU policy adds recent relative hand displacement, and the auxiliary GRU policy further includes the future-dynamics prediction objective.
+
+\subsection{League Training}
+\label{subsec:league-robustness}
+League training improved both mean performance and the lowest observed performance across learned hand policies. In Fig.~\ref{fig:league-cross-generation}(a), each row represents one robot generation evaluated against all learned hand generations in the pool. Early robot generations perform well over limited portions of the matrix, whereas later generations maintain higher TIZ across a broader set of learned hands. Fig.~\ref{fig:league-cross-generation}(b) quantifies this change. Mean TIZ across the tested hands increased from 0.188 for the first robot generation to 0.282 for the final generation, while the lowest TIZ increased from 0.138 to 0.204. The trajectories were not strictly monotonic as the opponent pool evolved, but the gains in both summary measures indicate reduced dependence on any single learned hand policy.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.94\textwidth]{fig03_league_cross_generation.png}
+\caption{Cross-generation evaluation of league-trained robot policies within the target ZPD band. (a) TIZ matrix for each robot generation evaluated against each learned hand generation. Rows denote robot generations, and columns denote learned hand generations. (b) Mean TIZ and lowest TIZ across learned hand test policies for each robot generation.}
+\label{fig:league-cross-generation}
+\end{figure*}
+
+Table~\ref{tab:policy-comparison} extends the cross-generation analysis through a controlled comparison of the reactive APF controller, the SPC-only baseline, the single-opponent baseline, and the final league policy under scripted, learned, and manual pursuit. The learned hand condition uses H1, the policy obtained after the first hand-training phase; the same checkpoint is used to evaluate all learned robot policies and serves as the sole training opponent for the single-opponent baseline. Automated SPC and H1 results are reported as the mean $\pm$ sample standard deviation over 20 independently seeded trials of 1000 episodes each. The APF controller was evaluated only in simulation. Manual pursuit passed mouse commands through the same motor-execution layer as the virtual hands and is treated as a human-in-the-loop stress test rather than clinical validation. Higher TIZ and longer episodes denote more sustained difficulty regulation.
+
+\begin{table*}[!t]
+\caption{POLICY COMPARISON ACROSS THREE PURSUIT CONDITIONS}
+\label{tab:policy-comparison}
+\centering
+\footnotesize
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.08}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X c c@{}}
+\toprule
+Robot policy & Pursuit condition & TIZ & Episode length (steps) \\
+\midrule
+Reactive APF & SPC & $0.089 \pm 0.001$ & $18.7 \pm 0.2$ \\
+Reactive APF & Learned hand H1 & $0.170 \pm 0.006$ & $34.0 \pm 0.9$ \\
+Reactive APF & Manual mouse & --- & --- \\
+SPC-only baseline & SPC & $0.295 \pm 0.008$ & $51.0 \pm 1.2$ \\
+SPC-only baseline & Learned hand H1 & $0.146 \pm 0.006$ & $23.7 \pm 0.9$ \\
+SPC-only baseline & Manual mouse & $0.14 \pm 0.03$ & $33 \pm 9$ \\
+Single-opponent baseline & SPC & $0.107 \pm 0.003$ & $24.9 \pm 0.6$ \\
+Single-opponent baseline & Learned hand H1 & $0.398 \pm 0.007$ & $63.4 \pm 1.1$ \\
+Single-opponent baseline & Manual mouse & $0.19 \pm 0.05$ & $40 \pm 11$ \\
+League policy & SPC & $0.349 \pm 0.010$ & $59.3 \pm 1.3$ \\
+League policy & Learned hand H1 & $0.358 \pm 0.012$ & $49.8 \pm 1.4$ \\
+League policy & Manual mouse & $0.49 \pm 0.09$ & $74 \pm 13$ \\
+\bottomrule
+\end{tabularx}
+\end{table*}
+
+The comparison separates specialization from robustness. The SPC-only and single-opponent baselines each degraded outside their training condition, reaching TIZ values of 0.146 against H1 and 0.107 under SPC, respectively. By contrast, the league policy maintained similar performance under SPC and H1, with TIZ values of 0.349 and 0.358. Although the single-opponent baseline remained strongest in its matched H1 condition, the league policy provided the most consistent performance across scripted, learned, and manual pursuit.
+
+\subsection{Network Ablation}
+\label{subsec:network-ablation}
+Temporal encoding and auxiliary dynamics prediction progressively improved learning under the fixed training protocol. The MLP baseline uses only the instantaneous geometric state, the GRU policy adds a 16-frame history of relative displacement, and the auxiliary GRU includes the dynamics prediction head described in Section~\ref{subsec:dual-stream-encoder}. In Fig.~\ref{fig:network-ablation}(a), both recurrent policies reach higher episode rewards than the MLP baseline, with the auxiliary GRU showing the strongest late-stage performance. The episode-length curves in Fig.~\ref{fig:network-ablation}(b) follow the same overall ordering. These results show that recent relative motion supports more persistent interaction and that the auxiliary objective provides an additional benefit during policy training.
+
+The auxiliary predictions in Fig.~\ref{fig:network-ablation}(c) provide a qualitative check of the learned temporal representation. The predicted short-horizon displacement follows the direction and curvature of the observed future hand motion rather than merely reconstructing the current position. Fig.~\ref{fig:network-ablation}(d) quantifies the corresponding changes in final control performance. TIZ increased from 0.161 with the MLP baseline to 0.197 with the GRU and to 0.259 with the auxiliary GRU. Workspace coverage followed the same ordering, while mean jerk decreased with the auxiliary objective \cite{balasubramanianSmoothness2015}. The control metrics provide the primary evidence for the auxiliary head, and the prediction examples remain a representation-level consistency check.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.94\textwidth]{fig04_network_ablation.png}
+\caption{Network ablation for temporal encoding and auxiliary dynamics prediction. (a) Smoothed episode reward during training for the MLP, GRU, and auxiliary GRU policies. (b) Smoothed episode length during training for the same policies. (c) Representative predictions from the auxiliary head over a short horizon compared with observed future hand motion. (d) Final performance metrics normalized to the MLP baseline; higher values are better for TIZ and workspace coverage, whereas lower values are better for mean jerk.}
+\label{fig:network-ablation}
+\end{figure*}
+
+\subsection{Physical Deployment}
+\label{subsec:physical-deployment}
+The simulation-trained policy operated through the physical perception-control loop without additional training. During pilot deployment, human pursuit was tracked across the acrylic workspace while the robotic arm moved the magnetic actuator beneath the surface. Camera observations and robot commands were processed online throughout the recorded rollouts, allowing the fixed policy to regulate microrobot motion under continuous feedback.
+
+The deployment retained the observation structure used in simulation. Calibrated camera measurements provided the hand and microrobot positions, while workspace-boundary features, the previous robot command, and the recent history of relative hand displacement completed the policy input in \eqref{eq:observation} and \eqref{eq:scalar-state}. Robot state measurements supported command execution and system monitoring but were excluded from the policy observation. The perception pipeline combined YOLO-based microrobot detection \cite{redmonYOLO2016}, MediaPipe Hands tracking \cite{zhangMediaPipeHands2020}, camera calibration, and a planar homography from image coordinates to the workspace \cite{zhangCameraCalibration2000}. Brief interruptions in hand tracking were bridged by extrapolating motion from the latest velocity estimate. Workspace limits, bounded command increments, automatic stopping after capture, controlled shutdown behavior, and a hardware emergency stop constrained physical operation.
+
+Fig.~\ref{fig:physical-deployment} presents a representative zero-shot rollout with image frames and aligned motion traces. During steady pursuit, the hand-microrobot distance remains near the target ZPD band. A sharp increase in hand speed briefly reduces the separation below the target range. The policy then increases microrobot speed, and the distance moves back toward the band over the following seconds. When the hand slows, microrobot speed decreases and the separation again approaches the target range. Similar coupled responses throughout the rollout indicate that the policy adjusts microrobot motion to changes in pursuit dynamics rather than applying a fixed-speed escape command. The final decrease in distance corresponds to capture and episode termination. Overall, the representative rollout supports online responsiveness to abrupt changes in hand motion and recovery toward the intended interaction range after transient deviations.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.94\textwidth]{fig05_physical_deployment.png}
+\caption{Zero-shot physical deployment on the microrobot platform. (a) Representative frames from a physical rollout. (b) Smoothed hand-microrobot distance, target ZPD band, and measured hand and microrobot speeds from the same rollout.}
+\label{fig:physical-deployment}
+\end{figure*}
+
+\section{Discussion}
+\label{sec:discussion}
+In the proposed platform, task difficulty comes from target motion rather than direct mechanical assistance to the limb. The controller therefore has to adjust the pursuit challenge while keeping the microrobot reachable. The results suggest that this regulation depends on information at two scales. Within an episode, recent relative motion helps the policy infer how the hand-microrobot interaction is evolving. Across training, exposure to diverse pursuit strategies and execution styles reduces dependence on a single hand policy. The ablation results support the first role, and the league experiments support the second. Zero-shot deployment further shows that the learned policy can run through the physical vision-control loop and adjust target motion in response to measured changes in hand speed. Taken together, the results support adaptive target motion as a feasible way to regulate a noncontact physical task. However, the current evidence is limited to control robustness, online responsiveness, and system feasibility.
+
+At the same hand-microrobot distance, the appropriate robot action can depend on the preceding motion. The hand may be accelerating toward the target, recovering after a failed approach, changing direction, or responding after a delay. These cases are difficult to distinguish from the instantaneous geometric state alone. Encoding recent relative displacement gives the policy access to motion direction and short-term interaction trends, consistent with the performance differences in Fig.~\ref{fig:network-ablation}. The auxiliary objective may strengthen this temporal representation by encouraging the shared encoder to retain information useful for short-horizon hand-motion prediction. Prediction itself is not the control objective. It provides an additional training signal for motion features that support difficulty regulation, while policy performance remains the primary criterion \cite{choRNNEncoderDecoder2014,jaderbergAuxiliaryTasks2017,schwarzerSPR2021,pathakCuriosity2017}.
+
+Variability also arises from differences among pursuit behaviors. The scripted controller mainly produces direct pursuit, whereas learned hand policies can develop interception-oriented responses. Separating strategy generation from motor execution expands this variation through inertia, motion-change limits, observation noise, and delay. League training widens the strategy distribution further by adding new hand policies while retaining earlier ones in the pool. The nonmonotonic cross-generation trajectories in Fig.~\ref{fig:league-cross-generation} reflect shifts in this distribution as robot and hand optimization alternate. The condition-specific comparisons in Table~\ref{tab:policy-comparison} clarify the resulting trade-off. Training against a single learned hand favors the matched opponent but degrades under scripted pursuit, whereas league training remains more balanced across scripted, learned, and manual pursuit. The main benefit of league training is therefore reduced specialization rather than the highest score against any single behavior \cite{lanctotUnifiedMARL2017,vinyalsAlphaStar2019,jaderbergPopulationGames2019,huangOpponentAwareLeague2023}.
+
+Deployment on the physical platform introduced measurement noise, brief tracking losses, communication delay, actuator dynamics, calibration error, and uncertainty in the magnetic drive \cite{tobinDomainRandomization2017,pengDynamicsRandomization2018,muratoreRandomizedSimulations2022,chebotarClosingSimReal2019,tiboniDROPO2023}. The experiment evaluated the policy within the full physical loop, from overhead tracking and coordinate transformation to temporal-observation construction, policy inference, Cartesian command transmission, and magnetic actuation. Short gaps in hand detection were handled by extrapolating the most recent hand state from its estimated velocity, rather than pausing control immediately. Physical rollouts were completed without further policy training. In the representative rollout, a rapid increase in hand speed first reduced the distance to the microrobot. The robot then sped up, moving the distance back toward the target ZPD band. When the hand later slowed down, the microrobot slowed as well. This paired response suggests that the deployed policy was not simply executing a fixed escape behavior at constant speed. However, the experiment provides only preliminary evidence of online responsiveness and zero-shot closed-loop operation. It does not establish clinical safety, therapeutic value, or superiority over other rehabilitation interfaces.
+
+Several factors limit the generalizability of these findings. One limitation concerns the simulated hand-execution model. Inertia, motion limits, observation noise, and delay were represented through simplified processes rather than parameters measured from people with motor impairment. This design broadens the training distribution, but it does not constitute a biomechanical or neurological model of a patient population. Future versions could estimate motor-execution distributions from recorded trajectories and include impairment-relevant features such as asymmetric movement range, tremor, intermittent control, fatigue-related slowing, and variable visuomotor delay. A second limitation concerns difficulty calibration. The target ZPD band was chosen for the current desktop platform and kept fixed across simulation and deployment for consistency. A clinically meaningful band would need session-level personalization based on impairment severity, reachable workspace, movement speed, response delay, fatigue, and therapeutic goal. Clinician input could define the initial safe range, while online adaptation could adjust the band according to recent TIZ, catch frequency, boundary events, recovery after speed changes, and fatigue-related slowing. The hardware also remains a proof-of-concept platform. The robotic arm provides accurate and flexible actuation for validating the control framework, but its size, cost, and installation requirements limit routine use in hospitals or community rehabilitation settings. A practical system would need a smaller actuation mechanism and tighter integration of the camera, computing unit, magnetic drive, and tabletop workspace. Finally, the physical evaluation was designed to test closed-loop feasibility rather than clinical efficacy. The current results therefore cannot establish engagement, motor learning, functional recovery, or clinical benefit \cite{stinearStrokeRehab2020,gomesTaskChallenge2025,boardsworthUpperLimbRobotic2025,keneaImmersiveVR2025,altawilAdaptiveVR2026}.
+
+The path toward clinical evaluation requires a tighter link between control performance, device design, and user-specific calibration. On the control side, repeated physical sessions need to test whether the policy can recover after sudden changes in hand speed, remain stable during brief tracking losses, avoid workspace boundaries, and preserve smooth target motion across different users. These tests would provide a clearer basis for calibrating the target ZPD band from recorded hand trajectories, including each user's reachable workspace and typical movement speed. On the hardware side, the current robotic arm prototype remains useful for validating the control framework, but routine rehabilitation use requires a compact magnetic drive integrated with the tabletop, camera, and controller. Once the platform can deliver stable adaptive target motion in a deployable form, patient studies can compare this approach with fixed-speed target motion or therapist-selected difficulty under matched tasks. Those studies need to examine repeated-session tolerance, fatigue, engagement, movement quality, and task performance over time. Such evidence would determine whether the control robustness shown here can translate into measurable rehabilitation benefit.
+
+\section{Conclusion}
+\label{sec:conclusion}
+Adaptive difficulty regulation in the proposed pursuit task relied on temporal representation and exposure to varied hand behavior. Decoupled randomization broadened simulated motor execution independently of pursuit intent. The dual-stream encoder combined current geometry with recent relative motion, and the auxiliary prediction objective strengthened its representation of short-term dynamics. Iterative league training reduced specialization to individual hand policies. During evaluation, the final robot generation improved both mean and minimum TIZ across learned opponents and maintained the most balanced performance under scripted, learned, and manual pursuit.
+
+Zero-shot deployment showed that the simulation-trained policy could operate within the physical vision-control loop and adjust microrobot motion as hand speed changed. The experiment provides evidence of closed-loop feasibility on the current platform but does not establish clinical efficacy. Progress toward clinical evaluation requires patient-calibrated ZPD settings and repeated physical testing. A compact magnetic actuation system is also needed for routine rehabilitation use. Patient studies can then determine whether the control robustness observed here translates into measurable rehabilitation benefit.
+
+\balance
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

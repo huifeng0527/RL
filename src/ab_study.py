@@ -323,12 +323,12 @@ def parse_args():
     parser.add_argument("--n_eval_episodes", type=int, default=50)
     parser.add_argument("--history_length", type=int, default=16)
     parser.add_argument("--history_mode", choices=["motion", "interaction"], default="motion")
-    parser.add_argument("--future_horizon", type=int, default=8)
+    parser.add_argument("--future_horizon", type=int, default=4)
     parser.add_argument("--strategy_traj_weight", type=float, default=0.1)
     parser.add_argument("--strategy_risk_weight", type=float, default=0.02)
     parser.add_argument("--strategy_contrastive_weight", type=float, default=0.0)
     parser.add_argument("--strategy_contrastive_temperature", type=float, default=0.1)
-    parser.add_argument("--scripted_hand_sample_prob", type=float, default=0.5)
+    parser.add_argument("--scripted_hand_sample_prob", type=float, default=0.2)
     return parser.parse_args()
 
 

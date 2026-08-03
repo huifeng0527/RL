@@ -205,7 +205,7 @@ class RehabilitationEnv(gym.Env):
         self.stride_robot_random = [0.58, 0.62]
         # dual: [0.3, 0.4]
 
-        self.stride_hand_random = [0.2, 0.6]
+        self.stride_hand_random = [0.3, 0.6]
         self.scripted_hand_stride_random = [0.45, 0.7]
         self.hand_move_epsilon = 0.05
         
@@ -757,6 +757,9 @@ class RehabilitationEnv(gym.Env):
             hand_action, _ = self.hand_model.predict(obs_for_hand, deterministic=False)
             hand_intent = hand_action * self.stride_hand
 
+        return self._apply_hand_execution(hand_intent)
+
+    def _apply_hand_execution(self, hand_intent):
         # ========================================================
         # 2.  I?(Muscle Inertia)
         # ========================================================
@@ -777,7 +780,7 @@ class RehabilitationEnv(gym.Env):
         final_physics_move = self.last_hand_actual_move + delta_v
 
         # ========================================================
-        # 4. 
+        # 4.
         # ========================================================
         self.last_hand_actual_move = final_physics_move.copy()
         return final_physics_move

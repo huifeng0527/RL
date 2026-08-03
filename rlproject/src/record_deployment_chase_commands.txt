@@ -1,0 +1,114 @@
+record_deployment_chase.py 常用执行命令
+========================================
+
+运行位置
+--------
+请先进入项目根目录：
+C:\Users\admin\Desktop\research\RL
+
+激活环境：
+conda activate rl
+
+如果提示 ModuleNotFoundError: No module named 'ultralytics'，只需安装一次：
+pip install ultralytics==8.1.0
+
+注意
+----
+1. 以下命令会连接 192.168.1.2 的真实 UR10，并首先将机器人移动到 workspace 中心。
+2. 运行前请确认机器人工作区安全、相机已连接、急停可用。
+3. --hand-source camera 表示使用 MediaPipe 检测真实手。
+4. --hand-source virtual 表示使用默认的 H1 Hand policy 生成虚拟点。
+5. League 和 CV-MPC 的虚拟 Hand 配对实验必须使用相同的 --seed。
+6. 默认遇到距离小于 catch threshold 时会结束 rollout。
+
+
+一、5秒安全测试
+================
+
+1. League + 真实相机手
+python rlproject/src/record_deployment_chase.py --controller league --hand-source camera --subject smoke_league_camera --seconds 5 --max-step 0.2
+
+2. CV-MPC + 真实相机手
+python rlproject/src/record_deployment_chase.py --controller cv_mpc --hand-source camera --subject smoke_cvmpc_camera --seconds 5 --max-step 0.2
+
+3. League + 虚拟 H1 Hand
+python rlproject/src/record_deployment_chase.py --controller league --hand-source virtual --subject smoke_league_virtual_seed01 --seed 1 --seconds 5 --max-step 0.2
+
+4. CV-MPC + 虚拟 H1 Hand
+python rlproject/src/record_deployment_chase.py --controller cv_mpc --hand-source virtual --subject smoke_cvmpc_virtual_seed01 --seed 1 --seconds 5 --max-step 0.2
+
+
+二、正式60秒实验并保存视频
+========================
+
+1. League + 健康志愿者连续跟踪
+python rlproject/src/record_deployment_chase.py --controller league --hand-source camera --subject human_league_trial01 --condition league_camera --seconds 60 --save-video
+
+2. CV-MPC + 健康志愿者连续跟踪
+python rlproject/src/record_deployment_chase.py --controller cv_mpc --hand-source camera --subject human_cvmpc_trial01 --condition cvmpc_camera --seconds 60 --save-video
+
+3. League + 虚拟 H1 Hand，seed 1
+python rlproject/src/record_deployment_chase.py --controller league --hand-source virtual --subject virtual_league_seed01 --condition league_virtual_h1 --seed 1 --seconds 60 --save-video
+
+4. CV-MPC + 虚拟 H1 Hand，seed 1
+python rlproject/src/record_deployment_chase.py --controller cv_mpc --hand-source virtual --subject virtual_cvmpc_seed01 --condition cvmpc_virtual_h1 --seed 1 --seconds 60 --save-video
+
+
+三、虚拟 Hand 配对实验
+====================
+
+每一个 seed 都运行下面两条命令。两条命令中的 seed 必须保持相同。
+完成 seed 1 后，将两条命令里的 --seed 1 和 seed01 同时改成 seed 2、seed02，以此类推。
+
+Seed 1，League：
+python rlproject/src/record_deployment_chase.py --controller league --hand-source virtual --subject virtual_league_seed01 --condition league_virtual_h1 --seed 1 --seconds 60 --save-video
+
+Seed 1，CV-MPC：
+python rlproject/src/record_deployment_chase.py --controller cv_mpc --hand-source virtual --subject virtual_cvmpc_seed01 --condition cvmpc_virtual_h1 --seed 1 --seconds 60 --save-video
+
+Seed 2，League：
+python rlproject/src/record_deployment_chase.py --controller league --hand-source virtual --subject virtual_league_seed02 --condition league_virtual_h1 --seed 2 --seconds 60 --save-video
+
+Seed 2，CV-MPC：
+python rlproject/src/record_deployment_chase.py --controller cv_mpc --hand-source virtual --subject virtual_cvmpc_seed02 --condition cvmpc_virtual_h1 --seed 2 --seconds 60 --save-video
+
+Seed 3，League：
+python rlproject/src/record_deployment_chase.py --controller league --hand-source virtual --subject virtual_league_seed03 --condition league_virtual_h1 --seed 3 --seconds 60 --save-video
+
+Seed 3，CV-MPC：
+python rlproject/src/record_deployment_chase.py --controller cv_mpc --hand-source virtual --subject virtual_cvmpc_seed03 --condition cvmpc_virtual_h1 --seed 3 --seconds 60 --save-video
+
+
+四、常用特殊模式
+================
+
+1. 不打开 OpenCV 预览窗口，但仍然保存视频
+python rlproject/src/record_deployment_chase.py --controller league --hand-source virtual --subject virtual_no_display --seed 1 --seconds 60 --save-video --no-display
+
+2. 距离低于 catch threshold 后继续运行，不提前结束
+python rlproject/src/record_deployment_chase.py --controller league --hand-source virtual --subject virtual_no_catch_stop --seed 1 --seconds 60 --no-stop-on-catch --save-video
+
+3. 使用较小的最大物理步长进行保守测试
+python rlproject/src/record_deployment_chase.py --controller league --hand-source virtual --subject virtual_conservative --seed 1 --seconds 30 --max-step 0.2 --save-video
+
+4. 固定虚拟 Hand stride，不使用 seed 采样的 stride
+python rlproject/src/record_deployment_chase.py --controller league --hand-source virtual --subject virtual_fixed_hand_stride --seed 1 --hand-stride 0.45 --seconds 60 --save-video
+
+5. 显式指定最终 League Robot 和 H1 Hand checkpoint
+python rlproject/src/record_deployment_chase.py --controller league --hand-source virtual --model logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux/iteration_10/robot/robot/best_model.zip --hand-model logs/league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux/iteration_1/hand/hand/best_model.zip --subject virtual_explicit_models --seed 1 --seconds 60 --save-video
+
+6. 将输出保存到指定目录
+python rlproject/src/record_deployment_chase.py --controller league --hand-source virtual --subject virtual_custom_output --seed 1 --seconds 60 --save-video --out-dir data/virtual_hand_rollouts
+
+
+五、最简命令
+============
+
+默认 League + 真实相机手，运行30秒：
+python rlproject/src/record_deployment_chase.py
+
+默认 League + 虚拟 H1 Hand，运行30秒：
+python rlproject/src/record_deployment_chase.py --hand-source virtual
+
+CV-MPC + 虚拟 H1 Hand，运行30秒：
+python rlproject/src/record_deployment_chase.py --controller cv_mpc --hand-source virtual

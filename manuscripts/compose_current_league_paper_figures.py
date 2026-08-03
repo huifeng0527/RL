@@ -287,7 +287,7 @@ def plot_cross_heatmap(ax, tis: np.ndarray, gens: list[int]):
         linewidths=0.25,
         linecolor="white",
         cbar=True,
-        cbar_kws={"label": "TIS", "shrink": 0.78, "pad": 0.01},
+        cbar_kws={"label": "TIZ", "shrink": 0.78, "pad": 0.01},
         square=True,
     )
     ax.set_xticklabels([f"H{i}" for i in gens], rotation=45, ha="right")
@@ -306,7 +306,7 @@ def plot_robustness(ax, tis: np.ndarray, gens: list[int]):
     ax.set_ylim(0, 0.4)
     ax.set_xticks(gens)
     ax.set_xlabel("Robot generation")
-    ax.set_ylabel("TIS")
+    ax.set_ylabel("TIZ")
     ax.set_title("Robustness across learned hands")
     polish_axis(ax)
     ax.legend(frameon=False, loc="upper left")
@@ -320,8 +320,8 @@ def plot_frontier(ax, tis: np.ndarray, gens: list[int]):
     ax.plot(mean, worst, color="0.55", lw=0.8, alpha=0.7)
     for gen, x, y in zip(gens, mean, worst):
         ax.text(x + 0.004, y + 0.004, f"R{gen}", fontsize=6.2)
-    ax.set_xlabel("Mean TIS")
-    ax.set_ylabel("Worst-hand TIS")
+    ax.set_xlabel("Mean TIZ")
+    ax.set_ylabel("Worst-hand TIZ")
     ax.set_title("Robustness frontier")
     polish_axis(ax)
     cbar = plt.colorbar(sc, ax=ax, shrink=0.82, pad=0.02)
@@ -439,7 +439,7 @@ def plot_sorted_matrix(out_dir: Path, tis: np.ndarray, gens: list[int]) -> dict:
             fmt=".2f",
             linewidths=0.3,
             cbar=True,
-            cbar_kws={"label": "TIS", "shrink": 0.82, "pad": 0.01},
+            cbar_kws={"label": "TIZ", "shrink": 0.82, "pad": 0.01},
             annot_kws={"fontsize": 6.3},
         )
         ax.set_xticklabels(col_labels, rotation=45, ha="right")

@@ -9,6 +9,7 @@ import traceback
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -29,21 +30,41 @@ for path in [REPO_ROOT, SCRIPT_DIR, TRAINING_SRC]:
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
+from src.utils.cv_mpc_controller import ConstantVelocityMPCController
 
 
 W_ENV = 15.0
 H_ENV = 10.0
-DEFAULT_CONTROL_FREQ = 25
+DEFAULT_CONTROL_FREQ = 20
 RX_C, RY_C, RZ_C,Z= 0.107, 0.049, 4.747,0.114
 DEFAULT_STRIDE = 0.35
 DEFAULT_MAX_SAFE_STRIDE = 0.6
+WORKSPACE_MARGIN = 0.3
 OBS_SCALAR_DIM = 12
 MOTION_HISTORY_CHANNELS = 2
 INTERACTION_HISTORY_CHANNELS = 8
+VIRTUAL_HAND_HISTORY_LENGTH = 16
+VIRTUAL_HAND_OBS_DIM = OBS_SCALAR_DIM + VIRTUAL_HAND_HISTORY_LENGTH * MOTION_HISTORY_CHANNELS
+VIRTUAL_HAND_STRIDE_RANGE = (0.3, 0.6)
+CV_MPC_CONFIG = {
+    "horizon": 3,
+    "velocity_window": 6,
+    "action_grid": [-1.0, -0.5, 0.0, 0.5, 1.0],
+    "discount": 0.95,
+    "boundary_guard": 0.20,
+    "effort_weight": 0.02,
+    "smoothness_weight": 0.05,
+    "collision_penalty": 80.0,
+    "oob_penalty": 80.0,
+}
 
 DEFAULT_POLICY_CANDIDATES = [
+    REPO_ROOT / "logs" / "league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux" / "iteration_10" / "robot" / "robot" / "best_model.zip",
     REPO_ROOT / "logs" / "league_paper_gru_multistep_aux_pfsp_window_20iter" / "iteration_20" / "robot" / "robot" / "best_model.zip",
     REPO_ROOT / "rlproject" / "best_model.zip",
+]
+DEFAULT_HAND_MODEL_CANDIDATES = [
+    REPO_ROOT / "logs" / "league_zpd35_55_noid_warm_entropy_10iter_r5m_h1m_gru_noaux" / "iteration_1" / "hand" / "hand" / "best_model.zip",
 ]
 DEFAULT_VISION_MODEL = SCRIPT_DIR / "runs" / "detect" / "train3" / "weights" / "best.onnx"
 
@@ -95,7 +116,7 @@ class HandTracker:
 
 
 class VisionThread(threading.Thread):
-    def __init__(self, cap, cali, cv_model, w_px, h_px, w_env, h_env, result_queue):
+    def __init__(self, cap, cali, cv_model, w_px, h_px, w_env, h_env, result_queue, detect_hands=True):
         super().__init__(daemon=True)
         self.cap = cap
         self.cali = cali
@@ -105,7 +126,7 @@ class VisionThread(threading.Thread):
         self.w_env = float(w_env)
         self.h_env = float(h_env)
         self.result_queue = result_queue
-        self.hand_detector = HandDetection()
+        self.hand_detector = HandDetection() if detect_hands else None
         self.running = True
         self.frame_id = 0
         self.last_capture_t_perf = None
@@ -148,12 +169,14 @@ class VisionThread(threading.Thread):
                     pixel_per_cm = ((x2 - x1) + (y2 - y1)) / 4
                     cv2.rectangle(undistorted_frame, (x1, y1), (x2, y2), (255, 120, 20), 2)
 
-            undistorted_frame, hand_positions = self.hand_detector.process_frame(undistorted_frame)
+            hand_positions = []
             hand_env = np.zeros(2, dtype=np.float32)
-            if hand_positions:
-                hand_env = np.array(hand_positions[0], dtype=np.float32) / np.array(
-                    [self.w_px / self.w_env, self.h_px / self.h_env], dtype=np.float32
-                )
+            if self.hand_detector is not None:
+                undistorted_frame, hand_positions = self.hand_detector.process_frame(undistorted_frame)
+                if hand_positions:
+                    hand_env = np.array(hand_positions[0], dtype=np.float32) / np.array(
+                        [self.w_px / self.w_env, self.h_px / self.h_env], dtype=np.float32
+                    )
 
             if len(robot_trajectory) >= 2:
                 for j in range(1, len(robot_trajectory)):
@@ -195,7 +218,8 @@ class VisionThread(threading.Thread):
                 self.last_fps_time = now
                 print(f"[vision] {fps:.1f} fps")
 
-        self.hand_detector.release()
+        if self.hand_detector is not None:
+            self.hand_detector.release()
         print("[vision] stopped")
 
     def stop(self):
@@ -231,14 +255,112 @@ def find_default_policy():
     return None
 
 
+def find_default_hand_model():
+    for path in DEFAULT_HAND_MODEL_CANDIDATES:
+        if path.exists():
+            return path
+    return None
+
+
+def validate_hand_model(model):
+    obs_shape = getattr(getattr(model, "observation_space", None), "shape", None)
+    if obs_shape != (VIRTUAL_HAND_OBS_DIM,):
+        raise ValueError(
+            f"Virtual Hand model observation shape must be ({VIRTUAL_HAND_OBS_DIM},), got {obs_shape}"
+        )
+
+    action_space = getattr(model, "action_space", None)
+    action_shape = getattr(action_space, "shape", None)
+    if action_shape != (2,):
+        raise ValueError(f"Virtual Hand model action shape must be (2,), got {action_shape}")
+
+    low = np.asarray(getattr(action_space, "low", []), dtype=np.float32)
+    high = np.asarray(getattr(action_space, "high", []), dtype=np.float32)
+    if low.shape != (2,) or high.shape != (2,) or np.any(low > -1.0) or np.any(high < 1.0):
+        raise ValueError("Virtual Hand model action space must cover [-1, 1] in both dimensions")
+
+
+def build_virtual_hand_observation(
+    hand_position,
+    robot_position,
+    stride_hand,
+    last_hand_actual_move,
+    robot_history_buffer,
+):
+    hand_position = np.asarray(hand_position, dtype=np.float32)
+    robot_position = np.asarray(robot_position, dtype=np.float32)
+    boundary_distances = np.array([
+        hand_position[0],
+        W_ENV - hand_position[0],
+        hand_position[1],
+        H_ENV - hand_position[1],
+    ], dtype=np.float32)
+    flat_history = fit_history(
+        robot_history_buffer,
+        VIRTUAL_HAND_HISTORY_LENGTH * MOTION_HISTORY_CHANNELS,
+    )
+    obs = np.concatenate((
+        hand_position,
+        robot_position,
+        np.array([np.linalg.norm(robot_position - hand_position)], dtype=np.float32),
+        boundary_distances,
+        np.array([stride_hand], dtype=np.float32),
+        np.asarray(last_hand_actual_move, dtype=np.float32),
+        flat_history,
+    )).astype(np.float32)
+    if obs.shape != (VIRTUAL_HAND_OBS_DIM,):
+        raise RuntimeError(
+            f"Built virtual Hand observation has {obs.shape[0]} dims, expected {VIRTUAL_HAND_OBS_DIM}"
+        )
+    return obs
+
+
+def apply_virtual_hand_execution(hand_action, stride_hand, last_hand_actual_move):
+    hand_action = np.clip(np.asarray(hand_action, dtype=np.float32), -1.0, 1.0)
+    hand_intent = hand_action * float(stride_hand)
+    last_move = np.asarray(last_hand_actual_move, dtype=np.float32)
+    delta_v = hand_intent - last_move
+    accel_magnitude = float(np.linalg.norm(delta_v))
+    max_accel = 1.5 * float(stride_hand)
+    if accel_magnitude > max_accel and accel_magnitude > 1e-8:
+        delta_v = (delta_v / accel_magnitude) * max_accel
+    return (last_move + delta_v).astype(np.float32)
+
+
+def sample_virtual_hand_start(robot_position, zpd_low, zpd_high, rng, margin=WORKSPACE_MARGIN):
+    robot_position = np.asarray(robot_position, dtype=np.float32)
+    initial_distance = 0.5 * (float(zpd_low) + float(zpd_high))
+    if initial_distance <= 0:
+        raise ValueError("Virtual Hand initial distance must be positive")
+
+    initial_angle = float(rng.uniform(0.0, 2.0 * np.pi))
+    for offset in np.linspace(0.0, 2.0 * np.pi, 360, endpoint=False):
+        angle = initial_angle + float(offset)
+        direction = np.array([np.cos(angle), np.sin(angle)], dtype=np.float32)
+        candidate = robot_position + direction * initial_distance
+        if (
+            margin <= candidate[0] <= W_ENV - margin
+            and margin <= candidate[1] <= H_ENV - margin
+        ):
+            return candidate.astype(np.float32), float(angle % (2.0 * np.pi))
+
+    raise RuntimeError("Could not place virtual Hand at the requested ZPD midpoint distance")
+
+
 def parse_args():
     default_policy = find_default_policy()
-    parser = argparse.ArgumentParser(description="Record one real-world chase rollout for the paper deployment figure.")
-    parser.add_argument("--model", "--policy", dest="model", default=str(default_policy) if default_policy else None, help="PPO robot policy .zip. If omitted, the script uses the default league robot model.")
+    default_hand_model = find_default_hand_model()
+    parser = argparse.ArgumentParser(description="Record one physical rollout with the League policy or tuned CV-MPC baseline.")
+    parser.add_argument("--controller", choices=["league", "cv_mpc"], default="league", help="Robot controller used for this rollout.")
+    parser.add_argument("--model", "--policy", dest="model", default=str(default_policy) if default_policy else None, help="PPO robot policy .zip used when --controller league.")
+    parser.add_argument("--hand-source", choices=["camera", "virtual"], default="camera", help="Use the camera-tracked hand or an online virtual Hand policy.")
+    parser.add_argument("--hand-model", default=str(default_hand_model) if default_hand_model else None, help="PPO Hand policy .zip used when --hand-source virtual.")
+    parser.add_argument("--seed", type=int, default=0, help="Seed for virtual Hand initialization and policy sampling.")
+    parser.add_argument("--hand-stride", type=float, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--vision-model", default=str(DEFAULT_VISION_MODEL), help=argparse.SUPPRESS)
     parser.add_argument("--out-dir", default=str(REPO_ROOT / "data" / "deployment_rollouts"), help=argparse.SUPPRESS)
     parser.add_argument("--subject", default="pilot", help="Short subject/session label.")
-    parser.add_argument("--condition", default="zero_shot_physical", help="Condition label written to metadata.")
+    parser.add_argument("--condition", default=None, help="Condition label; defaults to the selected controller.")
     parser.add_argument("--seconds", "--duration", dest="duration", type=float, default=30.0, help="Rollout duration in seconds.")
     parser.add_argument("--zpd-low", type=float, default=3.5, help=argparse.SUPPRESS)
     parser.add_argument("--zpd-high", type=float, default=5.5, help=argparse.SUPPRESS)
@@ -268,7 +390,7 @@ def require_file(path, label):
     return path
 
 
-def load_runtime_dependencies():
+def load_runtime_dependencies(load_hand_detection=True):
     global cv2, PPO, YOLO, CameraCalibration, DeploymentRolloutLogger, HandDetection, URControl, get_workspace
 
     import cv2 as cv2_module
@@ -281,7 +403,9 @@ def load_runtime_dependencies():
     logger_module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(logger_module)
     logger_class = logger_module.DeploymentRolloutLogger
-    from cv.hand_detect import HandDetection as hand_detection_class
+    hand_detection_class = None
+    if load_hand_detection:
+        from cv.hand_detect import HandDetection as hand_detection_class
     from cv.get_workspace import get_workspace as workspace_func
     from robot_control.ur_control import URControl as ur_control_class
 
@@ -321,11 +445,22 @@ def get_robot_env_position(robot_control, cali, w_px, h_px):
 
 def main():
     args = parse_args()
-    model_path = require_file(args.model, "PPO policy")
-    vision_model_path = require_file(args.vision_model, "vision model")
-    load_runtime_dependencies()
+    if args.zpd_low >= args.zpd_high:
+        raise ValueError("--zpd-low must be smaller than --zpd-high")
+    if args.hand_stride is not None and args.hand_stride <= 0:
+        raise ValueError("--hand-stride must be positive")
 
-    print(f"[model] policy: {model_path}")
+    model_path = require_file(args.model, "PPO policy") if args.controller == "league" else None
+    hand_model_path = require_file(args.hand_model, "PPO Hand policy") if args.hand_source == "virtual" else None
+    vision_model_path = require_file(args.vision_model, "vision model")
+    load_runtime_dependencies(load_hand_detection=args.hand_source == "camera")
+
+    print(f"[controller] {args.controller}")
+    print(f"[hand] source: {args.hand_source}")
+    if model_path is not None:
+        print(f"[model] policy: {model_path}")
+    if hand_model_path is not None:
+        print(f"[model] Hand policy: {hand_model_path}")
     print(f"[model] vision: {vision_model_path}")
 
     cv_model = YOLO(str(vision_model_path))
@@ -338,9 +473,34 @@ def main():
 
     try:
         robot_control = URControl(args.robot_ip)
-        rl_model = PPO.load(str(model_path), custom_objects={"learning_rate": 0.0, "lr_schedule": lambda _: 0.0, "clip_range": lambda _: 0.0, "optimizer_class": None})
-        expected_obs_dim, history_length, history_channels, history_mode = infer_observation_layout(rl_model)
-        print(f"[model] observation: {expected_obs_dim} dims ({history_mode}, length={history_length}, channels={history_channels})")
+        rl_model = None
+        hand_model = None
+        mpc_controller = None
+        virtual_hand_rng = np.random.default_rng(args.seed)
+        virtual_hand_stride = None
+        expected_obs_dim, history_length, history_channels, history_mode = 44, 16, MOTION_HISTORY_CHANNELS, "motion"
+        if args.controller == "league":
+            rl_model = PPO.load(str(model_path), custom_objects={"learning_rate": 0.0, "lr_schedule": lambda _: 0.0, "clip_range": lambda _: 0.0, "optimizer_class": None})
+            expected_obs_dim, history_length, history_channels, history_mode = infer_observation_layout(rl_model)
+            print(f"[model] observation: {expected_obs_dim} dims ({history_mode}, length={history_length}, channels={history_channels})")
+        else:
+            mpc_controller = ConstantVelocityMPCController(**CV_MPC_CONFIG)
+
+        if args.hand_source == "virtual":
+            hand_model = PPO.load(
+                str(hand_model_path),
+                custom_objects={"learning_rate": 0.0, "lr_schedule": lambda _: 0.0, "clip_range": lambda _: 0.0, "optimizer_class": None},
+            )
+            validate_hand_model(hand_model)
+            if hasattr(hand_model, "set_random_seed"):
+                hand_model.set_random_seed(args.seed)
+            virtual_hand_stride = (
+                float(args.hand_stride)
+                if args.hand_stride is not None
+                else float(virtual_hand_rng.uniform(*VIRTUAL_HAND_STRIDE_RANGE))
+            )
+            print(f"[hand] observation: {VIRTUAL_HAND_OBS_DIM} dims (motion, length={VIRTUAL_HAND_HISTORY_LENGTH})")
+            print(f"[hand] stride: {virtual_hand_stride:.3f} cm/step")
 
         cap = cv2.VideoCapture(args.camera)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.camera_width)
@@ -357,10 +517,45 @@ def main():
         if not args.no_display:
             cv2.namedWindow("Deployment Chase", cv2.WINDOW_NORMAL)
 
+        center_pixel = safe_transition_to_center(robot_control, cali, w_px, h_px, args.countdown)
+        _, _, initial_robot_env = get_robot_env_position(robot_control, cali, w_px, h_px)
+        virtual_hand_env = None
+        virtual_hand_initial_angle = None
+        if args.hand_source == "virtual":
+            virtual_hand_env, virtual_hand_initial_angle = sample_virtual_hand_start(
+                initial_robot_env,
+                args.zpd_low,
+                args.zpd_high,
+                virtual_hand_rng,
+            )
+            print(
+                f"[hand] initial position: ({virtual_hand_env[0]:.2f}, {virtual_hand_env[1]:.2f}), "
+                f"angle={virtual_hand_initial_angle:.3f} rad"
+            )
+
         metadata = {
             "script": str(Path(__file__).relative_to(REPO_ROOT)),
             "task": "DeploymentChase",
-            "policy_path": str(model_path),
+            "controller": args.controller,
+            "policy_path": str(model_path) if model_path is not None else None,
+            "cv_mpc_config": CV_MPC_CONFIG if args.controller == "cv_mpc" else None,
+            "privileged_information_used": False if args.controller == "cv_mpc" else None,
+            "hand_source": args.hand_source,
+            "hand_model_path": str(hand_model_path) if hand_model_path is not None else None,
+            "virtual_hand_policy_deterministic": False if args.hand_source == "virtual" else None,
+            "virtual_hand_obs_dim": VIRTUAL_HAND_OBS_DIM if args.hand_source == "virtual" else None,
+            "virtual_hand_history_length": VIRTUAL_HAND_HISTORY_LENGTH if args.hand_source == "virtual" else None,
+            "virtual_hand_seed": int(args.seed) if args.hand_source == "virtual" else None,
+            "virtual_hand_stride_cm": virtual_hand_stride,
+            "virtual_hand_stride_sample_range_cm": list(VIRTUAL_HAND_STRIDE_RANGE) if args.hand_source == "virtual" else None,
+            "virtual_hand_initial_distance_cm": 0.5 * (args.zpd_low + args.zpd_high) if args.hand_source == "virtual" else None,
+            "virtual_hand_initial_angle_rad": virtual_hand_initial_angle,
+            "virtual_hand_initial_position_cm": virtual_hand_env.tolist() if virtual_hand_env is not None else None,
+            "virtual_hand_execution_max_accel_scale": 1.5 if args.hand_source == "virtual" else None,
+            "virtual_hand_pathology_mode": "healthy" if args.hand_source == "virtual" else None,
+            "virtual_hand_delay_frames": 0 if args.hand_source == "virtual" else None,
+            "virtual_hand_observation_noise_enabled": False if args.hand_source == "virtual" else None,
+            "mediapipe_hand_detection_enabled": args.hand_source == "camera",
             "vision_model_path": str(vision_model_path),
             "control_freq_target_hz": float(args.control_hz),
             "camera_index": int(args.camera),
@@ -369,10 +564,10 @@ def main():
             "workspace_width_cm": W_ENV,
             "workspace_height_cm": H_ENV,
             "duration_target_s": float(args.duration),
-            "policy_obs_dim": int(expected_obs_dim),
-            "history_mode": history_mode,
-            "history_length": int(history_length),
-            "history_channels": int(history_channels),
+            "policy_obs_dim": int(expected_obs_dim) if args.controller == "league" else None,
+            "history_mode": history_mode if args.controller == "league" else None,
+            "history_length": int(history_length) if args.controller == "league" else None,
+            "history_channels": int(history_channels) if args.controller == "league" else None,
             "stride_cm": float(args.stride),
             "max_safe_step_cm": float(args.max_step),
             "stop_on_catch": bool(args.stop_on_catch),
@@ -381,7 +576,9 @@ def main():
         logger = DeploymentRolloutLogger(
             out_root=args.out_dir,
             subject=args.subject,
-            condition=args.condition,
+            condition=args.condition or (
+                args.controller if args.hand_source == "camera" else f"{args.controller}_virtual_hand"
+            ),
             metadata=metadata,
             zpd_low_cm=args.zpd_low,
             zpd_high_cm=args.zpd_high,
@@ -390,16 +587,49 @@ def main():
         print(f"[log] {logger.rollout_dir}")
 
         vision_queue = queue.Queue(maxsize=1)
-        vision_thread = VisionThread(cap, cali, cv_model, w_px, h_px, W_ENV, H_ENV, vision_queue)
+        vision_thread = VisionThread(
+            cap,
+            cali,
+            cv_model,
+            w_px,
+            h_px,
+            W_ENV,
+            H_ENV,
+            vision_queue,
+            detect_hands=args.hand_source == "camera",
+        )
         vision_thread.start()
 
-        center_pixel = safe_transition_to_center(robot_control, cali, w_px, h_px, args.countdown)
         virtual_target_pixel = center_pixel.copy()
         desired_virtual_target = center_pixel.copy()
-        hand_tracker = HandTracker(w_env=W_ENV, h_env=H_ENV, vel_alpha=0.6)
+        hand_tracker = (
+            HandTracker(w_env=W_ENV, h_env=H_ENV, vel_alpha=0.6)
+            if args.hand_source == "camera"
+            else None
+        )
+        virtual_hand_robot_history = deque(
+            [np.zeros(MOTION_HISTORY_CHANNELS, dtype=np.float32)] * VIRTUAL_HAND_HISTORY_LENGTH,
+            maxlen=VIRTUAL_HAND_HISTORY_LENGTH,
+        )
+        last_hand_actual_move = np.zeros(2, dtype=np.float32)
+        prev_robot_env_for_hand = initial_robot_env.copy() if args.hand_source == "virtual" else None
         motion_history_buffer = deque([np.zeros(MOTION_HISTORY_CHANNELS, dtype=np.float32)] * history_length, maxlen=history_length)
         interaction_history_buffer = deque([np.zeros(INTERACTION_HISTORY_CHANNELS, dtype=np.float32)] * history_length, maxlen=history_length)
         last_action = np.zeros(2, dtype=np.float32)
+        mpc_state = SimpleNamespace(
+            steps=0,
+            robot_position=np.zeros(2, dtype=np.float32),
+            hand_position=np.zeros(2, dtype=np.float32),
+            last_robot_action=np.zeros(2, dtype=np.float32),
+            stride_robot=float(args.stride),
+            margin=0.3,
+            env_width=W_ENV,
+            env_height=H_ENV,
+            zpd_min=float(args.zpd_low),
+            zpd_max=float(args.zpd_high),
+            reward_step=0.2,
+            distance_threshold_collision=float(args.catch_distance),
+        )
         prev_hand_env = None
         prev_robot_env = None
         prev_distance_cm = None
@@ -446,46 +676,90 @@ def main():
                 if microrobot_detected:
                     cached_microrobot_env = new_vision.microrobot_env.copy()
                     cached_microrobot_detected = True
-                if hand_detected:
+                if hand_detected and hand_tracker is not None:
                     hand_tracker.update_vision(new_vision.hand_env, loop_start)
 
-            position_hand_env = hand_tracker.predict(loop_start)
-            dead_reckoning_used = not hand_detected
-            dead_reckoning_age_s = None if hand_tracker.last_vision_time is None else loop_start - hand_tracker.last_vision_time
-
             robot_pose, real_robot_pixel, position_robot_env = get_robot_env_position(robot_control, cali, w_px, h_px)
+            if args.hand_source == "camera":
+                position_hand_env = hand_tracker.predict(loop_start)
+                dead_reckoning_used = not hand_detected
+                dead_reckoning_age_s = (
+                    None
+                    if hand_tracker.last_vision_time is None
+                    else loop_start - hand_tracker.last_vision_time
+                )
+            else:
+                position_hand_env = virtual_hand_env.copy()
+                dead_reckoning_used = False
+                dead_reckoning_age_s = None
+                completed_robot_move = (
+                    position_robot_env - prev_robot_env_for_hand
+                ).astype(np.float32)
+                virtual_hand_robot_history.append(completed_robot_move)
+                prev_robot_env_for_hand = position_robot_env.copy()
+
             distance_target_env = cached_microrobot_env if cached_microrobot_detected else position_robot_env
             distance_cm = float(np.linalg.norm(distance_target_env - position_hand_env))
             in_zpd = args.zpd_low <= distance_cm <= args.zpd_high
 
-            robot_obs = position_robot_env
-            hand_obs = position_hand_env
-            distance_obs = np.array([np.linalg.norm(robot_obs - hand_obs)], dtype=np.float32)
-            boundary_obs = np.array([
-                robot_obs[0], W_ENV - robot_obs[0],
-                robot_obs[1], H_ENV - robot_obs[1],
-            ], dtype=np.float32)
-            previous_action = last_action.copy()
-            if history_mode == "interaction":
-                flat_history = fit_history(interaction_history_buffer, history_length * history_channels)
-            else:
-                flat_history = fit_history(motion_history_buffer, history_length * history_channels)
-            obs_array = np.concatenate((
-                robot_obs,
-                hand_obs,
-                distance_obs,
-                boundary_obs,
-                np.array([args.stride], dtype=np.float32),
-                previous_action,
-                flat_history,
-            )).astype(np.float32)
-            if obs_array.shape[0] != expected_obs_dim:
-                raise RuntimeError(f"Built observation has {obs_array.shape[0]} dims, expected {expected_obs_dim}")
+            virtual_hand_obs = None
+            if args.hand_source == "virtual":
+                virtual_hand_obs = build_virtual_hand_observation(
+                    position_hand_env,
+                    position_robot_env,
+                    virtual_hand_stride,
+                    last_hand_actual_move,
+                    virtual_hand_robot_history,
+                )
 
+            previous_action = last_action.copy()
             inference_start = time.perf_counter()
-            action, _ = rl_model.predict(obs_array, deterministic=True)
+            if args.controller == "league":
+                robot_obs = position_robot_env
+                hand_obs = position_hand_env
+                distance_obs = np.array([np.linalg.norm(robot_obs - hand_obs)], dtype=np.float32)
+                boundary_obs = np.array([
+                    robot_obs[0], W_ENV - robot_obs[0],
+                    robot_obs[1], H_ENV - robot_obs[1],
+                ], dtype=np.float32)
+                if history_mode == "interaction":
+                    flat_history = fit_history(interaction_history_buffer, history_length * history_channels)
+                else:
+                    flat_history = fit_history(motion_history_buffer, history_length * history_channels)
+                obs_array = np.concatenate((
+                    robot_obs,
+                    hand_obs,
+                    distance_obs,
+                    boundary_obs,
+                    np.array([args.stride], dtype=np.float32),
+                    previous_action,
+                    flat_history,
+                )).astype(np.float32)
+                if obs_array.shape[0] != expected_obs_dim:
+                    raise RuntimeError(f"Built observation has {obs_array.shape[0]} dims, expected {expected_obs_dim}")
+                action, _ = rl_model.predict(obs_array, deterministic=True)
+            else:
+                mpc_state.steps = step
+                mpc_state.robot_position = position_robot_env.copy()
+                mpc_state.hand_position = position_hand_env.copy()
+                mpc_state.last_robot_action = (
+                    np.zeros(2, dtype=np.float32)
+                    if prev_robot_env is None
+                    else (position_robot_env - prev_robot_env).astype(np.float32)
+                )
+                action = mpc_controller.predict(mpc_state)
             policy_inference_ms = (time.perf_counter() - inference_start) * 1000.0
-            action = np.asarray(action, dtype=np.float32)
+
+            next_virtual_hand_move = None
+            if args.hand_source == "virtual":
+                hand_action, _ = hand_model.predict(virtual_hand_obs, deterministic=False)
+                next_virtual_hand_move = apply_virtual_hand_execution(
+                    hand_action,
+                    virtual_hand_stride,
+                    last_hand_actual_move,
+                )
+
+            action = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
             action_pixel = action * np.array([w_px / W_ENV, h_px / H_ENV], dtype=np.float32) * args.stride
 
             desired_virtual_target = virtual_target_pixel.copy() + action_pixel
@@ -509,6 +783,14 @@ def main():
             robot_control.servo_robot(target_pose, dt=safe_dt)
             last_action = action.copy()
 
+            if args.hand_source == "virtual":
+                last_hand_actual_move = next_virtual_hand_move.copy()
+                virtual_hand_env = np.clip(
+                    virtual_hand_env + next_virtual_hand_move,
+                    [WORKSPACE_MARGIN, WORKSPACE_MARGIN],
+                    [W_ENV - WORKSPACE_MARGIN, H_ENV - WORKSPACE_MARGIN],
+                ).astype(np.float32)
+
             task_finished = bool(args.stop_on_catch and distance_cm < args.catch_distance)
             step_done_reason = "caught" if task_finished else ""
 
@@ -516,6 +798,22 @@ def main():
             if frame_for_log is not None:
                 cv2.circle(frame_for_log, (int(real_robot_pixel[0]), int(real_robot_pixel[1])), 16, (0, 180, 255), -1)
                 cv2.circle(frame_for_log, (int(virtual_target_pixel[0]), int(virtual_target_pixel[1])), 10, (255, 0, 255), 2)
+                if args.hand_source == "virtual":
+                    virtual_hand_pixel = np.array([
+                        position_hand_env[0] * w_px / W_ENV,
+                        position_hand_env[1] * h_px / H_ENV,
+                    ])
+                    hand_pixel_tuple = (int(virtual_hand_pixel[0]), int(virtual_hand_pixel[1]))
+                    cv2.circle(frame_for_log, hand_pixel_tuple, 16, (255, 255, 0), -1)
+                    cv2.putText(
+                        frame_for_log,
+                        "Virtual Hand",
+                        (hand_pixel_tuple[0] + 18, hand_pixel_tuple[1] - 18),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7,
+                        (255, 255, 0),
+                        2,
+                    )
                 if cached_microrobot_detected and np.all(np.isfinite(cached_microrobot_env)):
                     mic_px = np.array([cached_microrobot_env[0] * w_px / W_ENV, cached_microrobot_env[1] * h_px / H_ENV])
                     cv2.circle(frame_for_log, (int(mic_px[0]), int(mic_px[1])), 14, (255, 100, 0), 2)
