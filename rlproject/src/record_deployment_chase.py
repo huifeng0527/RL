@@ -40,6 +40,8 @@ RX_C, RY_C, RZ_C,Z= 0.107, 0.049, 4.747,0.114
 DEFAULT_STRIDE = 0.35
 DEFAULT_MAX_SAFE_STRIDE = 0.6
 WORKSPACE_MARGIN = 0.3
+COMMON_SAFETY_GUARD = 0.2
+MICROROBOT_MAX_AGE_S = 0.25
 OBS_SCALAR_DIM = 12
 MOTION_HISTORY_CHANNELS = 2
 INTERACTION_HISTORY_CHANNELS = 8
@@ -47,15 +49,18 @@ VIRTUAL_HAND_HISTORY_LENGTH = 16
 VIRTUAL_HAND_OBS_DIM = OBS_SCALAR_DIM + VIRTUAL_HAND_HISTORY_LENGTH * MOTION_HISTORY_CHANNELS
 VIRTUAL_HAND_STRIDE_RANGE = (0.3, 0.6)
 CV_MPC_CONFIG = {
-    "horizon": 3,
-    "velocity_window": 6,
+    "horizon": 5,
+    "velocity_window": 3,
     "action_grid": [-1.0, -0.5, 0.0, 0.5, 1.0],
     "discount": 0.95,
-    "boundary_guard": 0.20,
-    "effort_weight": 0.02,
-    "smoothness_weight": 0.05,
-    "collision_penalty": 80.0,
-    "oob_penalty": 80.0,
+    "effort_weight": 0.01,
+    "smoothness_weight": 0.03,
+    "collision_penalty": 120.0,
+    "oob_penalty": 240.0,
+    "boundary_band": 1.0,
+    "boundary_barrier_weight": 16.0,
+    "collision_buffer": 1.0,
+    "collision_barrier_weight": 8.0,
 }
 
 DEFAULT_POLICY_CANDIDATES = [
@@ -443,6 +448,46 @@ def get_robot_env_position(robot_control, cali, w_px, h_px):
     return pose, real_robot_pixel, position_robot_env
 
 
+def limit_vector_norm(vector, max_norm):
+    vector = np.asarray(vector, dtype=np.float32)
+    norm = float(np.linalg.norm(vector))
+    if norm > float(max_norm) and norm > 1e-8:
+        return (vector / norm * float(max_norm)).astype(np.float32), True
+    return vector.astype(np.float32), False
+
+
+def workspace_clearance_env(position, margin=WORKSPACE_MARGIN):
+    position = np.asarray(position, dtype=np.float32)
+    return float(min(
+        position[0] - margin,
+        W_ENV - margin - position[0],
+        position[1] - margin,
+        H_ENV - margin - position[1],
+    ))
+
+
+def resolve_common_target_env(
+    action,
+    measured_robot_env,
+    stride,
+    max_step,
+    margin=WORKSPACE_MARGIN,
+    safety_guard=COMMON_SAFETY_GUARD,
+):
+    action = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
+    raw_delta_env = action * float(stride)
+    limited_delta_env, target_step_limited = limit_vector_norm(raw_delta_env, max_step)
+    desired_target_env = np.asarray(measured_robot_env, dtype=np.float32) + limited_delta_env
+    low = np.array([margin + safety_guard, margin + safety_guard], dtype=np.float32)
+    high = np.array([
+        W_ENV - margin - safety_guard,
+        H_ENV - margin - safety_guard,
+    ], dtype=np.float32)
+    target_env = np.clip(desired_target_env, low, high).astype(np.float32)
+    target_clipped = not np.allclose(desired_target_env, target_env)
+    return target_env, desired_target_env, target_clipped, target_step_limited
+
+
 def main():
     args = parse_args()
     if args.zpd_low >= args.zpd_high:
@@ -517,7 +562,7 @@ def main():
         if not args.no_display:
             cv2.namedWindow("Deployment Chase", cv2.WINDOW_NORMAL)
 
-        center_pixel = safe_transition_to_center(robot_control, cali, w_px, h_px, args.countdown)
+        safe_transition_to_center(robot_control, cali, w_px, h_px, args.countdown)
         _, _, initial_robot_env = get_robot_env_position(robot_control, cali, w_px, h_px)
         virtual_hand_env = None
         virtual_hand_initial_angle = None
@@ -556,6 +601,7 @@ def main():
             "virtual_hand_delay_frames": 0 if args.hand_source == "virtual" else None,
             "virtual_hand_observation_noise_enabled": False if args.hand_source == "virtual" else None,
             "mediapipe_hand_detection_enabled": args.hand_source == "camera",
+            "microrobot_max_age_s": MICROROBOT_MAX_AGE_S,
             "vision_model_path": str(vision_model_path),
             "control_freq_target_hz": float(args.control_hz),
             "camera_index": int(args.camera),
@@ -563,6 +609,9 @@ def main():
             "camera_height_requested": int(args.camera_height),
             "workspace_width_cm": W_ENV,
             "workspace_height_cm": H_ENV,
+            "workspace_margin_cm": WORKSPACE_MARGIN,
+            "common_safety_guard_cm": COMMON_SAFETY_GUARD,
+            "target_anchored_to_measured_pose": True,
             "duration_target_s": float(args.duration),
             "policy_obs_dim": int(expected_obs_dim) if args.controller == "league" else None,
             "history_mode": history_mode if args.controller == "league" else None,
@@ -600,8 +649,13 @@ def main():
         )
         vision_thread.start()
 
-        virtual_target_pixel = center_pixel.copy()
-        desired_virtual_target = center_pixel.copy()
+        virtual_target_env = initial_robot_env.copy()
+        desired_target_env = initial_robot_env.copy()
+        virtual_target_pixel = np.array([
+            virtual_target_env[0] * w_px / W_ENV,
+            virtual_target_env[1] * h_px / H_ENV,
+        ], dtype=np.float32)
+        desired_virtual_target = virtual_target_pixel.copy()
         hand_tracker = (
             HandTracker(w_env=W_ENV, h_env=H_ENV, vel_alpha=0.6)
             if args.hand_source == "camera"
@@ -636,6 +690,7 @@ def main():
         cached_frame = workspace_frame.copy()
         cached_microrobot_env = np.full(2, np.nan, dtype=np.float32)
         cached_microrobot_detected = False
+        cached_microrobot_t_perf = None
 
         start_perf = time.perf_counter()
         last_loop_start = None
@@ -676,10 +731,40 @@ def main():
                 if microrobot_detected:
                     cached_microrobot_env = new_vision.microrobot_env.copy()
                     cached_microrobot_detected = True
+                    cached_microrobot_t_perf = new_vision.processed_t_perf
                 if hand_detected and hand_tracker is not None:
                     hand_tracker.update_vision(new_vision.hand_env, loop_start)
 
             robot_pose, real_robot_pixel, position_robot_env = get_robot_env_position(robot_control, cali, w_px, h_px)
+            robot_boundary_clearance = workspace_clearance_env(position_robot_env)
+            if not np.all(np.isfinite(position_robot_env)) or robot_boundary_clearance <= 0.0:
+                done_reason = "safety_robot_out_of_bounds"
+                robot_control.rtde_c.servoStop()
+                logger.record_step({
+                    "step": step,
+                    "t_wall_s": time.time(),
+                    "t_task_s": t_task_s,
+                    "control_dt_s": control_dt_s,
+                    "control_loop_hz_inst": control_hz,
+                    "robot_x_cm": float(position_robot_env[0]),
+                    "robot_y_cm": float(position_robot_env[1]),
+                    "robot_world_x": float(robot_pose[0]),
+                    "robot_world_y": float(robot_pose[1]),
+                    "robot_world_z": float(robot_pose[2]),
+                    "safety_stop": True,
+                    "safety_reason": done_reason,
+                    "task_finished": True,
+                    "done_reason": done_reason,
+                })
+                logger.record_event(
+                    "safety_stop",
+                    t_task_s=t_task_s,
+                    reason=done_reason,
+                    robot_position_env=position_robot_env.tolist(),
+                    boundary_clearance_cm=robot_boundary_clearance,
+                )
+                break
+
             if args.hand_source == "camera":
                 position_hand_env = hand_tracker.predict(loop_start)
                 dead_reckoning_used = not hand_detected
@@ -698,9 +783,53 @@ def main():
                 virtual_hand_robot_history.append(completed_robot_move)
                 prev_robot_env_for_hand = position_robot_env.copy()
 
-            distance_target_env = cached_microrobot_env if cached_microrobot_detected else position_robot_env
+            cached_microrobot_age_s = (
+                None
+                if cached_microrobot_t_perf is None
+                else loop_start - cached_microrobot_t_perf
+            )
+            microrobot_fresh = bool(
+                cached_microrobot_detected
+                and cached_microrobot_age_s is not None
+                and cached_microrobot_age_s <= MICROROBOT_MAX_AGE_S
+            )
+            distance_target_env = cached_microrobot_env if microrobot_fresh else position_robot_env
             distance_cm = float(np.linalg.norm(distance_target_env - position_hand_env))
             in_zpd = args.zpd_low <= distance_cm <= args.zpd_high
+            if args.stop_on_catch and distance_cm < args.catch_distance:
+                done_reason = "caught"
+                robot_control.rtde_c.servoStop()
+                logger.record_step({
+                    "step": step,
+                    "t_wall_s": time.time(),
+                    "t_task_s": t_task_s,
+                    "control_dt_s": control_dt_s,
+                    "control_loop_hz_inst": control_hz,
+                    "vision_frame_available": vision_frame_available,
+                    "vision_frame_id": frame_id,
+                    "vision_age_s": vision_age_s,
+                    "camera_dt_s": camera_dt_s,
+                    "camera_hz_inst": camera_hz_inst,
+                    "hand_detected": hand_detected,
+                    "microrobot_detected": microrobot_detected,
+                    "dead_reckoning_used": dead_reckoning_used,
+                    "dead_reckoning_age_s": dead_reckoning_age_s,
+                    "hand_x_cm": float(position_hand_env[0]),
+                    "hand_y_cm": float(position_hand_env[1]),
+                    "robot_x_cm": float(position_robot_env[0]),
+                    "robot_y_cm": float(position_robot_env[1]),
+                    "distance_cm": distance_cm,
+                    "in_zpd": in_zpd,
+                    "robot_world_x": float(robot_pose[0]),
+                    "robot_world_y": float(robot_pose[1]),
+                    "robot_world_z": float(robot_pose[2]),
+                    "safety_stop": False,
+                    "safety_reason": "",
+                    "task_finished": True,
+                    "done_reason": done_reason,
+                })
+                logger.record_event("caught", t_task_s=t_task_s, distance_cm=distance_cm)
+                break
 
             virtual_hand_obs = None
             if args.hand_source == "virtual":
@@ -760,22 +889,22 @@ def main():
                 )
 
             action = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
-            action_pixel = action * np.array([w_px / W_ENV, h_px / H_ENV], dtype=np.float32) * args.stride
-
-            desired_virtual_target = virtual_target_pixel.copy() + action_pixel
-            desired_before_clip = desired_virtual_target.copy()
-            desired_virtual_target[0] = np.clip(desired_virtual_target[0], 50, w_px - 50)
-            desired_virtual_target[1] = np.clip(desired_virtual_target[1], 50, h_px - 50)
-            target_clipped = not np.allclose(desired_before_clip, desired_virtual_target)
-
-            max_pixel_step = args.max_step * (w_px / W_ENV)
-            diff_vec = desired_virtual_target - virtual_target_pixel
-            dist_pixel = float(np.linalg.norm(diff_vec))
-            target_step_limited = dist_pixel > max_pixel_step
-            if target_step_limited:
-                virtual_target_pixel += (diff_vec / dist_pixel) * max_pixel_step
-            else:
-                virtual_target_pixel = desired_virtual_target.copy()
+            virtual_target_env, desired_target_env, target_clipped, target_step_limited = (
+                resolve_common_target_env(
+                    action,
+                    position_robot_env,
+                    args.stride,
+                    args.max_step,
+                )
+            )
+            virtual_target_pixel = np.array([
+                virtual_target_env[0] * w_px / W_ENV,
+                virtual_target_env[1] * h_px / H_ENV,
+            ], dtype=np.float32)
+            desired_virtual_target = np.array([
+                desired_target_env[0] * w_px / W_ENV,
+                desired_target_env[1] * h_px / H_ENV,
+            ], dtype=np.float32)
 
             target_position_world = cali.pixel_to_world(virtual_target_pixel.astype(int))
             target_pose = [target_position_world[0], target_position_world[1], Z, RX_C, RY_C, RZ_C]
@@ -791,8 +920,8 @@ def main():
                     [W_ENV - WORKSPACE_MARGIN, H_ENV - WORKSPACE_MARGIN],
                 ).astype(np.float32)
 
-            task_finished = bool(args.stop_on_catch and distance_cm < args.catch_distance)
-            step_done_reason = "caught" if task_finished else ""
+            task_finished = False
+            step_done_reason = ""
 
             frame_for_log = cached_frame.copy() if cached_frame is not None else None
             if frame_for_log is not None:
@@ -814,7 +943,7 @@ def main():
                         (255, 255, 0),
                         2,
                     )
-                if cached_microrobot_detected and np.all(np.isfinite(cached_microrobot_env)):
+                if microrobot_fresh and np.all(np.isfinite(cached_microrobot_env)):
                     mic_px = np.array([cached_microrobot_env[0] * w_px / W_ENV, cached_microrobot_env[1] * h_px / H_ENV])
                     cv2.circle(frame_for_log, (int(mic_px[0]), int(mic_px[1])), 14, (255, 100, 0), 2)
                 cv2.putText(frame_for_log, f"d={distance_cm:.2f} cm", (20, 45), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (30, 220, 30), 2)
@@ -843,8 +972,8 @@ def main():
                 "hand_y_cm": float(position_hand_env[1]),
                 "robot_x_cm": float(position_robot_env[0]),
                 "robot_y_cm": float(position_robot_env[1]),
-                "microrobot_x_cm": float(cached_microrobot_env[0]) if np.isfinite(cached_microrobot_env[0]) else None,
-                "microrobot_y_cm": float(cached_microrobot_env[1]) if np.isfinite(cached_microrobot_env[1]) else None,
+                "microrobot_x_cm": float(cached_microrobot_env[0]) if microrobot_fresh and np.isfinite(cached_microrobot_env[0]) else None,
+                "microrobot_y_cm": float(cached_microrobot_env[1]) if microrobot_fresh and np.isfinite(cached_microrobot_env[1]) else None,
                 "distance_cm": distance_cm,
                 "in_zpd": in_zpd,
                 "policy_inference_ms": policy_inference_ms,
@@ -893,11 +1022,6 @@ def main():
             if not args.no_display and cv2.waitKey(1) == ord("q"):
                 done_reason = "manual_q"
                 logger.record_event("manual_stop", t_task_s=t_task_s)
-                break
-
-            if task_finished:
-                done_reason = "caught"
-                logger.record_event("caught", t_task_s=t_task_s, distance_cm=distance_cm)
                 break
 
             step += 1

@@ -40,6 +40,12 @@ class TrialRecord:
     episode_length_mean: float
     episode_length_std: float
     catch_rate: float
+    oob_rate: float
+    boundary_occupancy_mean: float
+    boundary_occupancy_std: float
+    min_clearance_mean: float
+    min_clearance_std: float
+    min_clearance_p05: float
     too_close_rate: float
     too_far_rate: float
     avg_distance_mean: float
@@ -66,6 +72,12 @@ class SummaryRow:
     episode_length_mean: float
     episode_length_std: float
     catch_rate: float
+    oob_rate: float
+    boundary_occupancy_mean: float
+    boundary_occupancy_std: float
+    min_clearance_mean: float
+    min_clearance_std: float
+    min_clearance_p05: float
     too_close_rate: float
     too_far_rate: float
     avg_distance_mean: float
@@ -134,6 +146,7 @@ def run_trial(
     episode_seeds: list[int],
     max_steps: int,
     controller_config: dict,
+    diagnostic_boundary_band: float = 0.5,
 ):
     env = build_env(test_type, hand_model, max_steps)
     controller = make_controller(controller_config)
@@ -143,6 +156,9 @@ def run_trial(
     zpd_values = []
     lengths = []
     catches = []
+    oobs = []
+    boundary_occupancies = []
+    min_clearances = []
     too_close_values = []
     too_far_values = []
     avg_distances = []
@@ -156,6 +172,7 @@ def run_trial(
             truncated = False
             total_reward = 0.0
             distances = []
+            clearances = []
             done_reason = ""
 
             while not (terminated or truncated):
@@ -163,6 +180,13 @@ def run_trial(
                 obs, reward, terminated, truncated, info = env.step(action)
                 total_reward += float(reward)
                 distances.append(float(info.get("dist", 0.0)))
+                robot_position = np.asarray(info.get("robot_pos", env.robot_position), dtype=np.float64)
+                clearances.append(float(min(
+                    robot_position[0] - env.margin,
+                    env.env_width - env.margin - robot_position[0],
+                    robot_position[1] - env.margin,
+                    env.env_height - env.margin - robot_position[1],
+                )))
                 done_reason = str(info.get("done_reason", ""))
 
             dist_arr = np.asarray(distances, dtype=np.float64)
@@ -179,9 +203,19 @@ def run_trial(
                 too_close_values.append(0.0)
                 too_far_values.append(0.0)
                 avg_distances.append(0.0)
+
+            clearance_arr = np.asarray(clearances, dtype=np.float64)
+            if clearance_arr.size:
+                boundary_occupancies.append(float(np.mean(clearance_arr < diagnostic_boundary_band)))
+                min_clearances.append(float(np.min(clearance_arr)))
+            else:
+                boundary_occupancies.append(0.0)
+                min_clearances.append(0.0)
+
             rewards.append(total_reward)
             lengths.append(len(distances))
             catches.append(done_reason == "Robot Caught")
+            oobs.append(bool(clearance_arr.size and np.any(clearance_arr <= 0.0)))
     finally:
         env.close()
 
@@ -190,6 +224,9 @@ def run_trial(
     zpd_mean, zpd_std = sample_mean_std(zpd_values)
     length_mean, length_std = sample_mean_std([float(v) for v in lengths])
     avg_distance_mean, avg_distance_std = sample_mean_std(avg_distances)
+    boundary_occupancy_mean, boundary_occupancy_std = sample_mean_std(boundary_occupancies)
+    min_clearance_mean, min_clearance_std = sample_mean_std(min_clearances)
+    min_clearance_p05 = float(np.percentile(min_clearances, 5)) if min_clearances else 0.0
 
     return TrialRecord(
         trial_index=int(trial_index),
@@ -204,6 +241,12 @@ def run_trial(
         episode_length_mean=length_mean,
         episode_length_std=length_std,
         catch_rate=float(np.mean(catches)) if catches else 0.0,
+        oob_rate=float(np.mean(oobs)) if oobs else 0.0,
+        boundary_occupancy_mean=boundary_occupancy_mean,
+        boundary_occupancy_std=boundary_occupancy_std,
+        min_clearance_mean=min_clearance_mean,
+        min_clearance_std=min_clearance_std,
+        min_clearance_p05=min_clearance_p05,
         too_close_rate=float(np.mean(too_close_values)) if too_close_values else 0.0,
         too_far_rate=float(np.mean(too_far_values)) if too_far_values else 0.0,
         avg_distance_mean=avg_distance_mean,
@@ -220,10 +263,13 @@ def summarize_condition(test_name: str, test_type: str, hand_path: Path | None, 
     zpd_mean, zpd_std = trial_stat("zpd_coverage_mean")
     length_mean, length_std = trial_stat("episode_length_mean")
     avg_distance_mean, avg_distance_std = trial_stat("avg_distance_mean")
+    boundary_occupancy_mean, boundary_occupancy_std = trial_stat("boundary_occupancy_mean")
+    min_clearance_mean, min_clearance_std = trial_stat("min_clearance_mean")
+    min_clearance_p05 = float(min(t.min_clearance_p05 for t in trials)) if trials else 0.0
 
     return SummaryRow(
         robot_name="cv_mpc",
-        robot_path="ConstantVelocityMPCController(constant-hand-velocity, deterministic-action-grid)",
+        robot_path="ConstantVelocityMPCController(two-move sequence shooting, constant-hand-velocity)",
         test_name=test_name,
         test_type=test_type,
         hand_path=str(hand_path) if hand_path is not None else None,
@@ -240,6 +286,12 @@ def summarize_condition(test_name: str, test_type: str, hand_path: Path | None, 
         episode_length_mean=length_mean,
         episode_length_std=length_std,
         catch_rate=float(np.mean([t.catch_rate for t in trials])) if trials else 0.0,
+        oob_rate=float(np.mean([t.oob_rate for t in trials])) if trials else 0.0,
+        boundary_occupancy_mean=boundary_occupancy_mean,
+        boundary_occupancy_std=boundary_occupancy_std,
+        min_clearance_mean=min_clearance_mean,
+        min_clearance_std=min_clearance_std,
+        min_clearance_p05=min_clearance_p05,
         too_close_rate=float(np.mean([t.too_close_rate for t in trials])) if trials else 0.0,
         too_far_rate=float(np.mean([t.too_far_rate for t in trials])) if trials else 0.0,
         avg_distance_mean=avg_distance_mean,
@@ -265,14 +317,18 @@ def main():
     parser.add_argument("--out_dir", type=Path, default=OUT_DIR)
     parser.add_argument("--h1_path", type=Path, default=H1_PATH)
     parser.add_argument("--horizon", type=int, default=5)
-    parser.add_argument("--velocity_window", type=int, default=4)
+    parser.add_argument("--velocity_window", type=int, default=3)
     parser.add_argument("--action_grid", default="-1,-0.5,0,0.5,1")
     parser.add_argument("--discount", type=float, default=0.95)
-    parser.add_argument("--boundary_guard", type=float, default=0.20)
-    parser.add_argument("--effort_weight", type=float, default=0.02)
-    parser.add_argument("--smoothness_weight", type=float, default=0.05)
-    parser.add_argument("--collision_penalty", type=float, default=40.0)
-    parser.add_argument("--oob_penalty", type=float, default=80.0)
+    parser.add_argument("--effort_weight", type=float, default=0.01)
+    parser.add_argument("--smoothness_weight", type=float, default=0.03)
+    parser.add_argument("--collision_penalty", type=float, default=120.0)
+    parser.add_argument("--oob_penalty", type=float, default=240.0)
+    parser.add_argument("--boundary_band", type=float, default=1.0)
+    parser.add_argument("--boundary_barrier_weight", type=float, default=16.0)
+    parser.add_argument("--collision_buffer", type=float, default=1.0)
+    parser.add_argument("--collision_barrier_weight", type=float, default=8.0)
+    parser.add_argument("--diagnostic_boundary_band", type=float, default=0.5)
     args = parser.parse_args()
 
     if args.trials < 1 or args.episodes_per_trial < 1:
@@ -288,11 +344,14 @@ def main():
         "velocity_window": args.velocity_window,
         "action_grid": action_grid,
         "discount": args.discount,
-        "boundary_guard": args.boundary_guard,
         "effort_weight": args.effort_weight,
         "smoothness_weight": args.smoothness_weight,
         "collision_penalty": args.collision_penalty,
         "oob_penalty": args.oob_penalty,
+        "boundary_band": args.boundary_band,
+        "boundary_barrier_weight": args.boundary_barrier_weight,
+        "collision_buffer": args.collision_buffer,
+        "collision_barrier_weight": args.collision_barrier_weight,
     }
 
     tests = [
@@ -326,6 +385,7 @@ def main():
                 episode_seeds=episode_seeds,
                 max_steps=args.max_steps,
                 controller_config=controller_config,
+                diagnostic_boundary_band=args.diagnostic_boundary_band,
             )
             trial_records.append(record)
             row = asdict(record)
@@ -333,7 +393,9 @@ def main():
             all_trials.append(row)
             print(
                 f"  Trial {trial_index + 1}/{args.trials}: "
-                f"TIZ={record.tiz_mean:.3f} | Len={record.episode_length_mean:.1f} | Catch={record.catch_rate:.2f}"
+                f"TIZ={record.tiz_mean:.3f} | Len={record.episode_length_mean:.1f} | "
+                f"Catch={record.catch_rate:.2f} | OOB={record.oob_rate:.3f} | "
+                f"Boundary={record.boundary_occupancy_mean:.3f}"
             )
         summary = summarize_condition(test_name, test_type, hand_path, args.max_steps, trial_records)
         summaries.append(summary)
@@ -344,14 +406,15 @@ def main():
 
     summary_rows = [asdict(row) for row in summaries]
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": run_id,
         "run_dir": str(RUN_DIR),
         "base_seed": args.seed,
         "seed_strategy": "numpy.SeedSequence.spawn shared across test conditions",
-        "controller": "ConstantVelocityMPCController",
+        "controller": "TwoMoveSequenceConstantVelocityMPCController",
         "controller_config": controller_config,
-        "prediction_model": "Hand velocity estimated from recent observed hand positions and held constant over the MPC horizon.",
+        "prediction_model": "Hand velocity estimated from recent observed hand positions and held constant over the MPC horizon; all ordered two-action move-blocking sequences are scored.",
+        "diagnostic_boundary_band": args.diagnostic_boundary_band,
         "privileged_information_used": False,
         "trials": args.trials,
         "episodes_per_trial": args.episodes_per_trial,
