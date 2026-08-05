@@ -502,6 +502,10 @@ def main():
 
     print(f"[controller] {args.controller}")
     print(f"[hand] source: {args.hand_source}")
+    print(
+        f"[distance] source=ur_rtde_tcp catch={args.catch_distance:.2f}cm "
+        f"stop_on_catch={int(args.stop_on_catch)}"
+    )
     if model_path is not None:
         print(f"[model] policy: {model_path}")
     if hand_model_path is not None:
@@ -602,6 +606,8 @@ def main():
             "virtual_hand_observation_noise_enabled": False if args.hand_source == "virtual" else None,
             "mediapipe_hand_detection_enabled": args.hand_source == "camera",
             "microrobot_max_age_s": MICROROBOT_MAX_AGE_S,
+            "task_robot_state_source": "ur_rtde_tcp",
+            "distance_source": "ur_rtde_tcp",
             "vision_model_path": str(vision_model_path),
             "control_freq_target_hz": float(args.control_hz),
             "camera_index": int(args.camera),
@@ -793,8 +799,7 @@ def main():
                 and cached_microrobot_age_s is not None
                 and cached_microrobot_age_s <= MICROROBOT_MAX_AGE_S
             )
-            distance_target_env = cached_microrobot_env if microrobot_fresh else position_robot_env
-            distance_cm = float(np.linalg.norm(distance_target_env - position_hand_env))
+            distance_cm = float(np.linalg.norm(position_robot_env - position_hand_env))
             in_zpd = args.zpd_low <= distance_cm <= args.zpd_high
             if args.stop_on_catch and distance_cm < args.catch_distance:
                 done_reason = "caught"
@@ -828,7 +833,13 @@ def main():
                     "task_finished": True,
                     "done_reason": done_reason,
                 })
-                logger.record_event("caught", t_task_s=t_task_s, distance_cm=distance_cm)
+                logger.record_event(
+                    "caught",
+                    t_task_s=t_task_s,
+                    distance_cm=distance_cm,
+                    catch_distance_cm=float(args.catch_distance),
+                    distance_source="ur_rtde_tcp",
+                )
                 break
 
             virtual_hand_obs = None
