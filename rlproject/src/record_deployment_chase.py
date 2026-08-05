@@ -623,6 +623,21 @@ def main():
             "history_mode": history_mode if args.controller == "league" else None,
             "history_length": int(history_length) if args.controller == "league" else None,
             "history_channels": int(history_channels) if args.controller == "league" else None,
+            "interaction_history_feature_order": (
+                [
+                    "hand_minus_robot_x",
+                    "hand_minus_robot_y",
+                    "distance",
+                    "distance_delta",
+                    "robot_move_x",
+                    "robot_move_y",
+                    "hand_move_x",
+                    "hand_move_y",
+                ]
+                if args.controller == "league" and history_mode == "interaction"
+                else None
+            ),
+            "previous_robot_move_source": "measured_tcp_delta",
             "stride_cm": float(args.stride),
             "max_safe_step_cm": float(args.max_step),
             "stop_on_catch": bool(args.stop_on_catch),
@@ -842,6 +857,38 @@ def main():
                 )
                 break
 
+            hand_move = (
+                np.zeros(2, dtype=np.float32)
+                if prev_hand_env is None
+                else (position_hand_env - prev_hand_env).astype(np.float32)
+            )
+            robot_move = (
+                np.zeros(2, dtype=np.float32)
+                if prev_robot_env is None
+                else (position_robot_env - prev_robot_env).astype(np.float32)
+            )
+            distance_delta = (
+                0.0
+                if prev_distance_cm is None
+                else float(distance_cm - prev_distance_cm)
+            )
+            if (
+                prev_hand_env is not None
+                and prev_robot_env is not None
+                and prev_distance_cm is not None
+            ):
+                motion_history_buffer.append(hand_move)
+                interaction_history_buffer.append(np.array([
+                    float(position_hand_env[0] - position_robot_env[0]),
+                    float(position_hand_env[1] - position_robot_env[1]),
+                    float(distance_cm),
+                    distance_delta,
+                    float(robot_move[0]),
+                    float(robot_move[1]),
+                    float(hand_move[0]),
+                    float(hand_move[1]),
+                ], dtype=np.float32))
+
             virtual_hand_obs = None
             if args.hand_source == "virtual":
                 virtual_hand_obs = build_virtual_hand_observation(
@@ -872,7 +919,7 @@ def main():
                     distance_obs,
                     boundary_obs,
                     np.array([args.stride], dtype=np.float32),
-                    previous_action,
+                    robot_move,
                     flat_history,
                 )).astype(np.float32)
                 if obs_array.shape[0] != expected_obs_dim:
@@ -882,11 +929,7 @@ def main():
                 mpc_state.steps = step
                 mpc_state.robot_position = position_robot_env.copy()
                 mpc_state.hand_position = position_hand_env.copy()
-                mpc_state.last_robot_action = (
-                    np.zeros(2, dtype=np.float32)
-                    if prev_robot_env is None
-                    else (position_robot_env - prev_robot_env).astype(np.float32)
-                )
+                mpc_state.last_robot_action = robot_move.copy()
                 action = mpc_controller.predict(mpc_state)
             policy_inference_ms = (time.perf_counter() - inference_start) * 1000.0
 
@@ -1008,20 +1051,6 @@ def main():
                 "done_reason": step_done_reason,
             })
 
-            hand_move = np.zeros(2, dtype=np.float32) if prev_hand_env is None else (position_hand_env - prev_hand_env).astype(np.float32)
-            robot_move = np.zeros(2, dtype=np.float32) if prev_robot_env is None else (position_robot_env - prev_robot_env).astype(np.float32)
-            distance_delta = 0.0 if prev_distance_cm is None else float(distance_cm - prev_distance_cm)
-            motion_history_buffer.append(hand_move)
-            interaction_history_buffer.append(np.array([
-                float(position_hand_env[0] - position_robot_env[0]),
-                float(position_hand_env[1] - position_robot_env[1]),
-                float(distance_cm),
-                distance_delta,
-                float(robot_move[0]),
-                float(robot_move[1]),
-                float(hand_move[0]),
-                float(hand_move[1]),
-            ], dtype=np.float32))
             prev_hand_env = position_hand_env.copy()
             prev_robot_env = position_robot_env.copy()
             prev_distance_cm = distance_cm
