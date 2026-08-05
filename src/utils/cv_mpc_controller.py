@@ -13,8 +13,10 @@ if TYPE_CHECKING:
 class ConstantVelocityMPCController:
     """Nonlearning sequence MPC with constant-velocity hand prediction.
 
-    The controller uses only current and past observed positions. It does not query
-    the scripted hand controller, learned hand model, environment step function, or
+    The controller uses only current state and past observed Hand motion. Hand
+    velocity comes from shared interaction history when supplied, with observed
+    position differences retained as a fallback. It does not query the scripted
+    hand controller, learned hand model, environment step function, or
     any future hand trajectory. All ordered pairs of candidate actions are scored:
     the first action is applied for one predicted step and the second is held over
     the remaining horizon. Only the first action is executed before replanning.
@@ -103,6 +105,34 @@ class ConstantVelocityMPCController:
         if deltas.size == 0:
             return np.zeros(2, dtype=np.float32)
         return np.mean(deltas[-self.velocity_window :], axis=0).astype(np.float32)
+
+    def _estimate_hand_velocity_from_history(
+        self,
+        interaction_history,
+        completed_steps: int,
+    ) -> tuple[np.ndarray, int]:
+        completed_steps = int(completed_steps)
+        if completed_steps < 0:
+            raise ValueError("completed_steps cannot be negative")
+
+        history = np.asarray(list(interaction_history), dtype=np.float32)
+        if history.size == 0:
+            history = np.empty((0, 8), dtype=np.float32)
+        elif history.ndim == 1:
+            if history.size % 8 != 0:
+                raise ValueError("interaction_history must contain 8-channel frames")
+            history = history.reshape(-1, 8)
+        elif history.ndim != 2 or history.shape[1] != 8:
+            raise ValueError("interaction_history must have shape (frames, 8)")
+
+        available_frames = min(completed_steps, int(history.shape[0]))
+        used_frames = min(available_frames, self.velocity_window)
+        if used_frames == 0:
+            return np.zeros(2, dtype=np.float32), 0
+
+        completed_history = history[-available_frames:]
+        hand_moves = completed_history[-used_frames:, 6:8]
+        return np.mean(hand_moves, axis=0).astype(np.float32), used_frames
 
     @staticmethod
     def _zpd_reward_vectorized(distances: np.ndarray, z_min: float, z_max: float) -> np.ndarray:
@@ -222,9 +252,33 @@ class ConstantVelocityMPCController:
 
         return scores, terminal_steps, min_clearances, min_distances
 
-    def predict(self, env: RehabilitationEnv) -> np.ndarray:
+    def predict(
+        self,
+        env: RehabilitationEnv,
+        interaction_history=None,
+        completed_steps: int | None = None,
+    ) -> np.ndarray:
         self._record_observation(env)
-        hand_velocity = self._estimate_hand_velocity()
+        if interaction_history is None:
+            hand_velocity = self._estimate_hand_velocity()
+            velocity_source = "position_deque"
+            velocity_history_frames = min(
+                max(len(self.hand_positions) - 1, 0),
+                self.velocity_window,
+            )
+        else:
+            if completed_steps is None:
+                raise ValueError(
+                    "completed_steps is required with interaction_history"
+                )
+            hand_velocity, velocity_history_frames = (
+                self._estimate_hand_velocity_from_history(
+                    interaction_history,
+                    completed_steps,
+                )
+            )
+            velocity_source = "interaction_history"
+
         scores, terminal_steps, min_clearances, min_distances = self._score_action_sequences(
             env,
             hand_velocity,
@@ -254,6 +308,8 @@ class ConstantVelocityMPCController:
             "first_action": best_action.tolist(),
             "planned_second_action": self.second_actions[best_index].astype(float).tolist(),
             "hand_velocity": hand_velocity.astype(float).tolist(),
+            "hand_velocity_source": velocity_source,
+            "hand_velocity_history_frames": int(velocity_history_frames),
             "num_sequences": self.num_sequences,
             "horizon": self.horizon,
         }

@@ -321,15 +321,57 @@ def build_virtual_hand_observation(
 
 
 def apply_virtual_hand_execution(hand_action, stride_hand, last_hand_actual_move):
-    hand_action = np.clip(np.asarray(hand_action, dtype=np.float32), -1.0, 1.0)
-    hand_intent = hand_action * float(stride_hand)
+    clipped_action = np.clip(
+        np.asarray(hand_action, dtype=np.float32),
+        -1.0,
+        1.0,
+    )
+    hand_intent = clipped_action * float(stride_hand)
     last_move = np.asarray(last_hand_actual_move, dtype=np.float32)
     delta_v = hand_intent - last_move
     accel_magnitude = float(np.linalg.norm(delta_v))
     max_accel = 1.5 * float(stride_hand)
-    if accel_magnitude > max_accel and accel_magnitude > 1e-8:
+    accel_clipped = bool(accel_magnitude > max_accel and accel_magnitude > 1e-8)
+    if accel_clipped:
         delta_v = (delta_v / accel_magnitude) * max_accel
-    return (last_move + delta_v).astype(np.float32)
+    executed_move = (last_move + delta_v).astype(np.float32)
+    diagnostics = {
+        "action": clipped_action,
+        "action_norm": float(np.linalg.norm(clipped_action)),
+        "command_move": hand_intent.astype(np.float32),
+        "command_norm_cm": float(np.linalg.norm(hand_intent)),
+        "executed_move": executed_move,
+        "executed_norm_cm": float(np.linalg.norm(executed_move)),
+        "accel_clipped": accel_clipped,
+    }
+    return executed_move, diagnostics
+
+
+def build_virtual_hand_log_fields(diagnostics, stride_hand, inference_ms):
+    if diagnostics is None:
+        return {}
+    action = diagnostics["action"]
+    command_move = diagnostics["command_move"]
+    executed_move = diagnostics["executed_move"]
+    actual_move = diagnostics["actual_move"]
+    return {
+        "virtual_hand_stride_cm": float(stride_hand),
+        "virtual_hand_action_x": float(action[0]),
+        "virtual_hand_action_y": float(action[1]),
+        "virtual_hand_action_norm": float(diagnostics["action_norm"]),
+        "virtual_hand_command_dx_cm": float(command_move[0]),
+        "virtual_hand_command_dy_cm": float(command_move[1]),
+        "virtual_hand_command_norm_cm": float(diagnostics["command_norm_cm"]),
+        "virtual_hand_exec_dx_cm": float(executed_move[0]),
+        "virtual_hand_exec_dy_cm": float(executed_move[1]),
+        "virtual_hand_exec_norm_cm": float(diagnostics["executed_norm_cm"]),
+        "virtual_hand_actual_dx_cm": float(actual_move[0]),
+        "virtual_hand_actual_dy_cm": float(actual_move[1]),
+        "virtual_hand_actual_norm_cm": float(diagnostics["actual_norm_cm"]),
+        "virtual_hand_accel_clipped": bool(diagnostics["accel_clipped"]),
+        "virtual_hand_workspace_clipped": bool(diagnostics["workspace_clipped"]),
+        "virtual_hand_policy_inference_ms": float(inference_ms),
+    }
 
 
 def sample_virtual_hand_start(robot_position, zpd_low, zpd_high, rng, margin=WORKSPACE_MARGIN):
@@ -549,7 +591,10 @@ def main():
                 else float(virtual_hand_rng.uniform(*VIRTUAL_HAND_STRIDE_RANGE))
             )
             print(f"[hand] observation: {VIRTUAL_HAND_OBS_DIM} dims (motion, length={VIRTUAL_HAND_HISTORY_LENGTH})")
-            print(f"[hand] stride: {virtual_hand_stride:.3f} cm/step")
+            print(
+                f"[hand] action scale: {virtual_hand_stride:.3f} cm "
+                "(not guaranteed displacement)"
+            )
 
         cap = cv2.VideoCapture(args.camera)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.camera_width)
@@ -588,6 +633,21 @@ def main():
             "controller": args.controller,
             "policy_path": str(model_path) if model_path is not None else None,
             "cv_mpc_config": CV_MPC_CONFIG if args.controller == "cv_mpc" else None,
+            "cv_mpc_observation_inputs": (
+                "current absolute Robot/Hand positions, workspace boundaries, "
+                "previous measured Robot move, and completed observed Hand moves "
+                "from the shared 8-channel interaction history"
+                if args.controller == "cv_mpc"
+                else None
+            ),
+            "cv_mpc_hand_velocity_source": (
+                "interaction_history channels 6-7 (hand_move_x, hand_move_y)"
+                if args.controller == "cv_mpc"
+                else None
+            ),
+            "cv_mpc_interaction_history_length": (
+                int(history_length) if args.controller == "cv_mpc" else None
+            ),
             "privileged_information_used": False if args.controller == "cv_mpc" else None,
             "hand_source": args.hand_source,
             "hand_model_path": str(hand_model_path) if hand_model_path is not None else None,
@@ -596,6 +656,11 @@ def main():
             "virtual_hand_history_length": VIRTUAL_HAND_HISTORY_LENGTH if args.hand_source == "virtual" else None,
             "virtual_hand_seed": int(args.seed) if args.hand_source == "virtual" else None,
             "virtual_hand_stride_cm": virtual_hand_stride,
+            "virtual_hand_stride_semantics": (
+                "componentwise policy-action scale, not guaranteed displacement"
+                if args.hand_source == "virtual"
+                else None
+            ),
             "virtual_hand_stride_sample_range_cm": list(VIRTUAL_HAND_STRIDE_RANGE) if args.hand_source == "virtual" else None,
             "virtual_hand_initial_distance_cm": 0.5 * (args.zpd_low + args.zpd_high) if args.hand_source == "virtual" else None,
             "virtual_hand_initial_angle_rad": virtual_hand_initial_angle,
@@ -634,7 +699,13 @@ def main():
                     "hand_move_x",
                     "hand_move_y",
                 ]
-                if args.controller == "league" and history_mode == "interaction"
+                if (
+                    args.controller == "cv_mpc"
+                    or (
+                        args.controller == "league"
+                        and history_mode == "interaction"
+                    )
+                )
                 else None
             ),
             "previous_robot_move_source": "measured_tcp_delta",
@@ -930,16 +1001,28 @@ def main():
                 mpc_state.robot_position = position_robot_env.copy()
                 mpc_state.hand_position = position_hand_env.copy()
                 mpc_state.last_robot_action = robot_move.copy()
-                action = mpc_controller.predict(mpc_state)
+                action = mpc_controller.predict(
+                    mpc_state,
+                    interaction_history=interaction_history_buffer,
+                    completed_steps=step,
+                )
             policy_inference_ms = (time.perf_counter() - inference_start) * 1000.0
 
             next_virtual_hand_move = None
+            virtual_hand_diagnostics = None
+            virtual_hand_policy_inference_ms = None
             if args.hand_source == "virtual":
+                hand_inference_start = time.perf_counter()
                 hand_action, _ = hand_model.predict(virtual_hand_obs, deterministic=False)
-                next_virtual_hand_move = apply_virtual_hand_execution(
-                    hand_action,
-                    virtual_hand_stride,
-                    last_hand_actual_move,
+                virtual_hand_policy_inference_ms = (
+                    time.perf_counter() - hand_inference_start
+                ) * 1000.0
+                next_virtual_hand_move, virtual_hand_diagnostics = (
+                    apply_virtual_hand_execution(
+                        hand_action,
+                        virtual_hand_stride,
+                        last_hand_actual_move,
+                    )
                 )
 
             action = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
@@ -968,11 +1051,33 @@ def main():
 
             if args.hand_source == "virtual":
                 last_hand_actual_move = next_virtual_hand_move.copy()
-                virtual_hand_env = np.clip(
-                    virtual_hand_env + next_virtual_hand_move,
+                virtual_hand_pre_clip = virtual_hand_env + next_virtual_hand_move
+                virtual_hand_low = np.array(
                     [WORKSPACE_MARGIN, WORKSPACE_MARGIN],
+                    dtype=np.float32,
+                )
+                virtual_hand_high = np.array(
                     [W_ENV - WORKSPACE_MARGIN, H_ENV - WORKSPACE_MARGIN],
+                    dtype=np.float32,
+                )
+                workspace_clipped = bool(
+                    np.any(virtual_hand_pre_clip < virtual_hand_low)
+                    or np.any(virtual_hand_pre_clip > virtual_hand_high)
+                )
+                next_virtual_hand_env = np.clip(
+                    virtual_hand_pre_clip,
+                    virtual_hand_low,
+                    virtual_hand_high,
                 ).astype(np.float32)
+                virtual_hand_actual_move = (
+                    next_virtual_hand_env - virtual_hand_env
+                ).astype(np.float32)
+                virtual_hand_diagnostics["actual_move"] = virtual_hand_actual_move
+                virtual_hand_diagnostics["actual_norm_cm"] = float(
+                    np.linalg.norm(virtual_hand_actual_move)
+                )
+                virtual_hand_diagnostics["workspace_clipped"] = workspace_clipped
+                virtual_hand_env = next_virtual_hand_env
 
             task_finished = False
             step_done_reason = ""
@@ -1030,6 +1135,11 @@ def main():
                 "microrobot_y_cm": float(cached_microrobot_env[1]) if microrobot_fresh and np.isfinite(cached_microrobot_env[1]) else None,
                 "distance_cm": distance_cm,
                 "in_zpd": in_zpd,
+                **build_virtual_hand_log_fields(
+                    virtual_hand_diagnostics,
+                    virtual_hand_stride,
+                    virtual_hand_policy_inference_ms,
+                ),
                 "policy_inference_ms": policy_inference_ms,
                 "action_x": float(action[0]),
                 "action_y": float(action[1]),

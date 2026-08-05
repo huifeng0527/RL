@@ -18,11 +18,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 ROLLOUT_SCRIPT = Path(__file__).resolve().with_name("record_deployment_chase.py")
 DEFAULT_BATCH_ROOT = REPO_ROOT / "data" / "deployment_batches"
 BOUNDARY_BAND_CM = 0.5
+HAND_STRIDE_RANGE_CM = (0.3, 0.6)
 VALID_DONE_REASONS = {"caught", "timeout"}
 
 RUN_FIELDS = [
-    "run_id", "pair_id", "seed", "order_in_pair", "controller", "status",
-    "rollout_dir", "done_reason", "caught", "duration_s", "num_control_steps",
+    "run_id", "pair_id", "trial_index", "internal_seed", "hand_stride_cm",
+    "order_in_pair", "controller", "status", "rollout_dir", "done_reason",
+    "caught", "duration_s", "num_control_steps",
     "zpd_occupancy_fraction", "distance_cm_mean", "distance_cm_std",
     "distance_cm_min", "distance_cm_final", "too_close_fraction",
     "too_far_fraction", "min_boundary_clearance_cm", "boundary_occupancy_fraction",
@@ -31,15 +33,25 @@ RUN_FIELDS = [
     "policy_inference_latency_ms_mean", "policy_inference_latency_ms_p95",
     "safety_stop_count", "microrobot_detection_fraction",
     "microrobot_tcp_error_cm_mean", "microrobot_tcp_error_cm_p95",
+    "virtual_hand_actual_move_cm_mean", "virtual_hand_actual_move_cm_p95",
+    "virtual_hand_actual_to_stride_ratio_mean",
+    "virtual_hand_accel_clipped_fraction",
+    "virtual_hand_workspace_clipped_fraction",
+    "virtual_hand_policy_latency_ms_mean", "virtual_hand_policy_latency_ms_p95",
 ]
 
 SUMMARY_METRICS = [
-    "zpd_occupancy_fraction", "duration_s", "distance_cm_mean",
+    "hand_stride_cm", "zpd_occupancy_fraction", "duration_s", "distance_cm_mean",
     "too_close_fraction", "too_far_fraction", "min_boundary_clearance_cm",
     "boundary_occupancy_fraction", "target_clipped_fraction",
     "target_step_limited_fraction", "control_loop_rate_hz_mean",
     "camera_update_rate_hz_mean", "policy_inference_latency_ms_mean",
     "microrobot_detection_fraction", "microrobot_tcp_error_cm_mean",
+    "virtual_hand_actual_move_cm_mean",
+    "virtual_hand_actual_to_stride_ratio_mean",
+    "virtual_hand_accel_clipped_fraction",
+    "virtual_hand_workspace_clipped_fraction",
+    "virtual_hand_policy_latency_ms_mean", "virtual_hand_policy_latency_ms_p95",
 ]
 
 PAIRED_METRICS = [
@@ -54,10 +66,9 @@ def parse_args():
         description="Sequential paired League-vs-MPC physical tests with a Virtual Hand."
     )
     parser.add_argument("--subject-prefix", default="virtual_batch")
-    parser.add_argument("--seeds", default="1,2,3,4,5")
+    parser.add_argument("--trials", type=int, default=5)
     parser.add_argument("--seconds", type=float, default=60.0)
     parser.add_argument("--stride", type=float, default=0.35)
-    parser.add_argument("--hand-stride", type=float, default=0.45)
     parser.add_argument("--max-step", type=float, default=0.60)
     parser.add_argument("--catch-distance", type=float, default=1.5)
     parser.add_argument("--inter-run-delay", type=float, default=3.0)
@@ -76,21 +87,6 @@ def parse_args():
 def slug(value):
     value = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value).strip())
     return value.strip("_") or "batch"
-
-
-def parse_seeds(raw):
-    seeds = []
-    for item in raw.split(","):
-        if not item.strip():
-            continue
-        seed = int(item)
-        if seed < 0:
-            raise ValueError("Seeds must be nonnegative")
-        if seed not in seeds:
-            seeds.append(seed)
-    if not seeds:
-        raise ValueError("At least one seed is required")
-    return seeds
 
 
 def to_float(value):
@@ -152,9 +148,18 @@ def mean_std(values):
 def build_manifest(args, batch_dir):
     rollout_root = batch_dir / "rollouts"
     runs = []
-    for pair_index, seed in enumerate(parse_seeds(args.seeds)):
-        controllers = ["league", "cv_mpc"] if pair_index % 2 == 0 else ["cv_mpc", "league"]
-        pair_id = f"seed{seed:03d}"
+    for pair_index in range(args.trials):
+        trial_index = pair_index + 1
+        internal_seed = trial_index
+        hand_stride = float(
+            np.random.default_rng(internal_seed).uniform(*HAND_STRIDE_RANGE_CM)
+        )
+        controllers = (
+            ["league", "cv_mpc"]
+            if pair_index % 2 == 0
+            else ["cv_mpc", "league"]
+        )
+        pair_id = f"trial{trial_index:03d}"
         subject = f"{slug(args.subject_prefix)}_{pair_id}"
         for order, controller in enumerate(controllers, start=1):
             condition = f"{controller}_virtual_h1_{pair_id}"
@@ -162,10 +167,10 @@ def build_manifest(args, batch_dir):
                 sys.executable, str(ROLLOUT_SCRIPT),
                 "--controller", controller,
                 "--hand-source", "virtual",
-                "--seed", str(seed),
+                "--seed", str(internal_seed),
                 "--seconds", str(args.seconds),
                 "--stride", str(args.stride),
-                "--hand-stride", str(args.hand_stride),
+                "--hand-stride", f"{hand_stride:.9g}",
                 "--max-step", str(args.max_step),
                 "--catch-distance", str(args.catch_distance),
                 "--subject", subject,
@@ -180,7 +185,9 @@ def build_manifest(args, batch_dir):
                 "run_id": f"{pair_id}_{controller}",
                 "pair_id": pair_id,
                 "pair_index": pair_index,
-                "seed": seed,
+                "trial_index": trial_index,
+                "internal_seed": internal_seed,
+                "hand_stride_cm": hand_stride,
                 "order_in_pair": order,
                 "controller": controller,
                 "subject": subject,
@@ -188,16 +195,18 @@ def build_manifest(args, batch_dir):
                 "command": command,
             })
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "batch_id": batch_dir.name,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "batch_dir": str(batch_dir),
         "rollout_root": str(rollout_root),
         "termination": "first_catch_or_timeout",
         "parameters": {
+            "trials": args.trials,
+            "internal_seed_strategy": "one-based trial index",
+            "hand_stride_sample_range_cm": list(HAND_STRIDE_RANGE_CM),
             "seconds": args.seconds,
             "stride_cm": args.stride,
-            "hand_stride_cm": args.hand_stride,
             "max_step_cm": args.max_step,
             "catch_distance_cm": args.catch_distance,
             "inter_run_delay_s": args.inter_run_delay,
@@ -214,7 +223,9 @@ def prepare_batch(args):
         manifest = read_json(batch_dir / "manifest.json")
         return batch_dir, manifest
 
-    for name in ("seconds", "stride", "hand_stride", "max_step", "catch_distance"):
+    if args.trials < 1:
+        raise ValueError("--trials must be positive")
+    for name in ("seconds", "stride", "max_step", "catch_distance"):
         if getattr(args, name) <= 0:
             raise ValueError(f"--{name.replace('_', '-')} must be positive")
     if args.inter_run_delay < 0:
@@ -239,8 +250,29 @@ def metadata_matches(metadata, run):
         and metadata.get("condition") == run["condition"]
         and metadata.get("controller") == run["controller"]
         and metadata.get("hand_source") == "virtual"
-        and int(metadata.get("virtual_hand_seed", -1)) == int(run["seed"])
+        and int(metadata.get("virtual_hand_seed", -1)) == int(run["internal_seed"])
+        and abs(
+            float(metadata.get("virtual_hand_stride_cm", -1.0))
+            - float(run["hand_stride_cm"])
+        ) < 1e-6
     )
+
+
+def result_matches_run(row, run):
+    try:
+        return (
+            row.get("run_id") == run["run_id"]
+            and row.get("pair_id") == run["pair_id"]
+            and int(float(row.get("trial_index"))) == int(run["trial_index"])
+            and int(float(row.get("internal_seed"))) == int(run["internal_seed"])
+            and abs(
+                float(row.get("hand_stride_cm")) - float(run["hand_stride_cm"])
+            ) < 1e-6
+            and int(float(row.get("order_in_pair"))) == int(run["order_in_pair"])
+            and row.get("controller") == run["controller"]
+        )
+    except (TypeError, ValueError):
+        return False
 
 
 def find_rollout(run, rollout_root, names=None):
@@ -306,7 +338,9 @@ def extract_metrics(run, rollout_dir):
     values = {
         "run_id": run["run_id"],
         "pair_id": run["pair_id"],
-        "seed": run["seed"],
+        "trial_index": run["trial_index"],
+        "internal_seed": run["internal_seed"],
+        "hand_stride_cm": to_float(metadata.get("virtual_hand_stride_cm")),
         "order_in_pair": run["order_in_pair"],
         "controller": run["controller"],
         "status": "completed",
@@ -334,6 +368,27 @@ def extract_metrics(run, rollout_dir):
         "microrobot_detection_fraction": float(np.mean(detected)) if detected else None,
         "microrobot_tcp_error_cm_mean": float(np.mean(tracking_errors)) if tracking_errors else None,
         "microrobot_tcp_error_cm_p95": float(np.percentile(tracking_errors, 95)) if tracking_errors else None,
+        "virtual_hand_actual_move_cm_mean": to_float(
+            summary.get("virtual_hand_actual_move_cm_mean")
+        ),
+        "virtual_hand_actual_move_cm_p95": to_float(
+            summary.get("virtual_hand_actual_move_cm_p95")
+        ),
+        "virtual_hand_actual_to_stride_ratio_mean": to_float(
+            summary.get("virtual_hand_actual_to_stride_ratio_mean")
+        ),
+        "virtual_hand_accel_clipped_fraction": to_float(
+            summary.get("virtual_hand_accel_clipped_fraction")
+        ),
+        "virtual_hand_workspace_clipped_fraction": to_float(
+            summary.get("virtual_hand_workspace_clipped_fraction")
+        ),
+        "virtual_hand_policy_latency_ms_mean": to_float(
+            summary.get("virtual_hand_policy_latency_ms_mean")
+        ),
+        "virtual_hand_policy_latency_ms_p95": to_float(
+            summary.get("virtual_hand_policy_latency_ms_p95")
+        ),
     }
     if done_reason not in VALID_DONE_REASONS:
         values["status"] = "failed"
@@ -347,7 +402,9 @@ def incomplete_result(run, status, rollout_dir=None, done_reason=None):
     row.update({
         "run_id": run["run_id"],
         "pair_id": run["pair_id"],
-        "seed": run["seed"],
+        "trial_index": run["trial_index"],
+        "internal_seed": run["internal_seed"],
+        "hand_stride_cm": run["hand_stride_cm"],
         "order_in_pair": run["order_in_pair"],
         "controller": run["controller"],
         "status": status,
@@ -364,8 +421,27 @@ def recover_results(manifest, existing_rows):
     rollout_root = Path(manifest["rollout_root"])
     for run in manifest["runs"]:
         row = by_id.get(run["run_id"])
-        if row and row.get("status") == "completed" and Path(row.get("rollout_dir", "")).exists():
-            continue
+        if row is not None and not result_matches_run(row, run):
+            by_id.pop(run["run_id"], None)
+            row = None
+
+        if row and row.get("status") == "completed":
+            rollout_dir = Path(row.get("rollout_dir", ""))
+            metadata_path = rollout_dir / "metadata.json"
+            summary_path = rollout_dir / "summary.json"
+            try:
+                valid_completed_row = (
+                    rollout_dir.exists()
+                    and metadata_path.exists()
+                    and summary_path.exists()
+                    and metadata_matches(read_json(metadata_path), run)
+                )
+            except (OSError, ValueError, TypeError):
+                valid_completed_row = False
+            if valid_completed_row:
+                continue
+            by_id.pop(run["run_id"], None)
+
         rollout = find_rollout(run, rollout_root)
         if rollout and (rollout / "summary.json").exists():
             try:
@@ -383,10 +459,25 @@ def write_aggregates(batch_dir, manifest, rows):
 
     summaries = []
     for controller in ("league", "cv_mpc"):
-        group = [r for r in rows if r["controller"] == controller and r["status"] == "completed"]
+        group = sorted(
+            [
+                r for r in rows
+                if r["controller"] == controller and r["status"] == "completed"
+            ],
+            key=lambda row: int(float(row["trial_index"])),
+        )
         summary = {
             "controller": controller,
             "n_completed": len(group),
+            "trial_indices": json.dumps([
+                int(float(row["trial_index"])) for row in group
+            ]),
+            "internal_seeds": json.dumps([
+                int(float(row["internal_seed"])) for row in group
+            ]),
+            "hand_strides_cm": json.dumps([
+                float(row["hand_stride_cm"]) for row in group
+            ]),
             "catch_rate": float(np.mean([to_bool(r["caught"]) for r in group])) if group else None,
             "safety_stop_count": int(sum(int(float(r.get("safety_stop_count") or 0)) for r in rows if r["controller"] == controller)),
             "done_reason_counts": json.dumps(dict(Counter(r["done_reason"] for r in group)), sort_keys=True),
@@ -405,7 +496,9 @@ def write_aggregates(batch_dir, manifest, rows):
             continue
         pair = {
             "pair_id": pair_id,
-            "seed": league["seed"],
+            "trial_index": league["trial_index"],
+            "internal_seed": league["internal_seed"],
+            "hand_stride_cm": league["hand_stride_cm"],
             "league_order_in_pair": league["order_in_pair"],
             "mpc_order_in_pair": mpc["order_in_pair"],
             "league_done_reason": league["done_reason"],
@@ -418,7 +511,8 @@ def write_aggregates(batch_dir, manifest, rows):
             pair[f"delta_{metric}"] = lv - mv if lv is not None and mv is not None else None
         pairs.append(pair)
     pair_fields = list(pairs[0]) if pairs else [
-        "pair_id", "seed", "league_order_in_pair", "mpc_order_in_pair",
+        "pair_id", "trial_index", "internal_seed", "hand_stride_cm",
+        "league_order_in_pair", "mpc_order_in_pair",
         "league_done_reason", "mpc_done_reason",
         *[f"{prefix}_{metric}" for metric in PAIRED_METRICS for prefix in ("league", "mpc", "delta")],
     ]
@@ -436,7 +530,8 @@ def print_plan(manifest, completed_ids):
     for i, run in enumerate(manifest["runs"], start=1):
         state = "skip" if run["run_id"] in completed_ids else "run"
         print(
-            f"[{state}] {i:02d} pair={run['pair_id']} order={run['order_in_pair']} "
+            f"[{state}] {i:02d} pair={run['pair_id']} seed={run['internal_seed']} "
+            f"hand_stride={run['hand_stride_cm']:.3f} order={run['order_in_pair']} "
             f"controller={run['controller']}"
         )
         if state == "run":

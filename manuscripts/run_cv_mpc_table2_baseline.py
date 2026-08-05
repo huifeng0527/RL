@@ -176,7 +176,11 @@ def run_trial(
             done_reason = ""
 
             while not (terminated or truncated):
-                action = controller.predict(env)
+                action = controller.predict(
+                    env,
+                    interaction_history=env.interaction_history_buffer,
+                    completed_steps=env.steps,
+                )
                 obs, reward, terminated, truncated, info = env.step(action)
                 total_reward += float(reward)
                 distances.append(float(info.get("dist", 0.0)))
@@ -406,14 +410,26 @@ def main():
 
     summary_rows = [asdict(row) for row in summaries]
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "run_id": run_id,
         "run_dir": str(RUN_DIR),
         "base_seed": args.seed,
         "seed_strategy": "numpy.SeedSequence.spawn shared across test conditions",
         "controller": "TwoMoveSequenceConstantVelocityMPCController",
         "controller_config": controller_config,
-        "prediction_model": "Hand velocity estimated from recent observed hand positions and held constant over the MPC horizon; all ordered two-action move-blocking sequences are scored.",
+        "prediction_model": "Hand velocity estimated from completed observed Hand moves in channels 6-7 of the shared 8-channel interaction history and held constant over the MPC horizon; all ordered two-action move-blocking sequences are scored.",
+        "observable_inputs": "Current absolute Robot/Hand positions, workspace boundaries, previous Robot motion, and completed observed Hand moves from the shared interaction history.",
+        "interaction_history_feature_order": [
+            "hand_minus_robot_x",
+            "hand_minus_robot_y",
+            "distance",
+            "distance_delta",
+            "robot_move_x",
+            "robot_move_y",
+            "hand_move_x",
+            "hand_move_y",
+        ],
+        "completed_history_frames_only": True,
         "diagnostic_boundary_band": args.diagnostic_boundary_band,
         "privileged_information_used": False,
         "trials": args.trials,

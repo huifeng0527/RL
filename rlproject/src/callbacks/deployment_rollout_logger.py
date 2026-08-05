@@ -31,6 +31,22 @@ FIELDNAMES = [
     "microrobot_y_cm",
     "distance_cm",
     "in_zpd",
+    "virtual_hand_stride_cm",
+    "virtual_hand_action_x",
+    "virtual_hand_action_y",
+    "virtual_hand_action_norm",
+    "virtual_hand_command_dx_cm",
+    "virtual_hand_command_dy_cm",
+    "virtual_hand_command_norm_cm",
+    "virtual_hand_exec_dx_cm",
+    "virtual_hand_exec_dy_cm",
+    "virtual_hand_exec_norm_cm",
+    "virtual_hand_actual_dx_cm",
+    "virtual_hand_actual_dy_cm",
+    "virtual_hand_actual_norm_cm",
+    "virtual_hand_accel_clipped",
+    "virtual_hand_workspace_clipped",
+    "virtual_hand_policy_inference_ms",
     "policy_inference_ms",
     "action_x",
     "action_y",
@@ -68,6 +84,20 @@ NUMERIC_ARRAY_FIELDS = [
     "microrobot_x_cm",
     "microrobot_y_cm",
     "distance_cm",
+    "virtual_hand_stride_cm",
+    "virtual_hand_action_x",
+    "virtual_hand_action_y",
+    "virtual_hand_action_norm",
+    "virtual_hand_command_dx_cm",
+    "virtual_hand_command_dy_cm",
+    "virtual_hand_command_norm_cm",
+    "virtual_hand_exec_dx_cm",
+    "virtual_hand_exec_dy_cm",
+    "virtual_hand_exec_norm_cm",
+    "virtual_hand_actual_dx_cm",
+    "virtual_hand_actual_dy_cm",
+    "virtual_hand_actual_norm_cm",
+    "virtual_hand_policy_inference_ms",
     "policy_inference_ms",
     "action_x",
     "action_y",
@@ -85,6 +115,8 @@ BOOLEAN_ARRAY_FIELDS = [
     "microrobot_detected",
     "dead_reckoning_used",
     "in_zpd",
+    "virtual_hand_accel_clipped",
+    "virtual_hand_workspace_clipped",
     "target_clipped",
     "target_step_limited",
     "safety_stop",
@@ -292,6 +324,31 @@ class DeploymentRolloutLogger:
         dead_reckoning = np.asarray([bool(row.get("dead_reckoning_used")) for row in self.rows], dtype=bool)
         in_zpd = np.asarray([bool(row.get("in_zpd")) for row in self.rows], dtype=bool)
         safety_stop = np.asarray([bool(row.get("safety_stop")) for row in self.rows], dtype=bool)
+        virtual_hand_actual_norm = np.asarray([
+            _as_float(row.get("virtual_hand_actual_norm_cm")) for row in self.rows
+        ], dtype=float)
+        virtual_hand_stride = np.asarray([
+            _as_float(row.get("virtual_hand_stride_cm")) for row in self.rows
+        ], dtype=float)
+        virtual_hand_policy_ms = [
+            _as_float(row.get("virtual_hand_policy_inference_ms")) for row in self.rows
+        ]
+        virtual_hand_rows = np.isfinite(virtual_hand_actual_norm)
+        valid_ratio = (
+            virtual_hand_rows
+            & np.isfinite(virtual_hand_stride)
+            & (virtual_hand_stride > 0.0)
+        )
+        virtual_hand_stride_ratio = (
+            virtual_hand_actual_norm[valid_ratio]
+            / virtual_hand_stride[valid_ratio]
+        )
+        virtual_hand_accel_clipped = np.asarray([
+            bool(row.get("virtual_hand_accel_clipped")) for row in self.rows
+        ], dtype=bool)
+        virtual_hand_workspace_clipped = np.asarray([
+            bool(row.get("virtual_hand_workspace_clipped")) for row in self.rows
+        ], dtype=bool)
 
         return {
             "rollout_id": self.rollout_id,
@@ -305,6 +362,21 @@ class DeploymentRolloutLogger:
             "control_loop_rate_hz_median": _nanmedian(control_hz),
             "policy_inference_latency_ms_mean": _nanmean(inference_ms),
             "policy_inference_latency_ms_p95": _nanpercentile(inference_ms, 95),
+            "virtual_hand_policy_latency_ms_mean": _nanmean(virtual_hand_policy_ms),
+            "virtual_hand_policy_latency_ms_p95": _nanpercentile(virtual_hand_policy_ms, 95),
+            "virtual_hand_actual_move_cm_mean": _nanmean(virtual_hand_actual_norm),
+            "virtual_hand_actual_move_cm_p95": _nanpercentile(virtual_hand_actual_norm, 95),
+            "virtual_hand_actual_to_stride_ratio_mean": _nanmean(virtual_hand_stride_ratio),
+            "virtual_hand_accel_clipped_fraction": (
+                float(np.mean(virtual_hand_accel_clipped[virtual_hand_rows]))
+                if np.any(virtual_hand_rows)
+                else None
+            ),
+            "virtual_hand_workspace_clipped_fraction": (
+                float(np.mean(virtual_hand_workspace_clipped[virtual_hand_rows]))
+                if np.any(virtual_hand_rows)
+                else None
+            ),
             "dead_reckoning_fraction": float(np.mean(dead_reckoning)) if dead_reckoning.size else None,
             "dead_reckoning_steps": int(np.sum(dead_reckoning)),
             "safety_stop_count": int(np.sum(safety_stop)),
