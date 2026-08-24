@@ -1,0 +1,4 @@
+{"t_wall_s": 1787577873.8225753, "event": "rollout_created"}
+{"t_wall_s": 1787577877.7514627, "event": "caught", "t_task_s": 3.88134209997952, "distance_cm": 1.4561196565628052, "catch_distance_cm": 1.5, "distance_source": "ur_rtde_tcp"}
+{"t_wall_s": 1787577877.7797742, "event": "snapshot_saved", "step": 62, "t_task_s": "", "path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_batches\\20260824_210252_physical_dr40_virtual_pair\\rollouts\\20260824_212433_physical_dr40_trial014_league_virtual_h1_trial014\\snapshot_annotated.png"}
+{"t_wall_s": 1787577877.7879107, "event": "rollout_closed", "done_reason": "caught", "summary_path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_batches\\20260824_210252_physical_dr40_virtual_pair\\rollouts\\20260824_212433_physical_dr40_trial014_league_virtual_h1_trial014\\summary.json"}

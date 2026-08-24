@@ -482,7 +482,7 @@ def parse_args():
     parser.add_argument("--no-stop-on-catch", dest="stop_on_catch", action="store_false", help=argparse.SUPPRESS)
     parser.add_argument("--catch-distance", type=float, default=1.5, help=argparse.SUPPRESS)
     parser.add_argument("--no-display", action="store_true", help="Do not open the OpenCV preview window.")
-    parser.add_argument("--countdown", type=int, default=3, help=argparse.SUPPRESS)
+    parser.add_argument("--countdown", type=int, default=1, help=argparse.SUPPRESS)
     return parser.parse_args()
 
 
