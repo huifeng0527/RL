@@ -7,6 +7,11 @@ from pathlib import Path
 
 import numpy as np
 
+try:
+    from ..deployment_metrics import compute_fixed_horizon_tiz
+except ImportError:
+    from deployment_metrics import compute_fixed_horizon_tiz
+
 
 FIELDNAMES = [
     "step",
@@ -32,12 +37,20 @@ FIELDNAMES = [
     "distance_cm",
     "in_zpd",
     "virtual_hand_stride_cm",
+    "virtual_hand_smoothing_alpha",
+    "virtual_hand_delay_frames",
     "virtual_hand_action_x",
     "virtual_hand_action_y",
     "virtual_hand_action_norm",
     "virtual_hand_command_dx_cm",
     "virtual_hand_command_dy_cm",
     "virtual_hand_command_norm_cm",
+    "virtual_hand_delayed_dx_cm",
+    "virtual_hand_delayed_dy_cm",
+    "virtual_hand_delayed_norm_cm",
+    "virtual_hand_smoothed_dx_cm",
+    "virtual_hand_smoothed_dy_cm",
+    "virtual_hand_smoothed_norm_cm",
     "virtual_hand_exec_dx_cm",
     "virtual_hand_exec_dy_cm",
     "virtual_hand_exec_norm_cm",
@@ -85,12 +98,20 @@ NUMERIC_ARRAY_FIELDS = [
     "microrobot_y_cm",
     "distance_cm",
     "virtual_hand_stride_cm",
+    "virtual_hand_smoothing_alpha",
+    "virtual_hand_delay_frames",
     "virtual_hand_action_x",
     "virtual_hand_action_y",
     "virtual_hand_action_norm",
     "virtual_hand_command_dx_cm",
     "virtual_hand_command_dy_cm",
     "virtual_hand_command_norm_cm",
+    "virtual_hand_delayed_dx_cm",
+    "virtual_hand_delayed_dy_cm",
+    "virtual_hand_delayed_norm_cm",
+    "virtual_hand_smoothed_dx_cm",
+    "virtual_hand_smoothed_dy_cm",
+    "virtual_hand_smoothed_norm_cm",
     "virtual_hand_exec_dx_cm",
     "virtual_hand_exec_dy_cm",
     "virtual_hand_exec_norm_cm",
@@ -349,12 +370,22 @@ class DeploymentRolloutLogger:
         virtual_hand_workspace_clipped = np.asarray([
             bool(row.get("virtual_hand_workspace_clipped")) for row in self.rows
         ], dtype=bool)
+        duration_target_s = _as_float(self.metadata.get("duration_target_s"))
+        fixed_horizon_metrics = None
+        if np.isfinite(duration_target_s) and duration_target_s > 0.0:
+            fixed_horizon_metrics = compute_fixed_horizon_tiz(
+                self.rows,
+                duration_target_s,
+                done_reason,
+            )
+        observed_occupancy = float(np.mean(in_zpd)) if in_zpd.size else None
 
         return {
             "rollout_id": self.rollout_id,
             "subject": self.subject,
             "condition": self.condition,
             "duration_s": float(max(duration_values)) if duration_values else 0.0,
+            "duration_target_s": duration_target_s if np.isfinite(duration_target_s) else None,
             "num_control_steps": len(self.rows),
             "camera_update_rate_hz_mean": _nanmean(camera_hz),
             "camera_update_rate_hz_median": _nanmedian(camera_hz),
@@ -383,7 +414,18 @@ class DeploymentRolloutLogger:
             "distance_cm_mean": _nanmean(distances),
             "distance_cm_median": _nanmedian(distances),
             "distance_cm_std": _nanstd(distances),
-            "zpd_occupancy_fraction": float(np.mean(in_zpd)) if in_zpd.size else None,
+            "zpd_time_s": (
+                fixed_horizon_metrics["zpd_time_s"]
+                if fixed_horizon_metrics is not None
+                else None
+            ),
+            "tiz_fixed_horizon_fraction": (
+                fixed_horizon_metrics["tiz_fixed_horizon_fraction"]
+                if fixed_horizon_metrics is not None
+                else None
+            ),
+            "zpd_observed_occupancy_fraction": observed_occupancy,
+            "zpd_occupancy_fraction": observed_occupancy,
             "zpd_occupancy_steps": int(np.sum(in_zpd)),
             "zpd_low_cm": self.zpd_low_cm,
             "zpd_high_cm": self.zpd_high_cm,

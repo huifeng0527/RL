@@ -320,15 +320,51 @@ def build_virtual_hand_observation(
     return obs
 
 
-def apply_virtual_hand_execution(hand_action, stride_hand, last_hand_actual_move):
+def make_virtual_hand_delay_buffer(delay_frames):
+    delay_frames = int(delay_frames)
+    if delay_frames < 0:
+        raise ValueError("Virtual Hand delay frames cannot be negative")
+    if delay_frames == 0:
+        return None
+    return deque(
+        [np.zeros(2, dtype=np.float32) for _ in range(delay_frames)],
+        maxlen=delay_frames,
+    )
+
+
+def apply_virtual_hand_delay(hand_intent, delay_buffer):
+    hand_intent = np.asarray(hand_intent, dtype=np.float32)
+    if delay_buffer is None:
+        return hand_intent.copy()
+    delayed_move = np.asarray(delay_buffer.popleft(), dtype=np.float32)
+    delay_buffer.append(hand_intent.copy())
+    return delayed_move
+
+
+def apply_virtual_hand_execution(
+    hand_action,
+    stride_hand,
+    last_hand_actual_move,
+    smoothing_alpha=1.0,
+    delay_buffer=None,
+):
+    smoothing_alpha = float(smoothing_alpha)
+    if not 0.0 <= smoothing_alpha <= 1.0:
+        raise ValueError("Virtual Hand smoothing alpha must be in [0, 1]")
+
     clipped_action = np.clip(
         np.asarray(hand_action, dtype=np.float32),
         -1.0,
         1.0,
     )
     hand_intent = clipped_action * float(stride_hand)
+    delayed_move = apply_virtual_hand_delay(hand_intent, delay_buffer)
     last_move = np.asarray(last_hand_actual_move, dtype=np.float32)
-    delta_v = hand_intent - last_move
+    smoothed_move = (
+        smoothing_alpha * delayed_move
+        + (1.0 - smoothing_alpha) * last_move
+    ).astype(np.float32)
+    delta_v = smoothed_move - last_move
     accel_magnitude = float(np.linalg.norm(delta_v))
     max_accel = 1.5 * float(stride_hand)
     accel_clipped = bool(accel_magnitude > max_accel and accel_magnitude > 1e-8)
@@ -336,10 +372,16 @@ def apply_virtual_hand_execution(hand_action, stride_hand, last_hand_actual_move
         delta_v = (delta_v / accel_magnitude) * max_accel
     executed_move = (last_move + delta_v).astype(np.float32)
     diagnostics = {
+        "smoothing_alpha": smoothing_alpha,
+        "delay_frames": 0 if delay_buffer is None else int(delay_buffer.maxlen),
         "action": clipped_action,
         "action_norm": float(np.linalg.norm(clipped_action)),
         "command_move": hand_intent.astype(np.float32),
         "command_norm_cm": float(np.linalg.norm(hand_intent)),
+        "delayed_move": delayed_move,
+        "delayed_norm_cm": float(np.linalg.norm(delayed_move)),
+        "smoothed_move": smoothed_move,
+        "smoothed_norm_cm": float(np.linalg.norm(smoothed_move)),
         "executed_move": executed_move,
         "executed_norm_cm": float(np.linalg.norm(executed_move)),
         "accel_clipped": accel_clipped,
@@ -352,16 +394,26 @@ def build_virtual_hand_log_fields(diagnostics, stride_hand, inference_ms):
         return {}
     action = diagnostics["action"]
     command_move = diagnostics["command_move"]
+    delayed_move = diagnostics["delayed_move"]
+    smoothed_move = diagnostics["smoothed_move"]
     executed_move = diagnostics["executed_move"]
     actual_move = diagnostics["actual_move"]
     return {
         "virtual_hand_stride_cm": float(stride_hand),
+        "virtual_hand_smoothing_alpha": float(diagnostics["smoothing_alpha"]),
+        "virtual_hand_delay_frames": int(diagnostics["delay_frames"]),
         "virtual_hand_action_x": float(action[0]),
         "virtual_hand_action_y": float(action[1]),
         "virtual_hand_action_norm": float(diagnostics["action_norm"]),
         "virtual_hand_command_dx_cm": float(command_move[0]),
         "virtual_hand_command_dy_cm": float(command_move[1]),
         "virtual_hand_command_norm_cm": float(diagnostics["command_norm_cm"]),
+        "virtual_hand_delayed_dx_cm": float(delayed_move[0]),
+        "virtual_hand_delayed_dy_cm": float(delayed_move[1]),
+        "virtual_hand_delayed_norm_cm": float(diagnostics["delayed_norm_cm"]),
+        "virtual_hand_smoothed_dx_cm": float(smoothed_move[0]),
+        "virtual_hand_smoothed_dy_cm": float(smoothed_move[1]),
+        "virtual_hand_smoothed_norm_cm": float(diagnostics["smoothed_norm_cm"]),
         "virtual_hand_exec_dx_cm": float(executed_move[0]),
         "virtual_hand_exec_dy_cm": float(executed_move[1]),
         "virtual_hand_exec_norm_cm": float(diagnostics["executed_norm_cm"]),
@@ -404,6 +456,8 @@ def parse_args():
     parser.add_argument("--hand-model", default=str(default_hand_model) if default_hand_model else None, help="PPO Hand policy .zip used when --hand-source virtual.")
     parser.add_argument("--seed", type=int, default=0, help="Seed for virtual Hand initialization and policy sampling.")
     parser.add_argument("--hand-stride", type=float, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--hand-alpha", type=float, default=1.0, help="Virtual Hand motion smoothing coefficient in [0, 1].")
+    parser.add_argument("--hand-delay-frames", type=int, default=0, help="Virtual Hand neural delay in control frames.")
     parser.add_argument("--vision-model", default=str(DEFAULT_VISION_MODEL), help=argparse.SUPPRESS)
     parser.add_argument("--out-dir", default=str(REPO_ROOT / "data" / "deployment_rollouts"), help=argparse.SUPPRESS)
     parser.add_argument("--subject", default="pilot", help="Short subject/session label.")
@@ -536,6 +590,14 @@ def main():
         raise ValueError("--zpd-low must be smaller than --zpd-high")
     if args.hand_stride is not None and args.hand_stride <= 0:
         raise ValueError("--hand-stride must be positive")
+    if not 0.0 <= args.hand_alpha <= 1.0:
+        raise ValueError("--hand-alpha must be in [0, 1]")
+    if args.hand_delay_frames < 0:
+        raise ValueError("--hand-delay-frames cannot be negative")
+    if args.duration <= 0:
+        raise ValueError("--seconds must be positive")
+    if args.control_hz <= 0:
+        raise ValueError("--control-hz must be positive")
 
     model_path = require_file(args.model, "PPO policy") if args.controller == "league" else None
     hand_model_path = require_file(args.hand_model, "PPO Hand policy") if args.hand_source == "virtual" else None
@@ -594,6 +656,11 @@ def main():
             print(
                 f"[hand] action scale: {virtual_hand_stride:.3f} cm "
                 "(not guaranteed displacement)"
+            )
+            print(
+                f"[hand] alpha={args.hand_alpha:.3f} "
+                f"delay={args.hand_delay_frames} control frames "
+                f"({1000.0 * args.hand_delay_frames / args.control_hz:.0f} ms nominal)"
             )
 
         cap = cv2.VideoCapture(args.camera)
@@ -666,8 +733,47 @@ def main():
             "virtual_hand_initial_angle_rad": virtual_hand_initial_angle,
             "virtual_hand_initial_position_cm": virtual_hand_env.tolist() if virtual_hand_env is not None else None,
             "virtual_hand_execution_max_accel_scale": 1.5 if args.hand_source == "virtual" else None,
-            "virtual_hand_pathology_mode": "healthy" if args.hand_source == "virtual" else None,
-            "virtual_hand_delay_frames": 0 if args.hand_source == "virtual" else None,
+            "virtual_hand_pathology_mode": None,
+            "virtual_hand_smoothing_alpha": float(args.hand_alpha) if args.hand_source == "virtual" else None,
+            "virtual_hand_smoothing_formula": (
+                "smoothed = alpha * delayed_intent + (1 - alpha) * previous_actual_move"
+                if args.hand_source == "virtual"
+                else None
+            ),
+            "virtual_hand_delay_frames": int(args.hand_delay_frames) if args.hand_source == "virtual" else None,
+            "virtual_hand_delay_ms_target": (
+                1000.0 * args.hand_delay_frames / args.control_hz
+                if args.hand_source == "virtual"
+                else None
+            ),
+            "virtual_hand_delay_semantics": (
+                "N control-frame FIFO delay with zero initialization and pop-before-append"
+                if args.hand_source == "virtual"
+                else None
+            ),
+            "virtual_hand_execution_order": (
+                [
+                    "policy_action_clip",
+                    "stride_scale",
+                    "neural_delay",
+                    "motion_smoothing",
+                    "acceleration_clip",
+                    "workspace_clip",
+                ]
+                if args.hand_source == "virtual"
+                else None
+            ),
+            "virtual_hand_domain_randomization_fields": (
+                ["motion_smoothing_alpha", "neural_delay_frames"]
+                if args.hand_source == "virtual"
+                else None
+            ),
+            "virtual_hand_existing_variation_fields": (
+                ["hand_stride_cm", "virtual_hand_seed", "initial_angle"]
+                if args.hand_source == "virtual"
+                else None
+            ),
+            "virtual_hand_rom_randomization_enabled": False if args.hand_source == "virtual" else None,
             "virtual_hand_observation_noise_enabled": False if args.hand_source == "virtual" else None,
             "mediapipe_hand_detection_enabled": args.hand_source == "camera",
             "microrobot_max_age_s": MICROROBOT_MAX_AGE_S,
@@ -758,6 +864,11 @@ def main():
             maxlen=VIRTUAL_HAND_HISTORY_LENGTH,
         )
         last_hand_actual_move = np.zeros(2, dtype=np.float32)
+        virtual_hand_delay_buffer = (
+            make_virtual_hand_delay_buffer(args.hand_delay_frames)
+            if args.hand_source == "virtual"
+            else None
+        )
         prev_robot_env_for_hand = initial_robot_env.copy() if args.hand_source == "virtual" else None
         motion_history_buffer = deque([np.zeros(MOTION_HISTORY_CHANNELS, dtype=np.float32)] * history_length, maxlen=history_length)
         interaction_history_buffer = deque([np.zeros(INTERACTION_HISTORY_CHANNELS, dtype=np.float32)] * history_length, maxlen=history_length)
@@ -1022,6 +1133,8 @@ def main():
                         hand_action,
                         virtual_hand_stride,
                         last_hand_actual_move,
+                        smoothing_alpha=args.hand_alpha,
+                        delay_buffer=virtual_hand_delay_buffer,
                     )
                 )
 
@@ -1050,7 +1163,6 @@ def main():
             last_action = action.copy()
 
             if args.hand_source == "virtual":
-                last_hand_actual_move = next_virtual_hand_move.copy()
                 virtual_hand_pre_clip = virtual_hand_env + next_virtual_hand_move
                 virtual_hand_low = np.array(
                     [WORKSPACE_MARGIN, WORKSPACE_MARGIN],
@@ -1077,6 +1189,7 @@ def main():
                     np.linalg.norm(virtual_hand_actual_move)
                 )
                 virtual_hand_diagnostics["workspace_clipped"] = workspace_clipped
+                last_hand_actual_move = virtual_hand_actual_move.copy()
                 virtual_hand_env = next_virtual_hand_env
 
             task_finished = False
@@ -1197,8 +1310,16 @@ def main():
         if logger is not None:
             summary = logger.close(done_reason=done_reason)
             print(f"[summary] {logger.rollout_dir / 'summary.json'}")
-            if summary.get("zpd_occupancy_fraction") is not None:
-                print(f"[summary] ZPD occupancy: {summary['zpd_occupancy_fraction'] * 100:.1f}%")
+            if summary.get("tiz_fixed_horizon_fraction") is not None:
+                print(
+                    f"[summary] Fixed-horizon TIZ: "
+                    f"{summary['tiz_fixed_horizon_fraction'] * 100:.1f}%"
+                )
+            if summary.get("zpd_observed_occupancy_fraction") is not None:
+                print(
+                    f"[summary] Observed ZPD occupancy: "
+                    f"{summary['zpd_observed_occupancy_fraction'] * 100:.1f}%"
+                )
         if vision_thread is not None:
             vision_thread.stop()
             vision_thread.join(timeout=2.0)

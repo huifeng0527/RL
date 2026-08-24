@@ -13,19 +13,31 @@ from pathlib import Path
 
 import numpy as np
 
+try:
+    from .deployment_metrics import compute_fixed_horizon_tiz
+except ImportError:
+    from deployment_metrics import compute_fixed_horizon_tiz
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ROLLOUT_SCRIPT = Path(__file__).resolve().with_name("record_deployment_chase.py")
 DEFAULT_BATCH_ROOT = REPO_ROOT / "data" / "deployment_batches"
 BOUNDARY_BAND_CM = 0.5
+DEFAULT_TRIALS = 40
+DEFAULT_BATCH_SEED = 20260820
 HAND_STRIDE_RANGE_CM = (0.3, 0.6)
+VIRTUAL_HAND_ALPHA_RANGE = (0.5, 0.9)
+VIRTUAL_HAND_DELAY_VALUES = (0, 1, 2, 3)
 VALID_DONE_REASONS = {"caught", "timeout"}
 
 RUN_FIELDS = [
     "run_id", "pair_id", "trial_index", "internal_seed", "hand_stride_cm",
+    "virtual_hand_smoothing_alpha", "virtual_hand_delay_frames",
     "order_in_pair", "controller", "status", "rollout_dir", "done_reason",
-    "caught", "duration_s", "num_control_steps",
-    "zpd_occupancy_fraction", "distance_cm_mean", "distance_cm_std",
+    "caught", "duration_s", "duration_target_s", "num_control_steps",
+    "zpd_time_s", "tiz_fixed_horizon_fraction",
+    "zpd_observed_occupancy_fraction", "zpd_occupancy_fraction",
+    "distance_cm_mean", "distance_cm_std",
     "distance_cm_min", "distance_cm_final", "too_close_fraction",
     "too_far_fraction", "min_boundary_clearance_cm", "boundary_occupancy_fraction",
     "target_clipped_fraction", "target_step_limited_fraction",
@@ -41,7 +53,10 @@ RUN_FIELDS = [
 ]
 
 SUMMARY_METRICS = [
-    "hand_stride_cm", "zpd_occupancy_fraction", "duration_s", "distance_cm_mean",
+    "hand_stride_cm", "virtual_hand_smoothing_alpha", "virtual_hand_delay_frames",
+    "tiz_fixed_horizon_fraction", "zpd_time_s",
+    "zpd_observed_occupancy_fraction", "zpd_occupancy_fraction",
+    "duration_s", "distance_cm_mean",
     "too_close_fraction", "too_far_fraction", "min_boundary_clearance_cm",
     "boundary_occupancy_fraction", "target_clipped_fraction",
     "target_step_limited_fraction", "control_loop_rate_hz_mean",
@@ -55,6 +70,7 @@ SUMMARY_METRICS = [
 ]
 
 PAIRED_METRICS = [
+    "tiz_fixed_horizon_fraction", "zpd_observed_occupancy_fraction",
     "zpd_occupancy_fraction", "duration_s", "distance_cm_mean",
     "too_close_fraction", "too_far_fraction", "min_boundary_clearance_cm",
     "policy_inference_latency_ms_mean",
@@ -66,7 +82,18 @@ def parse_args():
         description="Sequential paired League-vs-MPC physical tests with a Virtual Hand."
     )
     parser.add_argument("--subject-prefix", default="virtual_batch")
-    parser.add_argument("--trials", type=int, default=5)
+    parser.add_argument(
+        "--trials",
+        type=int,
+        default=DEFAULT_TRIALS,
+        help="Number of matched configurations; 40 creates 80 rollouts.",
+    )
+    parser.add_argument(
+        "--batch-seed",
+        type=int,
+        default=DEFAULT_BATCH_SEED,
+        help="Seed for alpha sampling and balanced delay randomization.",
+    )
     parser.add_argument("--seconds", type=float, default=60.0)
     parser.add_argument("--stride", type=float, default=0.35)
     parser.add_argument("--max-step", type=float, default=0.60)
@@ -145,10 +172,21 @@ def mean_std(values):
     return mean, std
 
 
-def build_manifest(args, batch_dir):
-    rollout_root = batch_dir / "rollouts"
-    runs = []
-    for pair_index in range(args.trials):
+def build_balanced_delay_schedule(num_configs, rng):
+    if num_configs < 1:
+        raise ValueError("num_configs must be positive")
+    repeats = int(np.ceil(num_configs / len(VIRTUAL_HAND_DELAY_VALUES)))
+    schedule = np.tile(VIRTUAL_HAND_DELAY_VALUES, repeats)[:num_configs].astype(int)
+    rng.shuffle(schedule)
+    return schedule.tolist()
+
+
+def build_virtual_hand_configurations(num_configs, batch_seed):
+    rng = np.random.default_rng(batch_seed)
+    delays = build_balanced_delay_schedule(num_configs, rng)
+    alphas = rng.uniform(*VIRTUAL_HAND_ALPHA_RANGE, size=num_configs)
+    configurations = []
+    for pair_index in range(num_configs):
         trial_index = pair_index + 1
         internal_seed = trial_index
         hand_stride = float(
@@ -159,18 +197,44 @@ def build_manifest(args, batch_dir):
             if pair_index % 2 == 0
             else ["cv_mpc", "league"]
         )
-        pair_id = f"trial{trial_index:03d}"
+        configurations.append({
+            "pair_id": f"trial{trial_index:03d}",
+            "pair_index": pair_index,
+            "trial_index": trial_index,
+            "internal_seed": internal_seed,
+            "hand_stride_cm": hand_stride,
+            "virtual_hand_smoothing_alpha": float(alphas[pair_index]),
+            "virtual_hand_delay_frames": int(delays[pair_index]),
+            "controller_order": controllers,
+        })
+    return configurations
+
+
+def build_manifest(args, batch_dir):
+    rollout_root = batch_dir / "rollouts"
+    configurations = build_virtual_hand_configurations(
+        args.trials,
+        args.batch_seed,
+    )
+    runs = []
+    for configuration in configurations:
+        pair_id = configuration["pair_id"]
         subject = f"{slug(args.subject_prefix)}_{pair_id}"
-        for order, controller in enumerate(controllers, start=1):
+        for order, controller in enumerate(
+            configuration["controller_order"],
+            start=1,
+        ):
             condition = f"{controller}_virtual_h1_{pair_id}"
             command = [
                 sys.executable, str(ROLLOUT_SCRIPT),
                 "--controller", controller,
                 "--hand-source", "virtual",
-                "--seed", str(internal_seed),
+                "--seed", str(configuration["internal_seed"]),
                 "--seconds", str(args.seconds),
                 "--stride", str(args.stride),
-                "--hand-stride", f"{hand_stride:.9g}",
+                "--hand-stride", f"{configuration['hand_stride_cm']:.9g}",
+                "--hand-alpha", f"{configuration['virtual_hand_smoothing_alpha']:.12g}",
+                "--hand-delay-frames", str(configuration["virtual_hand_delay_frames"]),
                 "--max-step", str(args.max_step),
                 "--catch-distance", str(args.catch_distance),
                 "--subject", subject,
@@ -184,18 +248,30 @@ def build_manifest(args, batch_dir):
             runs.append({
                 "run_id": f"{pair_id}_{controller}",
                 "pair_id": pair_id,
-                "pair_index": pair_index,
-                "trial_index": trial_index,
-                "internal_seed": internal_seed,
-                "hand_stride_cm": hand_stride,
+                "pair_index": configuration["pair_index"],
+                "trial_index": configuration["trial_index"],
+                "internal_seed": configuration["internal_seed"],
+                "hand_stride_cm": configuration["hand_stride_cm"],
+                "virtual_hand_smoothing_alpha": configuration[
+                    "virtual_hand_smoothing_alpha"
+                ],
+                "virtual_hand_delay_frames": configuration[
+                    "virtual_hand_delay_frames"
+                ],
+                "duration_target_s": float(args.seconds),
                 "order_in_pair": order,
                 "controller": controller,
                 "subject": subject,
                 "condition": condition,
                 "command": command,
             })
+
+    delay_counts = Counter(
+        configuration["virtual_hand_delay_frames"]
+        for configuration in configurations
+    )
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "batch_id": batch_dir.name,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "batch_dir": str(batch_dir),
@@ -203,8 +279,33 @@ def build_manifest(args, batch_dir):
         "termination": "first_catch_or_timeout",
         "parameters": {
             "trials": args.trials,
+            "rollouts_total": 2 * args.trials,
+            "batch_seed": int(args.batch_seed),
             "internal_seed_strategy": "one-based trial index",
             "hand_stride_sample_range_cm": list(HAND_STRIDE_RANGE_CM),
+            "virtual_hand_alpha_range": list(VIRTUAL_HAND_ALPHA_RANGE),
+            "virtual_hand_smoothing_formula": (
+                "smoothed = alpha * delayed_intent + "
+                "(1 - alpha) * previous_actual_move"
+            ),
+            "virtual_hand_delay_values": list(VIRTUAL_HAND_DELAY_VALUES),
+            "virtual_hand_delay_counts": dict(sorted(delay_counts.items())),
+            "virtual_hand_delay_semantics": (
+                "N control-frame FIFO delay with zero initialization "
+                "and pop-before-append"
+            ),
+            "controller_order_strategy": "alternating within matched pairs",
+            "domain_randomization_fields": [
+                "motion_smoothing_alpha",
+                "neural_delay_frames",
+            ],
+            "excluded_randomization_fields": [
+                "rom",
+                "observation_noise",
+                "named_impairment_profiles",
+            ],
+            "task_robot_state_source": "ur_rtde_tcp",
+            "distance_source": "ur_rtde_tcp",
             "seconds": args.seconds,
             "stride_cm": args.stride,
             "max_step_cm": args.max_step,
@@ -213,6 +314,7 @@ def build_manifest(args, batch_dir):
             "save_video": args.save_video,
             "no_display": args.no_display,
         },
+        "configurations": configurations,
         "runs": runs,
     }
 
@@ -245,6 +347,9 @@ def prepare_batch(args):
 
 
 def metadata_matches(metadata, run):
+    expected_alpha = float(run.get("virtual_hand_smoothing_alpha", 1.0))
+    expected_delay = int(run.get("virtual_hand_delay_frames", 0))
+    expected_duration = float(run.get("duration_target_s", metadata.get("duration_target_s", -1.0)))
     return (
         metadata.get("subject") == run["subject"]
         and metadata.get("condition") == run["condition"]
@@ -255,6 +360,12 @@ def metadata_matches(metadata, run):
             float(metadata.get("virtual_hand_stride_cm", -1.0))
             - float(run["hand_stride_cm"])
         ) < 1e-6
+        and abs(
+            float(metadata.get("virtual_hand_smoothing_alpha", 1.0))
+            - expected_alpha
+        ) < 1e-9
+        and int(metadata.get("virtual_hand_delay_frames", -1)) == expected_delay
+        and abs(float(metadata.get("duration_target_s", -1.0)) - expected_duration) < 1e-6
     )
 
 
@@ -268,6 +379,12 @@ def result_matches_run(row, run):
             and abs(
                 float(row.get("hand_stride_cm")) - float(run["hand_stride_cm"])
             ) < 1e-6
+            and abs(
+                float(row.get("virtual_hand_smoothing_alpha", 1.0))
+                - float(run.get("virtual_hand_smoothing_alpha", 1.0))
+            ) < 1e-9
+            and int(float(row.get("virtual_hand_delay_frames", 0)))
+            == int(run.get("virtual_hand_delay_frames", 0))
             and int(float(row.get("order_in_pair"))) == int(run["order_in_pair"])
             and row.get("controller") == run["controller"]
         )
@@ -335,12 +452,47 @@ def extract_metrics(run, rollout_dir):
             tracking_errors.append(float(np.hypot(mx - rx, my - ry)))
 
     done_reason = str(summary.get("done_reason", "unknown"))
+    duration_target_s = to_float(
+        summary.get(
+            "duration_target_s",
+            metadata.get("duration_target_s", run.get("duration_target_s")),
+        )
+    )
+    fixed_horizon_metrics = None
+    if duration_target_s is not None and duration_target_s > 0.0:
+        fixed_horizon_metrics = compute_fixed_horizon_tiz(
+            rows,
+            duration_target_s,
+            done_reason,
+        )
+    zpd_time_s = to_float(summary.get("zpd_time_s"))
+    tiz_fixed_horizon = to_float(summary.get("tiz_fixed_horizon_fraction"))
+    if fixed_horizon_metrics is not None:
+        if zpd_time_s is None:
+            zpd_time_s = fixed_horizon_metrics["zpd_time_s"]
+        if tiz_fixed_horizon is None:
+            tiz_fixed_horizon = fixed_horizon_metrics[
+                "tiz_fixed_horizon_fraction"
+            ]
+    observed_occupancy = to_float(
+        summary.get(
+            "zpd_observed_occupancy_fraction",
+            summary.get("zpd_occupancy_fraction"),
+        )
+    )
+
     values = {
         "run_id": run["run_id"],
         "pair_id": run["pair_id"],
         "trial_index": run["trial_index"],
         "internal_seed": run["internal_seed"],
         "hand_stride_cm": to_float(metadata.get("virtual_hand_stride_cm")),
+        "virtual_hand_smoothing_alpha": to_float(
+            metadata.get("virtual_hand_smoothing_alpha", 1.0)
+        ),
+        "virtual_hand_delay_frames": int(
+            metadata.get("virtual_hand_delay_frames", 0)
+        ),
         "order_in_pair": run["order_in_pair"],
         "controller": run["controller"],
         "status": "completed",
@@ -348,7 +500,11 @@ def extract_metrics(run, rollout_dir):
         "done_reason": done_reason,
         "caught": done_reason == "caught",
         "duration_s": to_float(summary.get("duration_s")),
+        "duration_target_s": duration_target_s,
         "num_control_steps": int(summary.get("num_control_steps", len(rows))),
+        "zpd_time_s": zpd_time_s,
+        "tiz_fixed_horizon_fraction": tiz_fixed_horizon,
+        "zpd_observed_occupancy_fraction": observed_occupancy,
         "zpd_occupancy_fraction": to_float(summary.get("zpd_occupancy_fraction")),
         "distance_cm_mean": float(np.mean(distances)) if distances.size else None,
         "distance_cm_std": float(np.std(distances)) if distances.size else None,
@@ -405,6 +561,12 @@ def incomplete_result(run, status, rollout_dir=None, done_reason=None):
         "trial_index": run["trial_index"],
         "internal_seed": run["internal_seed"],
         "hand_stride_cm": run["hand_stride_cm"],
+        "virtual_hand_smoothing_alpha": run.get(
+            "virtual_hand_smoothing_alpha",
+            1.0,
+        ),
+        "virtual_hand_delay_frames": run.get("virtual_hand_delay_frames", 0),
+        "duration_target_s": run.get("duration_target_s"),
         "order_in_pair": run["order_in_pair"],
         "controller": run["controller"],
         "status": status,
@@ -439,7 +601,21 @@ def recover_results(manifest, existing_rows):
             except (OSError, ValueError, TypeError):
                 valid_completed_row = False
             if valid_completed_row:
-                continue
+                has_current_metrics = (
+                    to_float(row.get("tiz_fixed_horizon_fraction")) is not None
+                    and to_float(row.get("duration_target_s")) is not None
+                    and to_float(row.get("virtual_hand_smoothing_alpha")) is not None
+                    and row.get("virtual_hand_delay_frames") not in (None, "")
+                )
+                if has_current_metrics:
+                    continue
+                try:
+                    refreshed = extract_metrics(run, rollout_dir)
+                except (OSError, ValueError, TypeError):
+                    refreshed = None
+                if refreshed is not None and refreshed["status"] == "completed":
+                    by_id[run["run_id"]] = refreshed
+                    continue
             by_id.pop(run["run_id"], None)
 
         rollout = find_rollout(run, rollout_root)
@@ -478,6 +654,15 @@ def write_aggregates(batch_dir, manifest, rows):
             "hand_strides_cm": json.dumps([
                 float(row["hand_stride_cm"]) for row in group
             ]),
+            "virtual_hand_smoothing_alphas": json.dumps([
+                float(row["virtual_hand_smoothing_alpha"]) for row in group
+            ]),
+            "virtual_hand_delay_counts": json.dumps(
+                dict(sorted(Counter(
+                    int(float(row["virtual_hand_delay_frames"])) for row in group
+                ).items())),
+                sort_keys=True,
+            ),
             "catch_rate": float(np.mean([to_bool(r["caught"]) for r in group])) if group else None,
             "safety_stop_count": int(sum(int(float(r.get("safety_stop_count") or 0)) for r in rows if r["controller"] == controller)),
             "done_reason_counts": json.dumps(dict(Counter(r["done_reason"] for r in group)), sort_keys=True),
@@ -499,6 +684,10 @@ def write_aggregates(batch_dir, manifest, rows):
             "trial_index": league["trial_index"],
             "internal_seed": league["internal_seed"],
             "hand_stride_cm": league["hand_stride_cm"],
+            "virtual_hand_smoothing_alpha": league[
+                "virtual_hand_smoothing_alpha"
+            ],
+            "virtual_hand_delay_frames": league["virtual_hand_delay_frames"],
             "league_order_in_pair": league["order_in_pair"],
             "mpc_order_in_pair": mpc["order_in_pair"],
             "league_done_reason": league["done_reason"],
@@ -512,6 +701,7 @@ def write_aggregates(batch_dir, manifest, rows):
         pairs.append(pair)
     pair_fields = list(pairs[0]) if pairs else [
         "pair_id", "trial_index", "internal_seed", "hand_stride_cm",
+        "virtual_hand_smoothing_alpha", "virtual_hand_delay_frames",
         "league_order_in_pair", "mpc_order_in_pair",
         "league_done_reason", "mpc_done_reason",
         *[f"{prefix}_{metric}" for metric in PAIRED_METRICS for prefix in ("league", "mpc", "delta")],
@@ -531,8 +721,10 @@ def print_plan(manifest, completed_ids):
         state = "skip" if run["run_id"] in completed_ids else "run"
         print(
             f"[{state}] {i:02d} pair={run['pair_id']} seed={run['internal_seed']} "
-            f"hand_stride={run['hand_stride_cm']:.3f} order={run['order_in_pair']} "
-            f"controller={run['controller']}"
+            f"hand_stride={run['hand_stride_cm']:.3f} "
+            f"alpha={run.get('virtual_hand_smoothing_alpha', 1.0):.3f} "
+            f"delay={run.get('virtual_hand_delay_frames', 0)} "
+            f"order={run['order_in_pair']} controller={run['controller']}"
         )
         if state == "run":
             print("      " + subprocess.list2cmdline(run["command"]))
@@ -590,7 +782,8 @@ def main():
         write_aggregates(batch_dir, manifest, rows)
         print(
             f"[batch] {run['run_id']} status={result['status']} "
-            f"reason={result['done_reason']} TIZ={result['zpd_occupancy_fraction']} "
+            f"reason={result['done_reason']} "
+            f"TIZ={result['tiz_fixed_horizon_fraction']} "
             f"duration={result['duration_s']}"
         )
         if result["status"] != "completed":
