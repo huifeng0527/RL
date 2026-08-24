@@ -1,0 +1,4 @@
+{"t_wall_s": 1785926864.62928, "event": "rollout_created"}
+{"t_wall_s": 1785926865.3973558, "event": "caught", "t_task_s": 0.7358877006918192, "distance_cm": 1.237701177597046, "catch_distance_cm": 1.5, "distance_source": "ur_rtde_tcp"}
+{"t_wall_s": 1785926865.4292538, "event": "snapshot_saved", "step": 11, "t_task_s": "", "path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_rollouts\\20260805_184744_smoke_league_virtual_seed01_league_virtual_hand\\snapshot_annotated.png"}
+{"t_wall_s": 1785926865.4322834, "event": "rollout_closed", "done_reason": "caught", "summary_path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_rollouts\\20260805_184744_smoke_league_virtual_seed01_league_virtual_hand\\summary.json"}

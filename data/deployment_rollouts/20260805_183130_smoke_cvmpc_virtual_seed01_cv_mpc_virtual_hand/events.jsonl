@@ -1,0 +1,4 @@
+{"t_wall_s": 1785925890.5253246, "event": "rollout_created"}
+{"t_wall_s": 1785925892.1075318, "event": "caught", "t_task_s": 1.549523700028658, "distance_cm": 2.2521560192108154}
+{"t_wall_s": 1785925892.1413317, "event": "snapshot_saved", "step": 23, "t_task_s": "", "path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_rollouts\\20260805_183130_smoke_cvmpc_virtual_seed01_cv_mpc_virtual_hand\\snapshot_annotated.png"}
+{"t_wall_s": 1785925892.1484532, "event": "rollout_closed", "done_reason": "caught", "summary_path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_rollouts\\20260805_183130_smoke_cvmpc_virtual_seed01_cv_mpc_virtual_hand\\summary.json"}

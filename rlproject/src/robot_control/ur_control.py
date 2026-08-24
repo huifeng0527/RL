@@ -47,7 +47,7 @@ class URControl:
         
         # gain (比例增益): 范围 [100, 2000]。
         # 值越大响应越快，目标追踪越紧密。
-        gain =400
+        gain =600
         
         # 调用 servoL
         self.rtde_c.servoL(target_pose, velocity, acceleration, dt, lookahead_time, gain)

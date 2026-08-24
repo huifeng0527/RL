@@ -25,7 +25,7 @@ DEFAULT_BATCH_ROOT = REPO_ROOT / "data" / "deployment_batches"
 BOUNDARY_BAND_CM = 0.5
 DEFAULT_TRIALS = 40
 DEFAULT_BATCH_SEED = 20260820
-HAND_STRIDE_RANGE_CM = (0.3, 0.6)
+HAND_STRIDE_RANGE_CM = (0.15, 0.45)
 VIRTUAL_HAND_ALPHA_RANGE = (0.5, 0.9)
 VIRTUAL_HAND_DELAY_VALUES = (0, 1, 2, 3)
 VALID_DONE_REASONS = {"caught", "timeout"}
@@ -99,8 +99,8 @@ def parse_args():
         help="Seed for alpha sampling and balanced delay randomization.",
     )
     parser.add_argument("--seconds", type=float, default=60.0)
-    parser.add_argument("--stride", type=float, default=0.35)
-    parser.add_argument("--max-step", type=float, default=0.60)
+    parser.add_argument("--stride", type=float, default=0.6)
+    parser.add_argument("--max-step", type=float, default=1)
     parser.add_argument("--catch-distance", type=float, default=1.5)
     parser.add_argument("--inter-run-delay", type=float, default=3.0)
     parser.add_argument("--save-video", action="store_true")

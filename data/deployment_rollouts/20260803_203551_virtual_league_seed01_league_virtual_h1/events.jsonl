@@ -1,0 +1,5 @@
+{"t_wall_s": 1785760551.7710438, "event": "rollout_created"}
+{"t_wall_s": 1785760558.9830976, "event": "caught", "t_task_s": 7.1881791995838284, "distance_cm": 1.4955211877822876}
+{"t_wall_s": 1785760558.9851224, "event": "video_saved", "path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_rollouts\\20260803_203551_virtual_league_seed01_league_virtual_h1\\annotated_video.mp4"}
+{"t_wall_s": 1785760559.0088847, "event": "snapshot_saved", "step": 116, "t_task_s": "", "path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_rollouts\\20260803_203551_virtual_league_seed01_league_virtual_h1\\snapshot_annotated.png"}
+{"t_wall_s": 1785760559.029189, "event": "rollout_closed", "done_reason": "caught", "summary_path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_rollouts\\20260803_203551_virtual_league_seed01_league_virtual_h1\\summary.json"}
