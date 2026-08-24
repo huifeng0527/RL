@@ -149,6 +149,31 @@ class RolloutLoggerTests(unittest.TestCase):
             self.assertIn("virtual_hand_smoothed_dx_cm", header)
 
 
+class LogFormattingTests(unittest.TestCase):
+    def test_rollout_configuration_names_controller_and_strides(self):
+        args = SimpleNamespace(
+            controller="cv_mpc",
+            stride=0.35,
+            max_step=0.60,
+            hand_source="virtual",
+            hand_alpha=0.7,
+            hand_delay_frames=2,
+            control_hz=20.0,
+            duration=60.0,
+            catch_distance=1.5,
+            seed=7,
+        )
+        text = rollout.format_rollout_configuration(
+            args,
+            virtual_hand_stride=0.45,
+        )
+        self.assertIn("Controller   : CV-MPC", text)
+        self.assertIn("Robot stride: 0.350 cm/action", text)
+        self.assertIn("Hand stride : 0.450 cm/action", text)
+        self.assertIn("alpha=0.700", text)
+        self.assertIn("delay=2 frame(s)", text)
+
+
 class BatchGenerationTests(unittest.TestCase):
     @staticmethod
     def make_args():
@@ -204,6 +229,23 @@ class BatchGenerationTests(unittest.TestCase):
                 "virtual_hand_delay_frames",
             ):
                 self.assertEqual(pair_runs[0][field], pair_runs[1][field])
+
+    def test_batch_banner_shows_algorithm_and_both_strides(self):
+        manifest = batch.build_manifest(
+            self.make_args(),
+            Path("C:/temporary/deployment_batch_test"),
+        )
+        text = batch.format_run_banner(
+            manifest["runs"][0],
+            run_number=1,
+            total_runs=80,
+            manifest=manifest,
+        )
+        self.assertIn("PHYSICAL ROLLOUT 01/80", text)
+        self.assertIn("Controller   : League RL", text)
+        self.assertIn("Robot stride: 0.350 cm/action", text)
+        self.assertIn("Hand stride :", text)
+        self.assertIn("Hand DR     : alpha=", text)
 
     def test_result_matching_rejects_alpha_and_delay_mismatch(self):
         manifest = batch.build_manifest(

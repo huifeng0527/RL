@@ -48,6 +48,10 @@ INTERACTION_HISTORY_CHANNELS = 8
 VIRTUAL_HAND_HISTORY_LENGTH = 16
 VIRTUAL_HAND_OBS_DIM = OBS_SCALAR_DIM + VIRTUAL_HAND_HISTORY_LENGTH * MOTION_HISTORY_CHANNELS
 VIRTUAL_HAND_STRIDE_RANGE = (0.3, 0.6)
+CONTROLLER_LABELS = {
+    "league": "League RL",
+    "cv_mpc": "CV-MPC",
+}
 CV_MPC_CONFIG = {
     "horizon": 5,
     "velocity_window": 3,
@@ -562,6 +566,43 @@ def workspace_clearance_env(position, margin=WORKSPACE_MARGIN):
     ))
 
 
+def controller_label(controller):
+    return CONTROLLER_LABELS.get(controller, str(controller))
+
+
+def format_rollout_configuration(args, virtual_hand_stride):
+    lines = [
+        "-" * 78,
+        "ROLLOUT RUNTIME CONFIGURATION",
+        "-" * 78,
+        f"Controller   : {controller_label(args.controller)}",
+        (
+            f"Robot stride: {float(args.stride):.3f} cm/action  |  "
+            f"max step: {float(args.max_step):.3f} cm/control step"
+        ),
+        f"Hand source  : {args.hand_source}",
+    ]
+    if args.hand_source == "virtual":
+        lines.extend([
+            f"Hand stride : {float(virtual_hand_stride):.3f} cm/action",
+            (
+                f"Hand DR     : alpha={float(args.hand_alpha):.3f}  |  "
+                f"delay={int(args.hand_delay_frames)} frame(s) "
+                f"({1000.0 * args.hand_delay_frames / args.control_hz:.0f} ms nominal)"
+            ),
+        ])
+    lines.extend([
+        (
+            f"Task         : duration={float(args.duration):.1f} s  |  "
+            f"control={float(args.control_hz):.1f} Hz  |  "
+            f"catch={float(args.catch_distance):.2f} cm"
+        ),
+        f"Seed         : {int(args.seed)}",
+        "-" * 78,
+    ])
+    return "\n".join(lines)
+
+
 def resolve_common_target_env(
     action,
     measured_robot_env,
@@ -599,22 +640,30 @@ def main():
     if args.control_hz <= 0:
         raise ValueError("--control-hz must be positive")
 
+    virtual_hand_rng = np.random.default_rng(args.seed)
+    virtual_hand_stride = None
+    if args.hand_source == "virtual":
+        virtual_hand_stride = (
+            float(args.hand_stride)
+            if args.hand_stride is not None
+            else float(virtual_hand_rng.uniform(*VIRTUAL_HAND_STRIDE_RANGE))
+        )
+
     model_path = require_file(args.model, "PPO policy") if args.controller == "league" else None
     hand_model_path = require_file(args.hand_model, "PPO Hand policy") if args.hand_source == "virtual" else None
     vision_model_path = require_file(args.vision_model, "vision model")
     load_runtime_dependencies(load_hand_detection=args.hand_source == "camera")
 
-    print(f"[controller] {args.controller}")
-    print(f"[hand] source: {args.hand_source}")
-    print(
-        f"[distance] source=ur_rtde_tcp catch={args.catch_distance:.2f}cm "
-        f"stop_on_catch={int(args.stop_on_catch)}"
-    )
+    print(format_rollout_configuration(args, virtual_hand_stride), flush=True)
+    print("MODEL FILES")
     if model_path is not None:
-        print(f"[model] policy: {model_path}")
+        print(f"Robot policy : {model_path}")
+    else:
+        print("Robot policy : Constant-Velocity MPC (no learned model)")
     if hand_model_path is not None:
-        print(f"[model] Hand policy: {hand_model_path}")
-    print(f"[model] vision: {vision_model_path}")
+        print(f"Hand policy  : {hand_model_path}")
+    print(f"Vision model : {vision_model_path}")
+    print("-" * 78, flush=True)
 
     cv_model = YOLO(str(vision_model_path))
     cali = CameraCalibration()
@@ -629,13 +678,14 @@ def main():
         rl_model = None
         hand_model = None
         mpc_controller = None
-        virtual_hand_rng = np.random.default_rng(args.seed)
-        virtual_hand_stride = None
         expected_obs_dim, history_length, history_channels, history_mode = 44, 16, MOTION_HISTORY_CHANNELS, "motion"
         if args.controller == "league":
             rl_model = PPO.load(str(model_path), custom_objects={"learning_rate": 0.0, "lr_schedule": lambda _: 0.0, "clip_range": lambda _: 0.0, "optimizer_class": None})
             expected_obs_dim, history_length, history_channels, history_mode = infer_observation_layout(rl_model)
-            print(f"[model] observation: {expected_obs_dim} dims ({history_mode}, length={history_length}, channels={history_channels})")
+            print(
+                f"[model] Robot observation: {expected_obs_dim} dims "
+                f"({history_mode}, length={history_length}, channels={history_channels})"
+            )
         else:
             mpc_controller = ConstantVelocityMPCController(**CV_MPC_CONFIG)
 
@@ -647,20 +697,9 @@ def main():
             validate_hand_model(hand_model)
             if hasattr(hand_model, "set_random_seed"):
                 hand_model.set_random_seed(args.seed)
-            virtual_hand_stride = (
-                float(args.hand_stride)
-                if args.hand_stride is not None
-                else float(virtual_hand_rng.uniform(*VIRTUAL_HAND_STRIDE_RANGE))
-            )
-            print(f"[hand] observation: {VIRTUAL_HAND_OBS_DIM} dims (motion, length={VIRTUAL_HAND_HISTORY_LENGTH})")
             print(
-                f"[hand] action scale: {virtual_hand_stride:.3f} cm "
-                "(not guaranteed displacement)"
-            )
-            print(
-                f"[hand] alpha={args.hand_alpha:.3f} "
-                f"delay={args.hand_delay_frames} control frames "
-                f"({1000.0 * args.hand_delay_frames / args.control_hz:.0f} ms nominal)"
+                f"[model] Hand observation: {VIRTUAL_HAND_OBS_DIM} dims "
+                f"(motion, length={VIRTUAL_HAND_HISTORY_LENGTH})"
             )
 
         cap = cv2.VideoCapture(args.camera)
@@ -1280,7 +1319,12 @@ def main():
 
             if int(t_task_s) != last_status_second:
                 last_status_second = int(t_task_s)
-                print(f"[run] t={t_task_s:5.1f}s d={distance_cm:4.2f}cm zpd={int(in_zpd)}")
+                print(
+                    f"[progress][{controller_label(args.controller)}] "
+                    f"t={t_task_s:5.1f}/{args.duration:.1f} s  |  "
+                    f"distance={distance_cm:4.2f} cm  |  "
+                    f"ZPD={'IN' if in_zpd else 'OUT'}"
+                )
 
             if not args.no_display and cv2.waitKey(1) == ord("q"):
                 done_reason = "manual_q"
@@ -1309,17 +1353,28 @@ def main():
         print("[shutdown] stopping safely")
         if logger is not None:
             summary = logger.close(done_reason=done_reason)
-            print(f"[summary] {logger.rollout_dir / 'summary.json'}")
-            if summary.get("tiz_fixed_horizon_fraction") is not None:
-                print(
-                    f"[summary] Fixed-horizon TIZ: "
-                    f"{summary['tiz_fixed_horizon_fraction'] * 100:.1f}%"
-                )
-            if summary.get("zpd_observed_occupancy_fraction") is not None:
-                print(
-                    f"[summary] Observed ZPD occupancy: "
-                    f"{summary['zpd_observed_occupancy_fraction'] * 100:.1f}%"
-                )
+            tiz = summary.get("tiz_fixed_horizon_fraction")
+            observed_zpd = summary.get("zpd_observed_occupancy_fraction")
+            duration_s = summary.get("duration_s")
+            print("-" * 78)
+            print("ROLLOUT SUMMARY")
+            print("-" * 78)
+            print(f"Controller   : {controller_label(args.controller)}")
+            print(f"Done reason  : {done_reason}")
+            print(
+                f"Duration     : "
+                f"{f'{float(duration_s):.1f} s' if duration_s is not None else 'N/A'}"
+            )
+            print(
+                f"Fixed TIZ    : "
+                f"{f'{100.0 * float(tiz):.1f}%' if tiz is not None else 'N/A'}"
+            )
+            print(
+                f"Observed ZPD : "
+                f"{f'{100.0 * float(observed_zpd):.1f}%' if observed_zpd is not None else 'N/A'}"
+            )
+            print(f"Summary file : {logger.rollout_dir / 'summary.json'}")
+            print("-" * 78, flush=True)
         if vision_thread is not None:
             vision_thread.stop()
             vision_thread.join(timeout=2.0)

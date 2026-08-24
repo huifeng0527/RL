@@ -29,6 +29,10 @@ HAND_STRIDE_RANGE_CM = (0.3, 0.6)
 VIRTUAL_HAND_ALPHA_RANGE = (0.5, 0.9)
 VIRTUAL_HAND_DELAY_VALUES = (0, 1, 2, 3)
 VALID_DONE_REASONS = {"caught", "timeout"}
+CONTROLLER_LABELS = {
+    "league": "League RL",
+    "cv_mpc": "CV-MPC",
+}
 
 RUN_FIELDS = [
     "run_id", "pair_id", "trial_index", "internal_seed", "hand_stride_cm",
@@ -713,21 +717,83 @@ def manifest_run_index(manifest, run_id):
     return next(i for i, run in enumerate(manifest["runs"]) if run["run_id"] == run_id)
 
 
-def print_plan(manifest, completed_ids):
-    print(f"[batch] {manifest['batch_id']}")
-    print(f"[batch] output: {manifest['batch_dir']}")
-    print("[batch] stop rule: first catch or timeout")
-    for i, run in enumerate(manifest["runs"], start=1):
-        state = "skip" if run["run_id"] in completed_ids else "run"
-        print(
-            f"[{state}] {i:02d} pair={run['pair_id']} seed={run['internal_seed']} "
-            f"hand_stride={run['hand_stride_cm']:.3f} "
-            f"alpha={run.get('virtual_hand_smoothing_alpha', 1.0):.3f} "
-            f"delay={run.get('virtual_hand_delay_frames', 0)} "
-            f"order={run['order_in_pair']} controller={run['controller']}"
-        )
-        if state == "run":
-            print("      " + subprocess.list2cmdline(run["command"]))
+def controller_label(controller):
+    return CONTROLLER_LABELS.get(controller, str(controller))
+
+
+def format_run_banner(run, run_number, total_runs, manifest):
+    parameters = manifest["parameters"]
+    total_configs = int(parameters["trials"])
+    config_number = int(run["trial_index"])
+    return "\n".join([
+        "",
+        "=" * 78,
+        (
+            f"PHYSICAL ROLLOUT {run_number:02d}/{total_runs:02d}  |  "
+            f"CONFIG {config_number:02d}/{total_configs:02d}  |  "
+            f"PAIR ORDER {int(run['order_in_pair'])}/2"
+        ),
+        "-" * 78,
+        f"Controller   : {controller_label(run['controller'])}",
+        (
+            f"Robot stride: {float(parameters['stride_cm']):.3f} cm/action  |  "
+            f"max step: {float(parameters['max_step_cm']):.3f} cm/control step"
+        ),
+        f"Hand stride : {float(run['hand_stride_cm']):.3f} cm/action",
+        (
+            f"Hand DR     : alpha={float(run.get('virtual_hand_smoothing_alpha', 1.0)):.3f}  |  "
+            f"delay={int(run.get('virtual_hand_delay_frames', 0))} frame(s)"
+        ),
+        (
+            f"Run details : id={run['run_id']}  |  seed={int(run['internal_seed'])}  |  "
+            f"duration={float(run['duration_target_s']):.1f} s"
+        ),
+        "=" * 78,
+    ])
+
+
+def print_plan(manifest, completed_ids, list_runs=False):
+    runs = manifest["runs"]
+    parameters = manifest["parameters"]
+    total_runs = len(runs)
+    completed = sum(run["run_id"] in completed_ids for run in runs)
+    pending = total_runs - completed
+
+    print("=" * 78)
+    print(f"PHYSICAL DEPLOYMENT BATCH: {manifest['batch_id']}")
+    print("-" * 78)
+    print(
+        f"Plan         : {int(parameters['trials'])} matched configurations, "
+        f"{total_runs} rollouts"
+    )
+    print(f"Progress     : {completed} completed, {pending} pending")
+    print("Controllers  : League RL and CV-MPC")
+    print(
+        f"Robot stride : {float(parameters['stride_cm']):.3f} cm/action  |  "
+        f"max step: {float(parameters['max_step_cm']):.3f} cm/control step"
+    )
+    hand_range = parameters["hand_stride_sample_range_cm"]
+    print(
+        f"Hand stride  : sampled from [{float(hand_range[0]):.3f}, "
+        f"{float(hand_range[1]):.3f}] cm/action"
+    )
+    print("Stop rule    : each rollout ends on catch or timeout")
+    print(f"Output       : {manifest['batch_dir']}")
+    print("=" * 78)
+
+    if list_runs:
+        print("\nPLANNED ROLLOUTS")
+        for index, run in enumerate(runs, start=1):
+            state = "SKIP" if run["run_id"] in completed_ids else "RUN "
+            print(
+                f"[{state}] {index:02d}/{total_runs:02d}  "
+                f"{controller_label(run['controller']):9s}  "
+                f"config={int(run['trial_index']):02d}  "
+                f"robot={float(parameters['stride_cm']):.3f}cm  "
+                f"hand={float(run['hand_stride_cm']):.3f}cm  "
+                f"alpha={float(run.get('virtual_hand_smoothing_alpha', 1.0)):.3f}  "
+                f"delay={int(run.get('virtual_hand_delay_frames', 0))}"
+            )
 
 
 def main():
@@ -738,7 +804,7 @@ def main():
     write_aggregates(batch_dir, manifest, rows)
 
     completed_ids = {row["run_id"] for row in rows if row["status"] == "completed"}
-    print_plan(manifest, completed_ids)
+    print_plan(manifest, completed_ids, list_runs=not args.execute)
     if not args.execute:
         print("[batch] dry run only; add --execute to connect to hardware")
         return
@@ -747,11 +813,15 @@ def main():
     delay = float(manifest["parameters"]["inter_run_delay_s"])
     by_id = {row["run_id"]: row for row in rows}
 
-    for run in manifest["runs"]:
+    total_runs = len(manifest["runs"])
+    for run_number, run in enumerate(manifest["runs"], start=1):
         if run["run_id"] in completed_ids:
             continue
         before = {p.name for p in rollout_root.iterdir()} if rollout_root.exists() else set()
-        print(f"\n[batch] starting {run['run_id']}")
+        print(
+            format_run_banner(run, run_number, total_runs, manifest),
+            flush=True,
+        )
         try:
             returncode = subprocess.run(run["command"], cwd=REPO_ROOT).returncode
         except KeyboardInterrupt:
@@ -780,12 +850,26 @@ def main():
         by_id[run["run_id"]] = result
         rows = list(by_id.values())
         write_aggregates(batch_dir, manifest, rows)
-        print(
-            f"[batch] {run['run_id']} status={result['status']} "
-            f"reason={result['done_reason']} "
-            f"TIZ={result['tiz_fixed_horizon_fraction']} "
-            f"duration={result['duration_s']}"
+        tiz = to_float(result.get("tiz_fixed_horizon_fraction"))
+        duration = to_float(result.get("duration_s"))
+        completed_count = sum(
+            row.get("status") == "completed" for row in by_id.values()
         )
+        print("-" * 78)
+        print(
+            f"ROLLOUT RESULT {run_number:02d}/{total_runs:02d}  |  "
+            f"{controller_label(run['controller'])}"
+        )
+        print(
+            f"Status       : {result['status']}  |  "
+            f"reason={result['done_reason']}"
+        )
+        print(
+            f"Metrics      : TIZ={f'{100.0 * tiz:.1f}%' if tiz is not None else 'N/A'}  |  "
+            f"duration={f'{duration:.1f} s' if duration is not None else 'N/A'}"
+        )
+        print(f"Batch progress: {completed_count}/{total_runs} completed")
+        print("=" * 78, flush=True)
         if result["status"] != "completed":
             print("[batch] stopping before the next hardware rollout")
             break
