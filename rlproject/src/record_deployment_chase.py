@@ -125,7 +125,19 @@ class HandTracker:
 
 
 class VisionThread(threading.Thread):
-    def __init__(self, cap, cali, cv_model, w_px, h_px, w_env, h_env, result_queue, detect_hands=True):
+    def __init__(
+        self,
+        cap,
+        cali,
+        cv_model,
+        w_px,
+        h_px,
+        w_env,
+        h_env,
+        result_queue,
+        detect_hands=True,
+        detect_microrobot=True,
+    ):
         super().__init__(daemon=True)
         self.cap = cap
         self.cali = cali
@@ -135,6 +147,11 @@ class VisionThread(threading.Thread):
         self.w_env = float(w_env)
         self.h_env = float(h_env)
         self.result_queue = result_queue
+        self.detect_microrobot = bool(detect_microrobot)
+        if self.detect_microrobot and self.cv_model is None:
+            raise ValueError(
+                "cv_model is required when microrobot detection is enabled"
+            )
         self.hand_detector = HandDetection() if detect_hands else None
         self.running = True
         self.frame_id = 0
@@ -166,17 +183,33 @@ class VisionThread(threading.Thread):
             robot_trajectory = []
             microrobot_env = np.full(2, np.nan, dtype=np.float32)
             pixel_per_cm = 10.0
-            results = self.cv_model.predict(undistorted_frame, conf=0.7, save=False, imgsz=640, verbose=False)
-            for result in results:
-                for box in result.boxes:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    if x2 - x1 > 100:
-                        continue
-                    cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-                    robot_trajectory.append((int(cx), int(cy)))
-                    microrobot_env = np.array([cx * self.w_env / self.w_px, cy * self.h_env / self.h_px], dtype=np.float32)
-                    pixel_per_cm = ((x2 - x1) + (y2 - y1)) / 4
-                    cv2.rectangle(undistorted_frame, (x1, y1), (x2, y2), (255, 120, 20), 2)
+            if self.detect_microrobot:
+                results = self.cv_model.predict(
+                    undistorted_frame,
+                    conf=0.7,
+                    save=False,
+                    imgsz=640,
+                    verbose=False,
+                )
+                for result in results:
+                    for box in result.boxes:
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+                        if x2 - x1 > 100:
+                            continue
+                        cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+                        robot_trajectory.append((int(cx), int(cy)))
+                        microrobot_env = np.array([
+                            cx * self.w_env / self.w_px,
+                            cy * self.h_env / self.h_px,
+                        ], dtype=np.float32)
+                        pixel_per_cm = ((x2 - x1) + (y2 - y1)) / 4
+                        cv2.rectangle(
+                            undistorted_frame,
+                            (x1, y1),
+                            (x2, y2),
+                            (255, 120, 20),
+                            2,
+                        )
 
             hand_positions = []
             hand_env = np.zeros(2, dtype=np.float32)
@@ -463,6 +496,15 @@ def parse_args():
     parser.add_argument("--hand-alpha", type=float, default=1.0, help="Virtual Hand motion smoothing coefficient in [0, 1].")
     parser.add_argument("--hand-delay-frames", type=int, default=0, help="Virtual Hand neural delay in control frames.")
     parser.add_argument("--vision-model", default=str(DEFAULT_VISION_MODEL), help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--microrobot-vision",
+        choices=["auto", "yolo", "none"],
+        default="auto",
+        help=(
+            "Microrobot YOLO mode. auto disables YOLO for a virtual Hand "
+            "when display and video are both disabled."
+        ),
+    )
     parser.add_argument("--out-dir", default=str(REPO_ROOT / "data" / "deployment_rollouts"), help=argparse.SUPPRESS)
     parser.add_argument("--subject", default="pilot", help="Short subject/session label.")
     parser.add_argument("--condition", default=None, help="Condition label; defaults to the selected controller.")
@@ -495,12 +537,47 @@ def require_file(path, label):
     return path
 
 
-def load_runtime_dependencies(load_hand_detection=True):
+def resolve_microrobot_vision_mode(args):
+    requested_mode = getattr(args, "microrobot_vision", "auto")
+    if requested_mode not in {"auto", "yolo", "none"}:
+        raise ValueError(
+            "microrobot vision mode must be one of: auto, yolo, none"
+        )
+    if requested_mode != "auto":
+        return requested_mode, None
+    if (
+        args.hand_source == "virtual"
+        and args.no_display
+        and not args.save_video
+    ):
+        return "none", "virtual_hand_no_display_no_video"
+    return "yolo", None
+
+
+def resolve_vision_model_path(path, yolo_enabled):
+    if not yolo_enabled:
+        return None
+    return require_file(path, "vision model")
+
+
+def load_microrobot_model(path, yolo_enabled, yolo_class=None):
+    if not yolo_enabled:
+        return None
+    model_class = yolo_class or YOLO
+    if model_class is None:
+        raise RuntimeError("YOLO dependency was not loaded")
+    return model_class(str(path))
+
+
+def load_runtime_dependencies(load_hand_detection=True, load_yolo=True):
     global cv2, PPO, YOLO, CameraCalibration, DeploymentRolloutLogger, HandDetection, URControl, get_workspace
 
     import cv2 as cv2_module
     from stable_baselines3 import PPO as ppo_class
-    from ultralytics import YOLO as yolo_class
+
+    yolo_class = None
+    if load_yolo:
+        from ultralytics import YOLO as yolo_class
 
     from camera_calibration.camera_calibration import CameraCalibration as calibration_class
     logger_path = SCRIPT_DIR / "callbacks" / "deployment_rollout_logger.py"
@@ -649,10 +726,21 @@ def main():
             else float(virtual_hand_rng.uniform(*VIRTUAL_HAND_STRIDE_RANGE))
         )
 
+    microrobot_vision_mode, microrobot_vision_disabled_reason = (
+        resolve_microrobot_vision_mode(args)
+    )
+    microrobot_yolo_enabled = microrobot_vision_mode == "yolo"
+
     model_path = require_file(args.model, "PPO policy") if args.controller == "league" else None
     hand_model_path = require_file(args.hand_model, "PPO Hand policy") if args.hand_source == "virtual" else None
-    vision_model_path = require_file(args.vision_model, "vision model")
-    load_runtime_dependencies(load_hand_detection=args.hand_source == "camera")
+    vision_model_path = resolve_vision_model_path(
+        args.vision_model,
+        microrobot_yolo_enabled,
+    )
+    load_runtime_dependencies(
+        load_hand_detection=args.hand_source == "camera",
+        load_yolo=microrobot_yolo_enabled,
+    )
 
     print(format_rollout_configuration(args, virtual_hand_stride), flush=True)
     print("MODEL FILES")
@@ -662,10 +750,25 @@ def main():
         print("Robot policy : Constant-Velocity MPC (no learned model)")
     if hand_model_path is not None:
         print(f"Hand policy  : {hand_model_path}")
-    print(f"Vision model : {vision_model_path}")
+    if microrobot_yolo_enabled:
+        print("Microrobot YOLO: enabled")
+        print(f"Vision model : {vision_model_path}")
+    else:
+        print(
+            "Microrobot YOLO: disabled"
+            + (
+                f" ({microrobot_vision_disabled_reason})"
+                if microrobot_vision_disabled_reason
+                else ""
+            )
+        )
+        print("Vision model : not loaded")
     print("-" * 78, flush=True)
 
-    cv_model = YOLO(str(vision_model_path))
+    cv_model = load_microrobot_model(
+        vision_model_path,
+        microrobot_yolo_enabled,
+    )
     cali = CameraCalibration()
     robot_control = None
     cap = None
@@ -815,10 +918,32 @@ def main():
             "virtual_hand_rom_randomization_enabled": False if args.hand_source == "virtual" else None,
             "virtual_hand_observation_noise_enabled": False if args.hand_source == "virtual" else None,
             "mediapipe_hand_detection_enabled": args.hand_source == "camera",
+            "camera_enabled": True,
+            "calibration_required": True,
             "microrobot_max_age_s": MICROROBOT_MAX_AGE_S,
+            "microrobot_vision_mode_requested": args.microrobot_vision,
+            "microrobot_vision_mode_effective": microrobot_vision_mode,
+            "microrobot_yolo_enabled": bool(microrobot_yolo_enabled),
+            "microrobot_yolo_disabled_reason": (
+                microrobot_vision_disabled_reason
+            ),
+            "microrobot_detection_source": (
+                "ultralytics_yolo_onnx"
+                if microrobot_yolo_enabled
+                else "disabled"
+            ),
+            "microrobot_detection_used_for_control": False,
             "task_robot_state_source": "ur_rtde_tcp",
             "distance_source": "ur_rtde_tcp",
-            "vision_model_path": str(vision_model_path),
+            "vision_model_configured_path": (
+                str(args.vision_model) if args.vision_model is not None else None
+            ),
+            "vision_model_path": (
+                str(vision_model_path)
+                if vision_model_path is not None
+                else None
+            ),
+            "vision_model_loaded": bool(microrobot_yolo_enabled),
             "control_freq_target_hz": float(args.control_hz),
             "camera_index": int(args.camera),
             "camera_width_requested": int(args.camera_width),
@@ -883,6 +1008,7 @@ def main():
             H_ENV,
             vision_queue,
             detect_hands=args.hand_source == "camera",
+            detect_microrobot=microrobot_yolo_enabled,
         )
         vision_thread.start()
 

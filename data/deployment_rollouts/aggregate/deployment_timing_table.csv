@@ -1,0 +1,8 @@
+metric,value,unit
+Camera update rate,12.07 ± 0.07,Hz
+Control-loop rate,16.51 ± 0.08,Hz
+Policy inference latency,2.19 ± 0.02,ms
+Dead-reckoning usage,38.81 ± 12.00%,%
+ZPD occupancy,55.92 ± 12.43%,%
+Rollout duration,14.98 ± 14.98,s
+Safety stops,0,count

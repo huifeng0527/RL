@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
@@ -174,6 +175,86 @@ class LogFormattingTests(unittest.TestCase):
         self.assertIn("delay=2 frame(s)", text)
 
 
+class MicrorobotVisionModeTests(unittest.TestCase):
+    @staticmethod
+    def make_args(**overrides):
+        values = {
+            "microrobot_vision": "auto",
+            "hand_source": "virtual",
+            "no_display": True,
+            "save_video": False,
+        }
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    def test_auto_disables_yolo_for_headless_virtual_hand(self):
+        mode, reason = rollout.resolve_microrobot_vision_mode(
+            self.make_args()
+        )
+        self.assertEqual(mode, "none")
+        self.assertEqual(reason, "virtual_hand_no_display_no_video")
+
+    def test_auto_keeps_yolo_when_vision_output_or_camera_hand_needs_it(self):
+        cases = [
+            {"no_display": False},
+            {"save_video": True},
+            {"hand_source": "camera"},
+        ]
+        for overrides in cases:
+            with self.subTest(**overrides):
+                mode, reason = rollout.resolve_microrobot_vision_mode(
+                    self.make_args(**overrides)
+                )
+                self.assertEqual(mode, "yolo")
+                self.assertIsNone(reason)
+
+    def test_explicit_modes_override_auto(self):
+        for requested in ("yolo", "none"):
+            with self.subTest(requested=requested):
+                mode, reason = rollout.resolve_microrobot_vision_mode(
+                    self.make_args(microrobot_vision=requested)
+                )
+                self.assertEqual(mode, requested)
+                self.assertIsNone(reason)
+
+    def test_disabled_mode_does_not_require_or_construct_yolo(self):
+        missing = Path("C:/definitely_missing/best.onnx")
+        self.assertIsNone(
+            rollout.resolve_vision_model_path(missing, yolo_enabled=False)
+        )
+
+        class FailingYolo:
+            def __init__(self, _):
+                raise AssertionError("YOLO should not be constructed")
+
+        self.assertIsNone(
+            rollout.load_microrobot_model(
+                missing,
+                yolo_enabled=False,
+                yolo_class=FailingYolo,
+            )
+        )
+
+    def test_enabled_mode_still_requires_and_constructs_yolo(self):
+        missing = Path("C:/definitely_missing/best.onnx")
+        with self.assertRaises(FileNotFoundError):
+            rollout.resolve_vision_model_path(missing, yolo_enabled=True)
+
+        constructed = []
+
+        class FakeYolo:
+            def __init__(self, path):
+                constructed.append(path)
+
+        model = rollout.load_microrobot_model(
+            Path("C:/models/best.onnx"),
+            yolo_enabled=True,
+            yolo_class=FakeYolo,
+        )
+        self.assertIsInstance(model, FakeYolo)
+        self.assertEqual(constructed, ["C:\\models\\best.onnx"])
+
+
 class BatchGenerationTests(unittest.TestCase):
     @staticmethod
     def make_args():
@@ -188,12 +269,18 @@ class BatchGenerationTests(unittest.TestCase):
             inter_run_delay=3.0,
             save_video=False,
             no_display=True,
+            microrobot_vision="auto",
         )
 
     def test_forty_matched_configurations_generate_eighty_runs(self):
         manifest = batch.build_manifest(
             self.make_args(),
             Path("C:/temporary/deployment_batch_test"),
+        )
+        self.assertEqual(manifest["schema_version"], 4)
+        self.assertEqual(
+            manifest["parameters"]["microrobot_vision_mode_requested"],
+            "auto",
         )
         self.assertEqual(len(manifest["configurations"]), 40)
         self.assertEqual(len(manifest["runs"]), 80)
@@ -217,6 +304,7 @@ class BatchGenerationTests(unittest.TestCase):
                 first_controller_counts[run["controller"]] += 1
             self.assertIn("--hand-alpha", run["command"])
             self.assertIn("--hand-delay-frames", run["command"])
+            self.assertNotIn("--microrobot-vision", run["command"])
 
         self.assertEqual(first_controller_counts, Counter({"league": 20, "cv_mpc": 20}))
         for pair_runs in by_pair.values():
@@ -229,6 +317,75 @@ class BatchGenerationTests(unittest.TestCase):
                 "virtual_hand_delay_frames",
             ):
                 self.assertEqual(pair_runs[0][field], pair_runs[1][field])
+
+    def test_explicit_microrobot_vision_override_is_passed_to_children(self):
+        args = self.make_args()
+        args.microrobot_vision = "none"
+        manifest = batch.build_manifest(
+            args,
+            Path("C:/temporary/deployment_batch_test"),
+        )
+        self.assertEqual(
+            manifest["parameters"]["microrobot_vision_mode_requested"],
+            "none",
+        )
+        for run in manifest["runs"]:
+            option_index = run["command"].index("--microrobot-vision")
+            self.assertEqual(run["command"][option_index + 1], "none")
+
+    def test_disabled_yolo_metrics_are_unavailable_not_zero(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            rollout_dir = Path(temp_dir)
+            (rollout_dir / "metadata.json").write_text(
+                json.dumps({
+                    "zpd_low_cm": 3.5,
+                    "zpd_high_cm": 5.5,
+                    "duration_target_s": 60.0,
+                    "virtual_hand_stride_cm": 0.2,
+                    "virtual_hand_smoothing_alpha": 0.7,
+                    "virtual_hand_delay_frames": 1,
+                    "microrobot_yolo_enabled": False,
+                    "workspace_width_cm": 15.0,
+                    "workspace_height_cm": 10.0,
+                    "workspace_margin_cm": 0.3,
+                }),
+                encoding="utf-8",
+            )
+            (rollout_dir / "summary.json").write_text(
+                json.dumps({
+                    "done_reason": "caught",
+                    "duration_s": 1.0,
+                    "duration_target_s": 60.0,
+                    "num_control_steps": 2,
+                    "zpd_time_s": 1.0,
+                    "tiz_fixed_horizon_fraction": 1.0 / 60.0,
+                    "zpd_observed_occupancy_fraction": 1.0,
+                    "zpd_occupancy_fraction": 1.0,
+                    "safety_stop_count": 0,
+                }),
+                encoding="utf-8",
+            )
+            (rollout_dir / "timeseries.csv").write_text(
+                "t_task_s,distance_cm,in_zpd,robot_x_cm,robot_y_cm,"
+                "microrobot_detected,microrobot_x_cm,microrobot_y_cm,"
+                "target_clipped,target_step_limited\n"
+                "0.0,4.5,true,7.5,5.0,false,,,false,false\n"
+                "1.0,4.0,true,7.6,5.0,false,,,false,false\n",
+                encoding="utf-8",
+            )
+            run = {
+                "run_id": "trial001_league",
+                "pair_id": "trial001",
+                "trial_index": 1,
+                "internal_seed": 1,
+                "order_in_pair": 1,
+                "controller": "league",
+                "duration_target_s": 60.0,
+            }
+            metrics = batch.extract_metrics(run, rollout_dir)
+            self.assertIsNone(metrics["microrobot_detection_fraction"])
+            self.assertIsNone(metrics["microrobot_tcp_error_cm_mean"])
+            self.assertIsNone(metrics["microrobot_tcp_error_cm_p95"])
 
     def test_batch_banner_shows_algorithm_and_both_strides(self):
         manifest = batch.build_manifest(

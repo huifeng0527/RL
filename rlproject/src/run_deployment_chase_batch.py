@@ -105,6 +105,15 @@ def parse_args():
     parser.add_argument("--inter-run-delay", type=float, default=3.0)
     parser.add_argument("--save-video", action="store_true")
     parser.add_argument("--no-display", action="store_true")
+    parser.add_argument(
+        "--microrobot-vision",
+        choices=["auto", "yolo", "none"],
+        default="auto",
+        help=(
+            "Microrobot YOLO mode passed to each rollout. auto disables "
+            "YOLO for headless virtual-Hand runs without saved video."
+        ),
+    )
     parser.add_argument("--batch-root", type=Path, default=DEFAULT_BATCH_ROOT)
     parser.add_argument("--resume", type=Path, default=None)
     parser.add_argument(
@@ -220,6 +229,7 @@ def build_manifest(args, batch_dir):
         args.trials,
         args.batch_seed,
     )
+    microrobot_vision = getattr(args, "microrobot_vision", "auto")
     runs = []
     for configuration in configurations:
         pair_id = configuration["pair_id"]
@@ -249,6 +259,11 @@ def build_manifest(args, batch_dir):
                 command.append("--save-video")
             if args.no_display:
                 command.append("--no-display")
+            if microrobot_vision != "auto":
+                command.extend([
+                    "--microrobot-vision",
+                    microrobot_vision,
+                ])
             runs.append({
                 "run_id": f"{pair_id}_{controller}",
                 "pair_id": pair_id,
@@ -275,7 +290,7 @@ def build_manifest(args, batch_dir):
         for configuration in configurations
     )
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "batch_id": batch_dir.name,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "batch_dir": str(batch_dir),
@@ -317,6 +332,12 @@ def build_manifest(args, batch_dir):
             "inter_run_delay_s": args.inter_run_delay,
             "save_video": args.save_video,
             "no_display": args.no_display,
+            "microrobot_vision_mode_requested": microrobot_vision,
+            "microrobot_vision_auto_semantics": (
+                "auto disables YOLO for virtual Hand + no display + "
+                "no saved video"
+            ),
+            "camera_required_for_tcp_env_mapping": True,
         },
         "configurations": configurations,
         "runs": runs,
@@ -446,6 +467,9 @@ def extract_metrics(run, rollout_dir):
             xy[:, 1] - margin, height - margin - xy[:, 1],
         ])
 
+    microrobot_detection_enabled = to_bool(
+        metadata.get("microrobot_yolo_enabled", True)
+    )
     tracking_errors = []
     detected = []
     for row in rows:
@@ -525,9 +549,21 @@ def extract_metrics(run, rollout_dir):
         "policy_inference_latency_ms_mean": to_float(summary.get("policy_inference_latency_ms_mean")),
         "policy_inference_latency_ms_p95": to_float(summary.get("policy_inference_latency_ms_p95")),
         "safety_stop_count": int(summary.get("safety_stop_count", 0)),
-        "microrobot_detection_fraction": float(np.mean(detected)) if detected else None,
-        "microrobot_tcp_error_cm_mean": float(np.mean(tracking_errors)) if tracking_errors else None,
-        "microrobot_tcp_error_cm_p95": float(np.percentile(tracking_errors, 95)) if tracking_errors else None,
+        "microrobot_detection_fraction": (
+            float(np.mean(detected))
+            if microrobot_detection_enabled and detected
+            else None
+        ),
+        "microrobot_tcp_error_cm_mean": (
+            float(np.mean(tracking_errors))
+            if microrobot_detection_enabled and tracking_errors
+            else None
+        ),
+        "microrobot_tcp_error_cm_p95": (
+            float(np.percentile(tracking_errors, 95))
+            if microrobot_detection_enabled and tracking_errors
+            else None
+        ),
         "virtual_hand_actual_move_cm_mean": to_float(
             summary.get("virtual_hand_actual_move_cm_mean")
         ),
