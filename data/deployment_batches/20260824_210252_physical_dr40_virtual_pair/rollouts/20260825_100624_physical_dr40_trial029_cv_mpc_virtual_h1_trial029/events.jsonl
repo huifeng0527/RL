@@ -1,0 +1,4 @@
+{"t_wall_s": 1787623584.8955998, "event": "rollout_created"}
+{"t_wall_s": 1787623590.5887804, "event": "exception", "error": "too many indices for tensor of dimension 1"}
+{"t_wall_s": 1787623590.6194005, "event": "snapshot_saved", "step": 92, "t_task_s": "", "path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_batches\\20260824_210252_physical_dr40_virtual_pair\\rollouts\\20260825_100624_physical_dr40_trial029_cv_mpc_virtual_h1_trial029\\snapshot_annotated.png"}
+{"t_wall_s": 1787623590.641237, "event": "rollout_closed", "done_reason": "exception", "summary_path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_batches\\20260824_210252_physical_dr40_virtual_pair\\rollouts\\20260825_100624_physical_dr40_trial029_cv_mpc_virtual_h1_trial029\\summary.json"}

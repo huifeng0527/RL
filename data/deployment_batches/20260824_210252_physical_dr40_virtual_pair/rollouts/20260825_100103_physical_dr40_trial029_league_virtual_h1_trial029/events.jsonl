@@ -1,0 +1,2 @@
+{"t_wall_s": 1787623263.5339801, "event": "rollout_created"}
+{"t_wall_s": 1787623293.6079173, "event": "snapshot_saved", "step": 495, "t_task_s": 30.027376300655305, "path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_batches\\20260824_210252_physical_dr40_virtual_pair\\rollouts\\20260825_100103_physical_dr40_trial029_league_virtual_h1_trial029\\snapshot_annotated.png"}
