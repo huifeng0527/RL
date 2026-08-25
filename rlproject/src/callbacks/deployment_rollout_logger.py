@@ -19,6 +19,28 @@ FIELDNAMES = [
     "t_task_s",
     "control_dt_s",
     "control_loop_hz_inst",
+    "policy_dt_s",
+    "policy_loop_hz_inst",
+    "policy_deadline_overrun_s",
+    "policy_deadline_overrun",
+    "servo_dt_s",
+    "servo_loop_hz_inst",
+    "servo_target_age_s",
+    "servo_interpolation_phase",
+    "servo_command_sequence",
+    "servo_policy_step",
+    "servo_commanded_world_x",
+    "servo_commanded_world_y",
+    "servo_commanded_world_z",
+    "servo_target_world_x",
+    "servo_target_world_y",
+    "servo_target_world_z",
+    "servo_tracking_error_cm",
+    "servo_target_error_cm",
+    "servo_deadline_overrun_s",
+    "servo_deadline_overrun_count",
+    "servo_watchdog_stopped",
+    "servo_stop_reason",
     "vision_frame_available",
     "vision_frame_id",
     "vision_age_s",
@@ -86,6 +108,25 @@ NUMERIC_ARRAY_FIELDS = [
     "t_task_s",
     "control_dt_s",
     "control_loop_hz_inst",
+    "policy_dt_s",
+    "policy_loop_hz_inst",
+    "policy_deadline_overrun_s",
+    "servo_dt_s",
+    "servo_loop_hz_inst",
+    "servo_target_age_s",
+    "servo_interpolation_phase",
+    "servo_command_sequence",
+    "servo_policy_step",
+    "servo_commanded_world_x",
+    "servo_commanded_world_y",
+    "servo_commanded_world_z",
+    "servo_target_world_x",
+    "servo_target_world_y",
+    "servo_target_world_z",
+    "servo_tracking_error_cm",
+    "servo_target_error_cm",
+    "servo_deadline_overrun_s",
+    "servo_deadline_overrun_count",
     "vision_age_s",
     "camera_dt_s",
     "camera_hz_inst",
@@ -131,6 +172,8 @@ NUMERIC_ARRAY_FIELDS = [
 
 
 BOOLEAN_ARRAY_FIELDS = [
+    "policy_deadline_overrun",
+    "servo_watchdog_stopped",
     "vision_frame_available",
     "hand_detected",
     "microrobot_detected",
@@ -199,6 +242,12 @@ def _nanpercentile(values, q):
     return float(np.percentile(arr, q)) if arr.size else None
 
 
+def _nanmax(values):
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    return float(np.max(arr)) if arr.size else None
+
+
 class DeploymentRolloutLogger:
     def __init__(
         self,
@@ -264,12 +313,10 @@ class DeploymentRolloutLogger:
         self.rows.append(cleaned)
 
     def maybe_save_snapshot(self, frame, step, t_task_s, preferred_step=None, preferred_time_s=None):
-        if frame is None:
+        if frame is None or self._snapshot_saved:
             return
         self._last_snapshot_frame = frame.copy()
         self._last_snapshot_step = int(step)
-        if self._snapshot_saved:
-            return
 
         should_save = False
         if preferred_step is not None and int(step) >= int(preferred_step):
@@ -340,6 +387,39 @@ class DeploymentRolloutLogger:
         duration_values = [v for v in duration_values if np.isfinite(v)]
         distances = [_as_float(row.get("distance_cm")) for row in self.rows]
         control_hz = [_as_float(row.get("control_loop_hz_inst")) for row in self.rows]
+        policy_hz = [
+            _as_float(
+                row.get("policy_loop_hz_inst")
+                if row.get("policy_loop_hz_inst") not in (None, "")
+                else row.get("control_loop_hz_inst")
+            )
+            for row in self.rows
+        ]
+        servo_hz = [_as_float(row.get("servo_loop_hz_inst")) for row in self.rows]
+        policy_overrun_s = [
+            _as_float(row.get("policy_deadline_overrun_s")) for row in self.rows
+        ]
+        servo_target_age_s = [
+            _as_float(row.get("servo_target_age_s")) for row in self.rows
+        ]
+        servo_tracking_error_cm = [
+            _as_float(row.get("servo_tracking_error_cm")) for row in self.rows
+        ]
+        servo_target_error_cm = [
+            _as_float(row.get("servo_target_error_cm")) for row in self.rows
+        ]
+        servo_overrun_s = [
+            _as_float(row.get("servo_deadline_overrun_s")) for row in self.rows
+        ]
+        servo_overrun_count = [
+            _as_float(row.get("servo_deadline_overrun_count")) for row in self.rows
+        ]
+        policy_overrun = np.asarray([
+            bool(row.get("policy_deadline_overrun")) for row in self.rows
+        ], dtype=bool)
+        servo_watchdog = np.asarray([
+            bool(row.get("servo_watchdog_stopped")) for row in self.rows
+        ], dtype=bool)
         camera_hz = [_as_float(row.get("camera_hz_inst")) for row in self.rows]
         inference_ms = [_as_float(row.get("policy_inference_ms")) for row in self.rows]
         dead_reckoning = np.asarray([bool(row.get("dead_reckoning_used")) for row in self.rows], dtype=bool)
@@ -391,6 +471,35 @@ class DeploymentRolloutLogger:
             "camera_update_rate_hz_median": _nanmedian(camera_hz),
             "control_loop_rate_hz_mean": _nanmean(control_hz),
             "control_loop_rate_hz_median": _nanmedian(control_hz),
+            "policy_loop_rate_hz_mean": _nanmean(policy_hz),
+            "policy_loop_rate_hz_median": _nanmedian(policy_hz),
+            "policy_deadline_overrun_s_mean": _nanmean(policy_overrun_s),
+            "policy_deadline_overrun_s_p95": _nanpercentile(
+                policy_overrun_s,
+                95,
+            ),
+            "policy_deadline_overrun_count": int(np.sum(policy_overrun)),
+            "policy_deadline_overrun_fraction": (
+                float(np.mean(policy_overrun)) if policy_overrun.size else None
+            ),
+            "servo_loop_rate_hz_mean": _nanmean(servo_hz),
+            "servo_loop_rate_hz_median": _nanmedian(servo_hz),
+            "servo_target_age_s_mean": _nanmean(servo_target_age_s),
+            "servo_target_age_s_p95": _nanpercentile(servo_target_age_s, 95),
+            "servo_tracking_error_cm_mean": _nanmean(servo_tracking_error_cm),
+            "servo_tracking_error_cm_p95": _nanpercentile(
+                servo_tracking_error_cm,
+                95,
+            ),
+            "servo_target_error_cm_mean": _nanmean(servo_target_error_cm),
+            "servo_target_error_cm_p95": _nanpercentile(
+                servo_target_error_cm,
+                95,
+            ),
+            "servo_deadline_overrun_s_mean": _nanmean(servo_overrun_s),
+            "servo_deadline_overrun_s_p95": _nanpercentile(servo_overrun_s, 95),
+            "servo_deadline_overrun_count": _nanmax(servo_overrun_count),
+            "servo_watchdog_stop_count": int(np.sum(servo_watchdog)),
             "policy_inference_latency_ms_mean": _nanmean(inference_ms),
             "policy_inference_latency_ms_p95": _nanpercentile(inference_ms, 95),
             "virtual_hand_policy_latency_ms_mean": _nanmean(virtual_hand_policy_ms),

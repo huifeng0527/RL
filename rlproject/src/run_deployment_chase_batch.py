@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import json
 import re
@@ -25,6 +26,8 @@ DEFAULT_BATCH_ROOT = REPO_ROOT / "data" / "deployment_batches"
 BOUNDARY_BAND_CM = 0.5
 DEFAULT_TRIALS = 40
 DEFAULT_BATCH_SEED = 20260820
+DEFAULT_POLICY_HZ = 20.0
+DEFAULT_SERVO_HZ = 125.0
 HAND_STRIDE_RANGE_CM = (0.1, 0.3)
 VIRTUAL_HAND_ALPHA_RANGE = (0.5, 0.9)
 VIRTUAL_HAND_DELAY_VALUES = (0, 1, 2, 3)
@@ -37,7 +40,9 @@ CONTROLLER_LABELS = {
 RUN_FIELDS = [
     "run_id", "pair_id", "trial_index", "internal_seed", "hand_stride_cm",
     "virtual_hand_smoothing_alpha", "virtual_hand_delay_frames",
-    "order_in_pair", "controller", "status", "rollout_dir", "done_reason",
+    "policy_freq_target_hz", "servo_mode", "servo_freq_target_hz",
+    "servo_target_timeout_s", "order_in_pair", "controller", "status",
+    "rollout_dir", "done_reason",
     "caught", "duration_s", "duration_target_s", "num_control_steps",
     "zpd_time_s", "tiz_fixed_horizon_fraction",
     "zpd_observed_occupancy_fraction", "zpd_occupancy_fraction",
@@ -45,8 +50,13 @@ RUN_FIELDS = [
     "distance_cm_min", "distance_cm_final", "too_close_fraction",
     "too_far_fraction", "min_boundary_clearance_cm", "boundary_occupancy_fraction",
     "target_clipped_fraction", "target_step_limited_fraction",
-    "control_loop_rate_hz_mean", "camera_update_rate_hz_mean",
-    "policy_inference_latency_ms_mean", "policy_inference_latency_ms_p95",
+    "control_loop_rate_hz_mean", "policy_loop_rate_hz_mean",
+    "servo_loop_rate_hz_mean", "servo_target_age_s_mean",
+    "servo_tracking_error_cm_mean", "servo_tracking_error_cm_p95",
+    "servo_target_error_cm_mean", "servo_deadline_overrun_count",
+    "servo_watchdog_stop_count", "policy_deadline_overrun_count",
+    "camera_update_rate_hz_mean", "policy_inference_latency_ms_mean",
+    "policy_inference_latency_ms_p95",
     "safety_stop_count", "microrobot_detection_fraction",
     "microrobot_tcp_error_cm_mean", "microrobot_tcp_error_cm_p95",
     "virtual_hand_actual_move_cm_mean", "virtual_hand_actual_move_cm_p95",
@@ -64,6 +74,10 @@ SUMMARY_METRICS = [
     "too_close_fraction", "too_far_fraction", "min_boundary_clearance_cm",
     "boundary_occupancy_fraction", "target_clipped_fraction",
     "target_step_limited_fraction", "control_loop_rate_hz_mean",
+    "policy_loop_rate_hz_mean", "servo_loop_rate_hz_mean",
+    "servo_target_age_s_mean", "servo_tracking_error_cm_mean",
+    "servo_target_error_cm_mean", "servo_deadline_overrun_count",
+    "servo_watchdog_stop_count", "policy_deadline_overrun_count",
     "camera_update_rate_hz_mean", "policy_inference_latency_ms_mean",
     "microrobot_detection_fraction", "microrobot_tcp_error_cm_mean",
     "virtual_hand_actual_move_cm_mean",
@@ -102,6 +116,20 @@ def parse_args():
     parser.add_argument("--stride", type=float, default=0.6)
     parser.add_argument("--max-step", type=float, default=1)
     parser.add_argument("--catch-distance", type=float, default=1.5)
+    parser.add_argument(
+        "--control-hz",
+        "--policy-hz",
+        dest="policy_hz",
+        type=float,
+        default=DEFAULT_POLICY_HZ,
+    )
+    parser.add_argument(
+        "--servo-mode",
+        choices=["interpolated", "legacy"],
+        default="interpolated",
+    )
+    parser.add_argument("--servo-hz", type=float, default=DEFAULT_SERVO_HZ)
+    parser.add_argument("--servo-target-timeout-s", type=float, default=None)
     parser.add_argument("--inter-run-delay", type=float, default=3.0)
     parser.add_argument("--save-video", action="store_true")
     parser.add_argument("--no-display", action="store_true")
@@ -223,6 +251,33 @@ def build_virtual_hand_configurations(num_configs, batch_seed):
     return configurations
 
 
+def normalize_batch_timing(args):
+    policy_hz = float(getattr(args, "policy_hz", DEFAULT_POLICY_HZ))
+    servo_mode = str(getattr(args, "servo_mode", "interpolated"))
+    requested_servo_hz = float(
+        getattr(args, "servo_hz", DEFAULT_SERVO_HZ)
+    )
+    if policy_hz <= 0.0:
+        raise ValueError("--policy-hz must be positive")
+    if requested_servo_hz <= 0.0:
+        raise ValueError("--servo-hz must be positive")
+    if servo_mode not in {"interpolated", "legacy"}:
+        raise ValueError("--servo-mode must be interpolated or legacy")
+    if servo_mode == "interpolated" and requested_servo_hz < policy_hz:
+        raise ValueError("--servo-hz must be at least --policy-hz")
+    servo_hz = policy_hz if servo_mode == "legacy" else requested_servo_hz
+    timeout = getattr(args, "servo_target_timeout_s", None)
+    timeout = max(3.0 / policy_hz, 0.15) if timeout is None else float(timeout)
+    if timeout <= 0.0:
+        raise ValueError("--servo-target-timeout-s must be positive")
+    return {
+        "policy_hz": policy_hz,
+        "servo_mode": servo_mode,
+        "servo_hz": servo_hz,
+        "servo_target_timeout_s": timeout,
+    }
+
+
 def build_manifest(args, batch_dir):
     rollout_root = batch_dir / "rollouts"
     configurations = build_virtual_hand_configurations(
@@ -230,6 +285,7 @@ def build_manifest(args, batch_dir):
         args.batch_seed,
     )
     microrobot_vision = getattr(args, "microrobot_vision", "auto")
+    timing = normalize_batch_timing(args)
     runs = []
     for configuration in configurations:
         pair_id = configuration["pair_id"]
@@ -245,6 +301,11 @@ def build_manifest(args, batch_dir):
                 "--hand-source", "virtual",
                 "--seed", str(configuration["internal_seed"]),
                 "--seconds", str(args.seconds),
+                "--control-hz", f"{timing['policy_hz']:.12g}",
+                "--servo-mode", timing["servo_mode"],
+                "--servo-hz", f"{timing['servo_hz']:.12g}",
+                "--servo-target-timeout-s",
+                f"{timing['servo_target_timeout_s']:.12g}",
                 "--stride", str(args.stride),
                 "--hand-stride", f"{configuration['hand_stride_cm']:.9g}",
                 "--hand-alpha", f"{configuration['virtual_hand_smoothing_alpha']:.12g}",
@@ -278,6 +339,11 @@ def build_manifest(args, batch_dir):
                     "virtual_hand_delay_frames"
                 ],
                 "duration_target_s": float(args.seconds),
+                "policy_freq_target_hz": timing["policy_hz"],
+                "servo_mode": timing["servo_mode"],
+                "servo_freq_target_hz": timing["servo_hz"],
+                "servo_target_timeout_s": timing["servo_target_timeout_s"],
+                "timing_settings_required": True,
                 "order_in_pair": order,
                 "controller": controller,
                 "subject": subject,
@@ -290,7 +356,7 @@ def build_manifest(args, batch_dir):
         for configuration in configurations
     )
     return {
-        "schema_version": 4,
+        "schema_version": 5,
         "batch_id": batch_dir.name,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "batch_dir": str(batch_dir),
@@ -325,6 +391,20 @@ def build_manifest(args, batch_dir):
             ],
             "task_robot_state_source": "ur_rtde_tcp",
             "distance_source": "ur_rtde_tcp",
+            "control_freq_target_hz": timing["policy_hz"],
+            "policy_freq_target_hz": timing["policy_hz"],
+            "servo_mode": timing["servo_mode"],
+            "servo_freq_target_hz": timing["servo_hz"],
+            "servo_target_timeout_s": timing["servo_target_timeout_s"],
+            "servo_interpolation_mode": (
+                "linear_hold"
+                if timing["servo_mode"] == "interpolated"
+                else "legacy_direct"
+            ),
+            "policy_servo_frequency_semantics": (
+                "virtual Hand and Robot controller update once per policy step; "
+                "interpolated servo commands execute between policy targets"
+            ),
             "seconds": args.seconds,
             "stride_cm": args.stride,
             "max_step_cm": args.max_step,
@@ -344,10 +424,56 @@ def build_manifest(args, batch_dir):
     }
 
 
+def normalize_manifest(manifest):
+    normalized = copy.deepcopy(manifest)
+    schema_version = int(normalized.get("schema_version", 1))
+    parameters = normalized.setdefault("parameters", {})
+    policy_hz = float(parameters.get(
+        "policy_freq_target_hz",
+        parameters.get("control_freq_target_hz", DEFAULT_POLICY_HZ),
+    ))
+    legacy = schema_version < 5
+    servo_mode = str(parameters.get(
+        "servo_mode",
+        "legacy" if legacy else "interpolated",
+    ))
+    servo_hz = float(parameters.get(
+        "servo_freq_target_hz",
+        policy_hz if legacy else DEFAULT_SERVO_HZ,
+    ))
+    timeout = parameters.get("servo_target_timeout_s")
+    timeout = max(3.0 / policy_hz, 0.15) if timeout is None else float(timeout)
+
+    parameters.setdefault("control_freq_target_hz", policy_hz)
+    parameters.setdefault("policy_freq_target_hz", policy_hz)
+    parameters.setdefault("servo_mode", servo_mode)
+    parameters.setdefault("servo_freq_target_hz", servo_hz)
+    parameters.setdefault("servo_target_timeout_s", timeout)
+    parameters.setdefault(
+        "servo_interpolation_mode",
+        "legacy_direct" if legacy else "linear_hold",
+    )
+
+    for run in normalized.get("runs", []):
+        run.setdefault("policy_freq_target_hz", policy_hz)
+        run.setdefault("servo_mode", servo_mode)
+        run.setdefault("servo_freq_target_hz", servo_hz)
+        run.setdefault("servo_target_timeout_s", timeout)
+        run.setdefault("timing_settings_required", not legacy)
+        if legacy:
+            command = list(run.get("command", []))
+            if "--control-hz" not in command and "--policy-hz" not in command:
+                command.extend(["--control-hz", f"{policy_hz:.12g}"])
+            if "--servo-mode" not in command:
+                command.extend(["--servo-mode", "legacy"])
+            run["command"] = command
+    return normalized
+
+
 def prepare_batch(args):
     if args.resume:
         batch_dir = args.resume.resolve()
-        manifest = read_json(batch_dir / "manifest.json")
+        manifest = normalize_manifest(read_json(batch_dir / "manifest.json"))
         return batch_dir, manifest
 
     if args.trials < 1:
@@ -357,6 +483,7 @@ def prepare_batch(args):
             raise ValueError(f"--{name.replace('_', '-')} must be positive")
     if args.inter_run_delay < 0:
         raise ValueError("--inter-run-delay cannot be negative")
+    normalize_batch_timing(args)
     if not ROLLOUT_SCRIPT.exists():
         raise FileNotFoundError(ROLLOUT_SCRIPT)
 
@@ -374,8 +501,10 @@ def prepare_batch(args):
 def metadata_matches(metadata, run):
     expected_alpha = float(run.get("virtual_hand_smoothing_alpha", 1.0))
     expected_delay = int(run.get("virtual_hand_delay_frames", 0))
-    expected_duration = float(run.get("duration_target_s", metadata.get("duration_target_s", -1.0)))
-    return (
+    expected_duration = float(
+        run.get("duration_target_s", metadata.get("duration_target_s", -1.0))
+    )
+    base_matches = (
         metadata.get("subject") == run["subject"]
         and metadata.get("condition") == run["condition"]
         and metadata.get("controller") == run["controller"]
@@ -390,13 +519,33 @@ def metadata_matches(metadata, run):
             - expected_alpha
         ) < 1e-9
         and int(metadata.get("virtual_hand_delay_frames", -1)) == expected_delay
-        and abs(float(metadata.get("duration_target_s", -1.0)) - expected_duration) < 1e-6
+        and abs(
+            float(metadata.get("duration_target_s", -1.0))
+            - expected_duration
+        ) < 1e-6
+    )
+    if not base_matches or not run.get("timing_settings_required", False):
+        return base_matches
+    return (
+        abs(
+            float(metadata.get("policy_freq_target_hz", -1.0))
+            - float(run["policy_freq_target_hz"])
+        ) < 1e-6
+        and metadata.get("servo_mode") == run["servo_mode"]
+        and abs(
+            float(metadata.get("servo_freq_target_hz", -1.0))
+            - float(run["servo_freq_target_hz"])
+        ) < 1e-6
+        and abs(
+            float(metadata.get("servo_target_timeout_s", -1.0))
+            - float(run["servo_target_timeout_s"])
+        ) < 1e-6
     )
 
 
 def result_matches_run(row, run):
     try:
-        return (
+        base_matches = (
             row.get("run_id") == run["run_id"]
             and row.get("pair_id") == run["pair_id"]
             and int(float(row.get("trial_index"))) == int(run["trial_index"])
@@ -412,6 +561,23 @@ def result_matches_run(row, run):
             == int(run.get("virtual_hand_delay_frames", 0))
             and int(float(row.get("order_in_pair"))) == int(run["order_in_pair"])
             and row.get("controller") == run["controller"]
+        )
+        if not base_matches or not run.get("timing_settings_required", False):
+            return base_matches
+        return (
+            abs(
+                float(row.get("policy_freq_target_hz"))
+                - float(run["policy_freq_target_hz"])
+            ) < 1e-6
+            and row.get("servo_mode") == run["servo_mode"]
+            and abs(
+                float(row.get("servo_freq_target_hz"))
+                - float(run["servo_freq_target_hz"])
+            ) < 1e-6
+            and abs(
+                float(row.get("servo_target_timeout_s"))
+                - float(run["servo_target_timeout_s"])
+            ) < 1e-6
         )
     except (TypeError, ValueError):
         return False
@@ -521,6 +687,22 @@ def extract_metrics(run, rollout_dir):
         "virtual_hand_delay_frames": int(
             metadata.get("virtual_hand_delay_frames", 0)
         ),
+        "policy_freq_target_hz": to_float(metadata.get(
+            "policy_freq_target_hz",
+            metadata.get(
+                "control_freq_target_hz",
+                run.get("policy_freq_target_hz"),
+            ),
+        )),
+        "servo_mode": metadata.get("servo_mode", run.get("servo_mode")),
+        "servo_freq_target_hz": to_float(metadata.get(
+            "servo_freq_target_hz",
+            run.get("servo_freq_target_hz"),
+        )),
+        "servo_target_timeout_s": to_float(metadata.get(
+            "servo_target_timeout_s",
+            run.get("servo_target_timeout_s"),
+        )),
         "order_in_pair": run["order_in_pair"],
         "controller": run["controller"],
         "status": "completed",
@@ -545,6 +727,32 @@ def extract_metrics(run, rollout_dir):
         "target_clipped_fraction": float(np.mean([to_bool(r.get("target_clipped")) for r in rows])),
         "target_step_limited_fraction": float(np.mean([to_bool(r.get("target_step_limited")) for r in rows])),
         "control_loop_rate_hz_mean": to_float(summary.get("control_loop_rate_hz_mean")),
+        "policy_loop_rate_hz_mean": to_float(summary.get(
+            "policy_loop_rate_hz_mean",
+            summary.get("control_loop_rate_hz_mean"),
+        )),
+        "servo_loop_rate_hz_mean": to_float(summary.get("servo_loop_rate_hz_mean")),
+        "servo_target_age_s_mean": to_float(summary.get("servo_target_age_s_mean")),
+        "servo_tracking_error_cm_mean": to_float(summary.get(
+            "servo_tracking_error_cm_mean"
+        )),
+        "servo_tracking_error_cm_p95": to_float(summary.get(
+            "servo_tracking_error_cm_p95"
+        )),
+        "servo_target_error_cm_mean": to_float(summary.get(
+            "servo_target_error_cm_mean"
+        )),
+        "servo_deadline_overrun_count": to_float(summary.get(
+            "servo_deadline_overrun_count"
+        )),
+        "servo_watchdog_stop_count": int(summary.get(
+            "servo_watchdog_stop_count",
+            0,
+        )),
+        "policy_deadline_overrun_count": int(summary.get(
+            "policy_deadline_overrun_count",
+            0,
+        )),
         "camera_update_rate_hz_mean": to_float(summary.get("camera_update_rate_hz_mean")),
         "policy_inference_latency_ms_mean": to_float(summary.get("policy_inference_latency_ms_mean")),
         "policy_inference_latency_ms_p95": to_float(summary.get("policy_inference_latency_ms_p95")),
@@ -606,6 +814,10 @@ def incomplete_result(run, status, rollout_dir=None, done_reason=None):
             1.0,
         ),
         "virtual_hand_delay_frames": run.get("virtual_hand_delay_frames", 0),
+        "policy_freq_target_hz": run.get("policy_freq_target_hz"),
+        "servo_mode": run.get("servo_mode"),
+        "servo_freq_target_hz": run.get("servo_freq_target_hz"),
+        "servo_target_timeout_s": run.get("servo_target_timeout_s"),
         "duration_target_s": run.get("duration_target_s"),
         "order_in_pair": run["order_in_pair"],
         "controller": run["controller"],
@@ -615,6 +827,21 @@ def incomplete_result(run, status, rollout_dir=None, done_reason=None):
         "caught": False,
         "safety_stop_count": 0,
     })
+    return row
+
+
+def backfill_result_timing(row, run):
+    row = dict(row)
+    for field in (
+        "policy_freq_target_hz",
+        "servo_mode",
+        "servo_freq_target_hz",
+        "servo_target_timeout_s",
+    ):
+        if row.get(field) in (None, ""):
+            row[field] = run.get(field)
+    if row.get("policy_loop_rate_hz_mean") in (None, ""):
+        row["policy_loop_rate_hz_mean"] = row.get("control_loop_rate_hz_mean")
     return row
 
 
@@ -646,8 +873,17 @@ def recover_results(manifest, existing_rows):
                     and to_float(row.get("duration_target_s")) is not None
                     and to_float(row.get("virtual_hand_smoothing_alpha")) is not None
                     and row.get("virtual_hand_delay_frames") not in (None, "")
+                    and (
+                        not run.get("timing_settings_required", False)
+                        or (
+                            row.get("servo_mode") == run.get("servo_mode")
+                            and to_float(row.get("policy_freq_target_hz")) is not None
+                            and to_float(row.get("servo_freq_target_hz")) is not None
+                        )
+                    )
                 )
                 if has_current_metrics:
+                    by_id[run["run_id"]] = backfill_result_timing(row, run)
                     continue
                 try:
                     refreshed = extract_metrics(run, rollout_dir)
@@ -685,6 +921,13 @@ def write_aggregates(batch_dir, manifest, rows):
         summary = {
             "controller": controller,
             "n_completed": len(group),
+            "policy_freq_target_hz": (
+                to_float(group[0].get("policy_freq_target_hz")) if group else None
+            ),
+            "servo_mode": group[0].get("servo_mode") if group else None,
+            "servo_freq_target_hz": (
+                to_float(group[0].get("servo_freq_target_hz")) if group else None
+            ),
             "trial_indices": json.dumps([
                 int(float(row["trial_index"])) for row in group
             ]),
@@ -775,6 +1018,11 @@ def format_run_banner(run, run_number, total_runs, manifest):
             f"Robot stride: {float(parameters['stride_cm']):.3f} cm/action  |  "
             f"max step: {float(parameters['max_step_cm']):.3f} cm/control step"
         ),
+        (
+            f"Timing       : policy={float(run.get('policy_freq_target_hz', DEFAULT_POLICY_HZ)):.1f} Hz  |  "
+            f"servo={float(run.get('servo_freq_target_hz', run.get('policy_freq_target_hz', DEFAULT_POLICY_HZ))):.1f} Hz  |  "
+            f"mode={run.get('servo_mode', 'legacy')}"
+        ),
         f"Hand stride : {float(run['hand_stride_cm']):.3f} cm/action",
         (
             f"Hand DR     : alpha={float(run.get('virtual_hand_smoothing_alpha', 1.0)):.3f}  |  "
@@ -807,6 +1055,11 @@ def print_plan(manifest, completed_ids, list_runs=False):
     print(
         f"Robot stride : {float(parameters['stride_cm']):.3f} cm/action  |  "
         f"max step: {float(parameters['max_step_cm']):.3f} cm/control step"
+    )
+    print(
+        f"Timing       : policy={float(parameters.get('policy_freq_target_hz', DEFAULT_POLICY_HZ)):.1f} Hz  |  "
+        f"servo={float(parameters.get('servo_freq_target_hz', parameters.get('policy_freq_target_hz', DEFAULT_POLICY_HZ))):.1f} Hz  |  "
+        f"mode={parameters.get('servo_mode', 'legacy')}"
     )
     hand_range = parameters["hand_stride_sample_range_cm"]
     print(

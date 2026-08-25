@@ -2,6 +2,7 @@ import importlib.util
 import json
 import sys
 import tempfile
+import time
 import unittest
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -71,6 +72,150 @@ class VirtualHandExecutionTests(unittest.TestCase):
             0.15,
             places=6,
         )
+
+
+class ServoInterpolationTests(unittest.TestCase):
+    class FakeRTDEControl:
+        pass
+
+    class FakeRobotControl:
+        def __init__(self, servo_return=None):
+            self.rtde_c = ServoInterpolationTests.FakeRTDEControl()
+            self.servo_calls = []
+            self.stop_count = 0
+            self.servo_return = servo_return
+
+        def servo_robot(self, target_pose, dt, lookahead_time, gain):
+            self.servo_calls.append({
+                "target_pose": np.asarray(target_pose, dtype=float),
+                "dt": float(dt),
+                "lookahead_time": float(lookahead_time),
+                "gain": int(gain),
+            })
+            return self.servo_return
+
+        def servo_stop(self):
+            self.stop_count += 1
+
+    def test_linear_pose_interpolation_and_endpoint_hold(self):
+        start = np.zeros(6, dtype=float)
+        target = np.array([1.0, 2.0, 3.0, 0.1, 0.2, 0.3])
+        np.testing.assert_allclose(
+            rollout.linear_interpolate_pose(start, target, 0.0),
+            start,
+        )
+        np.testing.assert_allclose(
+            rollout.linear_interpolate_pose(start, target, 0.5),
+            target * 0.5,
+        )
+        np.testing.assert_allclose(
+            rollout.linear_interpolate_pose(start, target, 2.0),
+            target,
+        )
+
+    def test_translation_step_limit_preserves_requested_orientation(self):
+        previous = np.zeros(6, dtype=float)
+        requested = np.array([0.03, 0.04, 0.0, 0.1, 0.2, 0.3])
+        command, limited = rollout.limit_pose_translation_step(
+            previous,
+            requested,
+            max_step_m=0.01,
+        )
+        self.assertTrue(limited)
+        self.assertAlmostEqual(np.linalg.norm(command[:3]), 0.01)
+        np.testing.assert_allclose(command[3:], requested[3:])
+
+    def test_default_timing_separates_policy_and_servo_rates(self):
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_hz=125.0,
+            max_step_cm=1.0,
+        )
+        self.assertEqual(timing.mode, "interpolated")
+        self.assertEqual(timing.policy_hz, 20.0)
+        self.assertEqual(timing.servo_hz, 125.0)
+        self.assertAlmostEqual(timing.target_timeout_s, 0.15)
+        self.assertAlmostEqual(timing.max_translation_per_tick_m, 0.0016)
+
+    def test_interpolated_mode_rejects_slower_servo_rate(self):
+        with self.assertRaises(ValueError):
+            rollout.normalize_servo_timing(
+                policy_hz=20.0,
+                servo_hz=10.0,
+            )
+
+    def test_servo_thread_publishes_fixed_dt_and_stops(self):
+        robot = self.FakeRobotControl()
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_hz=200.0,
+            target_timeout_s=1.0,
+            max_step_cm=1.0,
+        )
+        thread = rollout.InterpolatedServoThread(
+            robot,
+            initial_pose=np.zeros(6, dtype=float),
+            timing=timing,
+        )
+        thread.start()
+        thread.publish_target(
+            np.array([0.01, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            policy_step=0,
+        )
+        time.sleep(0.03)
+        thread.stop_and_join("test_complete")
+        self.assertGreaterEqual(len(robot.servo_calls), 2)
+        self.assertTrue(all(
+            abs(call["dt"] - 1.0 / 200.0) < 1e-9
+            for call in robot.servo_calls
+        ))
+        self.assertEqual(robot.stop_count, 1)
+        self.assertEqual(thread.snapshot().stop_reason, "test_complete")
+
+    def test_servo_watchdog_stops_on_stale_target(self):
+        robot = self.FakeRobotControl()
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_hz=200.0,
+            target_timeout_s=0.02,
+            max_step_cm=1.0,
+        )
+        thread = rollout.InterpolatedServoThread(
+            robot,
+            initial_pose=np.zeros(6, dtype=float),
+            timing=timing,
+        )
+        thread.start()
+        thread.join(timeout=0.2)
+        self.assertFalse(thread.is_alive())
+        with self.assertRaises(rollout.ServoLoopSafetyStop):
+            thread.raise_if_failed()
+        snapshot = thread.snapshot()
+        self.assertTrue(snapshot.watchdog_stopped)
+        self.assertIn("stale_target", snapshot.stop_reason)
+        self.assertEqual(robot.stop_count, 1)
+
+    def test_servo_returning_false_propagates_failure(self):
+        robot = self.FakeRobotControl(servo_return=False)
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_hz=200.0,
+            target_timeout_s=1.0,
+        )
+        thread = rollout.InterpolatedServoThread(
+            robot,
+            initial_pose=np.zeros(6, dtype=float),
+            timing=timing,
+        )
+        thread.start()
+        thread.join(timeout=0.2)
+        self.assertFalse(thread.is_alive())
+        with self.assertRaisesRegex(
+            rollout.ServoLoopFailure,
+            "servoL returned failure",
+        ):
+            thread.raise_if_failed()
+        self.assertEqual(robot.stop_count, 1)
 
 
 class FixedHorizonTizTests(unittest.TestCase):
@@ -148,6 +293,51 @@ class RolloutLoggerTests(unittest.TestCase):
             self.assertIn("virtual_hand_delay_frames", header)
             self.assertIn("virtual_hand_delayed_dx_cm", header)
             self.assertIn("virtual_hand_smoothed_dx_cm", header)
+
+    def test_summary_contains_policy_and_servo_diagnostics(self):
+        logger_path = (
+            DEPLOYMENT_SRC / "callbacks" / "deployment_rollout_logger.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "deployment_rollout_logger_servo_test",
+            logger_path,
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as out_root:
+            logger = module.DeploymentRolloutLogger(
+                out_root=out_root,
+                metadata={"duration_target_s": 1.0},
+            )
+            for step in range(2):
+                logger.record_step({
+                    "step": step,
+                    "t_task_s": 0.05 * step,
+                    "in_zpd": True,
+                    "control_loop_hz_inst": 20.0,
+                    "policy_loop_hz_inst": 20.0,
+                    "policy_deadline_overrun_s": 0.002,
+                    "policy_deadline_overrun": True,
+                    "servo_loop_hz_inst": 125.0,
+                    "servo_target_age_s": 0.01,
+                    "servo_tracking_error_cm": 0.2,
+                    "servo_target_error_cm": 0.3,
+                    "servo_deadline_overrun_s": 0.001,
+                    "servo_deadline_overrun_count": step + 1,
+                    "servo_watchdog_stopped": False,
+                })
+            summary = logger.close(done_reason="timeout")
+            self.assertAlmostEqual(summary["policy_loop_rate_hz_mean"], 20.0)
+            self.assertAlmostEqual(summary["servo_loop_rate_hz_mean"], 125.0)
+            self.assertAlmostEqual(summary["servo_tracking_error_cm_mean"], 0.2)
+            self.assertEqual(summary["policy_deadline_overrun_count"], 2)
+            self.assertEqual(summary["servo_deadline_overrun_count"], 2.0)
+            header = (logger.rollout_dir / "timeseries.csv").read_text(
+                encoding="utf-8"
+            ).splitlines()[0]
+            self.assertIn("servo_loop_hz_inst", header)
+            self.assertIn("servo_tracking_error_cm", header)
 
 
 class LogFormattingTests(unittest.TestCase):
@@ -267,6 +457,10 @@ class BatchGenerationTests(unittest.TestCase):
             stride=0.35,
             max_step=0.60,
             catch_distance=1.5,
+            policy_hz=20.0,
+            servo_mode="interpolated",
+            servo_hz=125.0,
+            servo_target_timeout_s=0.15,
             inter_run_delay=3.0,
             save_video=False,
             no_display=True,
@@ -278,7 +472,7 @@ class BatchGenerationTests(unittest.TestCase):
             self.make_args(),
             Path("C:/temporary/deployment_batch_test"),
         )
-        self.assertEqual(manifest["schema_version"], 4)
+        self.assertEqual(manifest["schema_version"], 5)
         self.assertEqual(
             manifest["parameters"]["microrobot_vision_mode_requested"],
             "auto",
@@ -305,7 +499,12 @@ class BatchGenerationTests(unittest.TestCase):
                 first_controller_counts[run["controller"]] += 1
             self.assertIn("--hand-alpha", run["command"])
             self.assertIn("--hand-delay-frames", run["command"])
+            self.assertIn("--control-hz", run["command"])
+            self.assertIn("--servo-mode", run["command"])
+            self.assertIn("--servo-hz", run["command"])
             self.assertNotIn("--microrobot-vision", run["command"])
+            self.assertEqual(run["policy_freq_target_hz"], 20.0)
+            self.assertEqual(run["servo_freq_target_hz"], 125.0)
 
         self.assertEqual(first_controller_counts, Counter({"league": 20, "cv_mpc": 20}))
         for pair_runs in by_pair.values():
@@ -333,6 +532,39 @@ class BatchGenerationTests(unittest.TestCase):
         for run in manifest["runs"]:
             option_index = run["command"].index("--microrobot-vision")
             self.assertEqual(run["command"][option_index + 1], "none")
+
+    def test_legacy_manifest_resume_forces_legacy_servo_mode(self):
+        legacy = {
+            "schema_version": 4,
+            "parameters": {},
+            "runs": [{
+                "run_id": "trial001_league",
+                "command": ["python", "record_deployment_chase.py"],
+            }],
+        }
+        normalized = batch.normalize_manifest(legacy)
+        run = normalized["runs"][0]
+        self.assertEqual(run["servo_mode"], "legacy")
+        self.assertFalse(run["timing_settings_required"])
+        self.assertIn("--control-hz", run["command"])
+        option_index = run["command"].index("--servo-mode")
+        self.assertEqual(run["command"][option_index + 1], "legacy")
+        backfilled = batch.backfill_result_timing(
+            {"control_loop_rate_hz_mean": "16.4"},
+            run,
+        )
+        self.assertEqual(backfilled["servo_mode"], "legacy")
+        self.assertEqual(backfilled["policy_freq_target_hz"], 20.0)
+        self.assertEqual(backfilled["policy_loop_rate_hz_mean"], "16.4")
+
+    def test_interpolated_batch_rejects_servo_slower_than_policy(self):
+        args = self.make_args()
+        args.servo_hz = 10.0
+        with self.assertRaises(ValueError):
+            batch.build_manifest(
+                args,
+                Path("C:/temporary/deployment_batch_test"),
+            )
 
     def test_disabled_yolo_metrics_are_unavailable_not_zero(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -419,6 +651,10 @@ class BatchGenerationTests(unittest.TestCase):
             "hand_stride_cm": run["hand_stride_cm"],
             "virtual_hand_smoothing_alpha": run["virtual_hand_smoothing_alpha"],
             "virtual_hand_delay_frames": run["virtual_hand_delay_frames"],
+            "policy_freq_target_hz": run["policy_freq_target_hz"],
+            "servo_mode": run["servo_mode"],
+            "servo_freq_target_hz": run["servo_freq_target_hz"],
+            "servo_target_timeout_s": run["servo_target_timeout_s"],
             "order_in_pair": run["order_in_pair"],
             "controller": run["controller"],
         }
@@ -433,6 +669,10 @@ class BatchGenerationTests(unittest.TestCase):
             int(row["virtual_hand_delay_frames"]) + 1
         ) % 4
         self.assertFalse(batch.result_matches_run(wrong_delay, run))
+
+        wrong_servo = dict(row)
+        wrong_servo["servo_freq_target_hz"] = 100.0
+        self.assertFalse(batch.result_matches_run(wrong_servo, run))
 
 
 if __name__ == "__main__":

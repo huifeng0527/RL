@@ -36,6 +36,9 @@ from src.utils.cv_mpc_controller import ConstantVelocityMPCController
 W_ENV = 15.0
 H_ENV = 10.0
 DEFAULT_CONTROL_FREQ = 20
+DEFAULT_SERVO_FREQ = 125.0
+DEFAULT_SERVO_LOOKAHEAD = 0.1
+DEFAULT_SERVO_GAIN = 600
 RX_C, RY_C, RZ_C,Z= 0.107, 0.049, 4.747,0.113
 DEFAULT_STRIDE = 0.6
 DEFAULT_MAX_SAFE_STRIDE = 1
@@ -93,6 +96,53 @@ class VisionResult:
     processed_t_perf: float
     camera_dt_s: float | None
     camera_hz_inst: float | None
+
+
+@dataclass(frozen=True)
+class ServoTimingConfig:
+    mode: str
+    policy_hz: float
+    servo_hz: float
+    policy_period_s: float
+    servo_period_s: float
+    target_timeout_s: float
+    max_speed_cm_s: float
+    max_translation_per_tick_m: float
+    lookahead_time_s: float
+    gain: int
+
+
+@dataclass
+class ServoTarget:
+    pose: np.ndarray
+    policy_step: int
+    sequence: int
+    published_at_perf: float
+
+
+@dataclass
+class ServoSnapshot:
+    servo_dt_s: float | None = None
+    servo_loop_hz_inst: float | None = None
+    target_age_s: float | None = None
+    interpolation_phase: float = 0.0
+    command_sequence: int = 0
+    policy_step: int = -1
+    commanded_pose: np.ndarray | None = None
+    target_pose: np.ndarray | None = None
+    deadline_overrun_s: float = 0.0
+    deadline_overrun_count: int = 0
+    watchdog_stopped: bool = False
+    stop_reason: str = ""
+    period_api_available: bool = False
+
+
+class ServoLoopFailure(RuntimeError):
+    pass
+
+
+class ServoLoopSafetyStop(ServoLoopFailure):
+    pass
 
 
 class HandTracker:
@@ -266,6 +316,397 @@ class VisionThread(threading.Thread):
 
     def stop(self):
         self.running = False
+
+
+def normalize_servo_timing(
+    policy_hz,
+    servo_mode="interpolated",
+    servo_hz=DEFAULT_SERVO_FREQ,
+    target_timeout_s=None,
+    max_speed_cm_s=None,
+    max_step_cm=DEFAULT_MAX_SAFE_STRIDE,
+    lookahead_time_s=DEFAULT_SERVO_LOOKAHEAD,
+    gain=DEFAULT_SERVO_GAIN,
+):
+    policy_hz = float(policy_hz)
+    servo_hz = float(servo_hz)
+    max_step_cm = float(max_step_cm)
+    lookahead_time_s = float(lookahead_time_s)
+    gain = int(gain)
+    if servo_mode not in {"interpolated", "legacy"}:
+        raise ValueError("servo mode must be 'interpolated' or 'legacy'")
+    if policy_hz <= 0.0:
+        raise ValueError("policy frequency must be positive")
+    if servo_hz <= 0.0:
+        raise ValueError("servo frequency must be positive")
+    if servo_mode == "interpolated" and servo_hz < policy_hz:
+        raise ValueError("servo frequency must be at least the policy frequency")
+    if max_step_cm <= 0.0:
+        raise ValueError("max step must be positive")
+    if not 0.03 <= lookahead_time_s <= 0.2:
+        raise ValueError("servo lookahead must be in [0.03, 0.2] seconds")
+    if not 100 <= gain <= 2000:
+        raise ValueError("servo gain must be in [100, 2000]")
+
+    timeout = (
+        max(3.0 / policy_hz, 0.15)
+        if target_timeout_s is None
+        else float(target_timeout_s)
+    )
+    if timeout <= 0.0:
+        raise ValueError("servo target timeout must be positive")
+    speed_cm_s = (
+        max_step_cm * policy_hz
+        if max_speed_cm_s is None
+        else float(max_speed_cm_s)
+    )
+    if speed_cm_s <= 0.0:
+        raise ValueError("servo maximum speed must be positive")
+
+    effective_servo_hz = policy_hz if servo_mode == "legacy" else servo_hz
+    servo_period_s = 1.0 / effective_servo_hz
+    return ServoTimingConfig(
+        mode=servo_mode,
+        policy_hz=policy_hz,
+        servo_hz=effective_servo_hz,
+        policy_period_s=1.0 / policy_hz,
+        servo_period_s=servo_period_s,
+        target_timeout_s=timeout,
+        max_speed_cm_s=speed_cm_s,
+        max_translation_per_tick_m=(speed_cm_s / 100.0) * servo_period_s,
+        lookahead_time_s=lookahead_time_s,
+        gain=gain,
+    )
+
+
+def _as_finite_pose(pose, label="pose"):
+    pose = np.asarray(pose, dtype=np.float64)
+    if pose.shape != (6,) or not np.all(np.isfinite(pose)):
+        raise ValueError(f"{label} must be a finite 6D pose")
+    return pose
+
+
+def linear_interpolate_pose(start_pose, target_pose, phase):
+    start = _as_finite_pose(start_pose, "start pose")
+    target = _as_finite_pose(target_pose, "target pose")
+    phase = float(np.clip(phase, 0.0, 1.0))
+    return (start + phase * (target - start)).astype(np.float64)
+
+
+def limit_pose_translation_step(previous_pose, requested_pose, max_step_m):
+    previous = _as_finite_pose(previous_pose, "previous pose")
+    requested = _as_finite_pose(requested_pose, "requested pose")
+    max_step_m = float(max_step_m)
+    if max_step_m <= 0.0:
+        raise ValueError("maximum translation step must be positive")
+    delta = requested[:3] - previous[:3]
+    distance = float(np.linalg.norm(delta))
+    limited = distance > max_step_m and distance > 1e-12
+    command = requested.copy()
+    if limited:
+        command[:3] = previous[:3] + delta / distance * max_step_m
+    return command, limited
+
+
+def wait_until_high_resolution(
+    deadline,
+    clock=time.perf_counter,
+    sleeper=time.sleep,
+    spin_threshold_s=0.01,
+):
+    remaining = float(deadline) - clock()
+    if remaining > spin_threshold_s:
+        sleeper(remaining - spin_threshold_s)
+    while clock() < deadline:
+        sleeper(0)
+
+
+class InterpolatedServoThread(threading.Thread):
+    def __init__(
+        self,
+        robot_control,
+        initial_pose,
+        timing,
+        clock=time.perf_counter,
+        sleeper=time.sleep,
+    ):
+        super().__init__(daemon=True, name="interpolated-servo")
+        if timing.mode != "interpolated":
+            raise ValueError("InterpolatedServoThread requires interpolated mode")
+        initial_pose = _as_finite_pose(initial_pose, "initial servo pose")
+        now = float(clock())
+        self.robot_control = robot_control
+        self.timing = timing
+        self._clock = clock
+        self._sleeper = sleeper
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._target = ServoTarget(
+            pose=initial_pose.copy(),
+            policy_step=-1,
+            sequence=0,
+            published_at_perf=now,
+        )
+        self._snapshot = ServoSnapshot(
+            command_sequence=0,
+            policy_step=-1,
+            commanded_pose=initial_pose.copy(),
+            target_pose=initial_pose.copy(),
+            period_api_available=bool(
+                getattr(robot_control, "control_frequency_configured", False)
+                and hasattr(robot_control.rtde_c, "initPeriod")
+                and hasattr(robot_control.rtde_c, "waitPeriod")
+            ),
+        )
+        self._failure = None
+        self._requested_stop_reason = ""
+
+    @property
+    def period_api_available(self):
+        return self._snapshot.period_api_available
+
+    def publish_target(self, target_pose, policy_step, timestamp_perf=None):
+        self.raise_if_failed()
+        pose = _as_finite_pose(target_pose, "servo target")
+        timestamp = self._clock() if timestamp_perf is None else float(timestamp_perf)
+        with self._lock:
+            sequence = self._target.sequence + 1
+            self._target = ServoTarget(
+                pose=pose.copy(),
+                policy_step=int(policy_step),
+                sequence=sequence,
+                published_at_perf=timestamp,
+            )
+        return sequence
+
+    def snapshot(self):
+        with self._lock:
+            snapshot = self._snapshot
+            return ServoSnapshot(
+                servo_dt_s=snapshot.servo_dt_s,
+                servo_loop_hz_inst=snapshot.servo_loop_hz_inst,
+                target_age_s=snapshot.target_age_s,
+                interpolation_phase=snapshot.interpolation_phase,
+                command_sequence=snapshot.command_sequence,
+                policy_step=snapshot.policy_step,
+                commanded_pose=(
+                    None
+                    if snapshot.commanded_pose is None
+                    else snapshot.commanded_pose.copy()
+                ),
+                target_pose=(
+                    None
+                    if snapshot.target_pose is None
+                    else snapshot.target_pose.copy()
+                ),
+                deadline_overrun_s=snapshot.deadline_overrun_s,
+                deadline_overrun_count=snapshot.deadline_overrun_count,
+                watchdog_stopped=snapshot.watchdog_stopped,
+                stop_reason=snapshot.stop_reason,
+                period_api_available=snapshot.period_api_available,
+            )
+
+    def request_stop(self, reason="requested_stop"):
+        with self._lock:
+            if not self._requested_stop_reason:
+                self._requested_stop_reason = str(reason)
+        self._stop_event.set()
+
+    def stop_and_join(self, reason="requested_stop", timeout_s=2.0):
+        self.request_stop(reason)
+        if self.is_alive():
+            self.join(timeout=float(timeout_s))
+        if self.is_alive():
+            raise RuntimeError("Servo thread did not stop within the timeout")
+        self.raise_if_failed()
+
+    def raise_if_failed(self):
+        with self._lock:
+            failure = self._failure
+        if failure is not None:
+            if isinstance(failure, ServoLoopFailure):
+                raise failure
+            raise ServoLoopFailure(f"Servo loop failed: {failure}") from failure
+
+    def _set_failure(self, failure, stop_reason, watchdog=False):
+        with self._lock:
+            if self._failure is None:
+                self._failure = failure
+            self._snapshot.watchdog_stopped = bool(watchdog)
+            self._snapshot.stop_reason = str(stop_reason)
+        self._stop_event.set()
+
+    def _safe_stop(self):
+        try:
+            self.robot_control.servo_stop()
+        except Exception as exc:
+            with self._lock:
+                if self._failure is None:
+                    self._failure = exc
+                if not self._snapshot.stop_reason:
+                    self._snapshot.stop_reason = "servo_stop_failed"
+
+    def run(self):
+        command_pose = self._target.pose.copy()
+        segment_start_pose = command_pose.copy()
+        segment_start_perf = self._target.published_at_perf
+        active_sequence = self._target.sequence
+        last_cycle_start = None
+        next_deadline = self._clock()
+        deadline_overrun_count = 0
+        period_api = self.period_api_available
+
+        try:
+            while not self._stop_event.is_set():
+                cycle_start = self._clock()
+                servo_dt_s = (
+                    None
+                    if last_cycle_start is None
+                    else cycle_start - last_cycle_start
+                )
+                last_cycle_start = cycle_start
+                deadline_overrun_s = max(0.0, cycle_start - next_deadline)
+                if deadline_overrun_s > 1e-3:
+                    deadline_overrun_count += 1
+
+                with self._lock:
+                    target = ServoTarget(
+                        pose=self._target.pose.copy(),
+                        policy_step=self._target.policy_step,
+                        sequence=self._target.sequence,
+                        published_at_perf=self._target.published_at_perf,
+                    )
+                target_age_s = max(0.0, cycle_start - target.published_at_perf)
+                if target_age_s > self.timing.target_timeout_s:
+                    reason = (
+                        f"stale_target_{target_age_s:.3f}s_"
+                        f"over_{self.timing.target_timeout_s:.3f}s"
+                    )
+                    self._set_failure(
+                        ServoLoopSafetyStop(reason),
+                        reason,
+                        watchdog=True,
+                    )
+                    break
+
+                if target.sequence != active_sequence:
+                    segment_start_pose = command_pose.copy()
+                    segment_start_perf = target.published_at_perf
+                    active_sequence = target.sequence
+                phase = np.clip(
+                    (cycle_start - segment_start_perf)
+                    / self.timing.policy_period_s,
+                    0.0,
+                    1.0,
+                )
+                requested_pose = linear_interpolate_pose(
+                    segment_start_pose,
+                    target.pose,
+                    phase,
+                )
+                command_pose, _ = limit_pose_translation_step(
+                    command_pose,
+                    requested_pose,
+                    self.timing.max_translation_per_tick_m,
+                )
+
+                period_token = (
+                    self.robot_control.rtde_c.initPeriod()
+                    if period_api
+                    else None
+                )
+                servo_ok = self.robot_control.servo_robot(
+                    command_pose.tolist(),
+                    dt=self.timing.servo_period_s,
+                    lookahead_time=self.timing.lookahead_time_s,
+                    gain=self.timing.gain,
+                )
+                if servo_ok is False:
+                    raise RuntimeError("servoL returned failure")
+                if period_api:
+                    self.robot_control.rtde_c.waitPeriod(period_token)
+
+                with self._lock:
+                    self._snapshot = ServoSnapshot(
+                        servo_dt_s=servo_dt_s,
+                        servo_loop_hz_inst=(
+                            None
+                            if not servo_dt_s or servo_dt_s <= 1e-9
+                            else 1.0 / servo_dt_s
+                        ),
+                        target_age_s=target_age_s,
+                        interpolation_phase=float(phase),
+                        command_sequence=target.sequence,
+                        policy_step=target.policy_step,
+                        commanded_pose=command_pose.copy(),
+                        target_pose=target.pose.copy(),
+                        deadline_overrun_s=deadline_overrun_s,
+                        deadline_overrun_count=deadline_overrun_count,
+                        watchdog_stopped=False,
+                        stop_reason="",
+                        period_api_available=period_api,
+                    )
+
+                next_deadline += self.timing.servo_period_s
+                if not period_api:
+                    if self._clock() > next_deadline:
+                        next_deadline = self._clock() + self.timing.servo_period_s
+                    wait_until_high_resolution(
+                        next_deadline,
+                        clock=self._clock,
+                        sleeper=self._sleeper,
+                    )
+        except Exception as exc:
+            self._set_failure(exc, "servo_exception")
+        finally:
+            with self._lock:
+                if not self._snapshot.stop_reason:
+                    self._snapshot.stop_reason = (
+                        self._requested_stop_reason or "servo_loop_stopped"
+                    )
+            self._safe_stop()
+
+
+def build_servo_log_fields(snapshot, actual_robot_pose=None):
+    if snapshot is None:
+        return {}
+    actual_pose = (
+        None
+        if actual_robot_pose is None
+        else _as_finite_pose(actual_robot_pose, "actual Robot pose")
+    )
+    commanded = snapshot.commanded_pose
+    target = snapshot.target_pose
+    tracking_error_cm = (
+        None
+        if commanded is None or actual_pose is None
+        else float(np.linalg.norm(commanded[:3] - actual_pose[:3]) * 100.0)
+    )
+    target_error_cm = (
+        None
+        if target is None or actual_pose is None
+        else float(np.linalg.norm(target[:3] - actual_pose[:3]) * 100.0)
+    )
+    return {
+        "servo_dt_s": snapshot.servo_dt_s,
+        "servo_loop_hz_inst": snapshot.servo_loop_hz_inst,
+        "servo_target_age_s": snapshot.target_age_s,
+        "servo_interpolation_phase": snapshot.interpolation_phase,
+        "servo_command_sequence": snapshot.command_sequence,
+        "servo_policy_step": snapshot.policy_step,
+        "servo_commanded_world_x": None if commanded is None else float(commanded[0]),
+        "servo_commanded_world_y": None if commanded is None else float(commanded[1]),
+        "servo_commanded_world_z": None if commanded is None else float(commanded[2]),
+        "servo_target_world_x": None if target is None else float(target[0]),
+        "servo_target_world_y": None if target is None else float(target[1]),
+        "servo_target_world_z": None if target is None else float(target[2]),
+        "servo_tracking_error_cm": tracking_error_cm,
+        "servo_target_error_cm": target_error_cm,
+        "servo_deadline_overrun_s": snapshot.deadline_overrun_s,
+        "servo_deadline_overrun_count": snapshot.deadline_overrun_count,
+        "servo_watchdog_stopped": snapshot.watchdog_stopped,
+        "servo_stop_reason": snapshot.stop_reason,
+    }
 
 
 def infer_observation_layout(model):
@@ -511,7 +952,50 @@ def parse_args():
     parser.add_argument("--seconds", "--duration", dest="duration", type=float, default=30.0, help="Rollout duration in seconds.")
     parser.add_argument("--zpd-low", type=float, default=3.5, help=argparse.SUPPRESS)
     parser.add_argument("--zpd-high", type=float, default=5.5, help=argparse.SUPPRESS)
-    parser.add_argument("--control-hz", type=float, default=DEFAULT_CONTROL_FREQ, help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--control-hz",
+        "--policy-hz",
+        dest="control_hz",
+        type=float,
+        default=DEFAULT_CONTROL_FREQ,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--servo-mode",
+        choices=["interpolated", "legacy"],
+        default="interpolated",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--servo-hz",
+        type=float,
+        default=DEFAULT_SERVO_FREQ,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--servo-target-timeout-s",
+        type=float,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--servo-max-speed-cm-s",
+        type=float,
+        default=None,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--servo-lookahead",
+        type=float,
+        default=DEFAULT_SERVO_LOOKAHEAD,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--servo-gain",
+        type=int,
+        default=DEFAULT_SERVO_GAIN,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--stride", type=float, default=DEFAULT_STRIDE, help=argparse.SUPPRESS)
     parser.add_argument("--max-step", type=float, default=DEFAULT_MAX_SAFE_STRIDE, help=argparse.SUPPRESS)
     parser.add_argument("--robot-ip", default="192.168.1.2", help=argparse.SUPPRESS)
@@ -599,11 +1083,11 @@ def load_runtime_dependencies(load_hand_detection=True, load_yolo=True):
 
 def safe_transition_to_center(robot_control, cali, w_px, h_px, countdown):
     print("[robot] moving to workspace center")
-    robot_control.rtde_c.servoStop()
+    robot_control.servo_stop()
     center_pixel = np.array([w_px / 2, h_px / 2], dtype=np.float64)
     center_world = cali.pixel_to_world(center_pixel.astype(int))
     target_pose = [center_world[0], center_world[1], Z, RX_C, RY_C, RZ_C]
-    robot_control.rtde_c.moveL(target_pose, 0.2, 0.2, asynchronous=False)
+    robot_control.move_robot(target_pose, speed=0.2, acceleration=0.2)
     for remaining in range(int(countdown), 0, -1):
         print(f"[start] {remaining}")
         time.sleep(1)
@@ -643,7 +1127,22 @@ def controller_label(controller):
     return CONTROLLER_LABELS.get(controller, str(controller))
 
 
-def format_rollout_configuration(args, virtual_hand_stride):
+def format_rollout_configuration(args, virtual_hand_stride, servo_timing=None):
+    if servo_timing is None:
+        servo_timing = normalize_servo_timing(
+            policy_hz=args.control_hz,
+            servo_mode=getattr(args, "servo_mode", "legacy"),
+            servo_hz=getattr(args, "servo_hz", args.control_hz),
+            target_timeout_s=getattr(args, "servo_target_timeout_s", None),
+            max_speed_cm_s=getattr(args, "servo_max_speed_cm_s", None),
+            max_step_cm=args.max_step,
+            lookahead_time_s=getattr(
+                args,
+                "servo_lookahead",
+                DEFAULT_SERVO_LOOKAHEAD,
+            ),
+            gain=getattr(args, "servo_gain", DEFAULT_SERVO_GAIN),
+        )
     lines = [
         "-" * 78,
         "ROLLOUT RUNTIME CONFIGURATION",
@@ -667,8 +1166,13 @@ def format_rollout_configuration(args, virtual_hand_stride):
     lines.extend([
         (
             f"Task         : duration={float(args.duration):.1f} s  |  "
-            f"control={float(args.control_hz):.1f} Hz  |  "
+            f"policy={servo_timing.policy_hz:.1f} Hz  |  "
             f"catch={float(args.catch_distance):.2f} cm"
+        ),
+        (
+            f"Servo        : mode={servo_timing.mode}  |  "
+            f"rate={servo_timing.servo_hz:.1f} Hz  |  "
+            f"watchdog={servo_timing.target_timeout_s:.3f} s"
         ),
         f"Seed         : {int(args.seed)}",
         "-" * 78,
@@ -710,8 +1214,16 @@ def main():
         raise ValueError("--hand-delay-frames cannot be negative")
     if args.duration <= 0:
         raise ValueError("--seconds must be positive")
-    if args.control_hz <= 0:
-        raise ValueError("--control-hz must be positive")
+    servo_timing = normalize_servo_timing(
+        policy_hz=args.control_hz,
+        servo_mode=args.servo_mode,
+        servo_hz=args.servo_hz,
+        target_timeout_s=args.servo_target_timeout_s,
+        max_speed_cm_s=args.servo_max_speed_cm_s,
+        max_step_cm=args.max_step,
+        lookahead_time_s=args.servo_lookahead,
+        gain=args.servo_gain,
+    )
 
     virtual_hand_rng = np.random.default_rng(args.seed)
     virtual_hand_stride = None
@@ -738,7 +1250,14 @@ def main():
         load_yolo=microrobot_yolo_enabled,
     )
 
-    print(format_rollout_configuration(args, virtual_hand_stride), flush=True)
+    print(
+        format_rollout_configuration(
+            args,
+            virtual_hand_stride,
+            servo_timing=servo_timing,
+        ),
+        flush=True,
+    )
     print("MODEL FILES")
     if model_path is not None:
         print(f"Robot policy : {model_path}")
@@ -769,11 +1288,19 @@ def main():
     robot_control = None
     cap = None
     vision_thread = None
+    servo_thread = None
     logger = None
     done_reason = "unknown"
 
     try:
-        robot_control = URControl(args.robot_ip)
+        robot_control = URControl(
+            args.robot_ip,
+            control_frequency=(
+                servo_timing.servo_hz
+                if servo_timing.mode == "interpolated"
+                else None
+            ),
+        )
         rl_model = None
         hand_model = None
         mpc_controller = None
@@ -817,7 +1344,12 @@ def main():
             cv2.namedWindow("Deployment Chase", cv2.WINDOW_NORMAL)
 
         safe_transition_to_center(robot_control, cali, w_px, h_px, args.countdown)
-        _, _, initial_robot_env = get_robot_env_position(robot_control, cali, w_px, h_px)
+        initial_robot_pose, _, initial_robot_env = get_robot_env_position(
+            robot_control,
+            cali,
+            w_px,
+            h_px,
+        )
         virtual_hand_env = None
         virtual_hand_initial_angle = None
         if args.hand_source == "virtual":
@@ -940,7 +1472,40 @@ def main():
                 else None
             ),
             "vision_model_loaded": bool(microrobot_yolo_enabled),
-            "control_freq_target_hz": float(args.control_hz),
+            "control_freq_target_hz": servo_timing.policy_hz,
+            "policy_freq_target_hz": servo_timing.policy_hz,
+            "policy_dt_target_s": servo_timing.policy_period_s,
+            "servo_mode": servo_timing.mode,
+            "servo_freq_target_hz": servo_timing.servo_hz,
+            "servo_dt_target_s": servo_timing.servo_period_s,
+            "servo_interpolation_mode": (
+                "linear_hold" if servo_timing.mode == "interpolated" else "legacy_direct"
+            ),
+            "servo_target_timeout_s": servo_timing.target_timeout_s,
+            "servo_max_speed_cm_s": servo_timing.max_speed_cm_s,
+            "servo_max_translation_per_tick_m": (
+                servo_timing.max_translation_per_tick_m
+            ),
+            "servo_lookahead_time_s": servo_timing.lookahead_time_s,
+            "servo_gain": servo_timing.gain,
+            "servo_period_api_available": bool(
+                getattr(robot_control, "control_frequency_configured", False)
+                and hasattr(robot_control.rtde_c, "initPeriod")
+                and hasattr(robot_control.rtde_c, "waitPeriod")
+            ),
+            "servo_control_frequency_configured": bool(
+                getattr(robot_control, "control_frequency_configured", False)
+            ),
+            "rtde_control_owner": (
+                "interpolated_servo_thread_after_safe_transition"
+                if servo_timing.mode == "interpolated"
+                else "policy_loop_legacy"
+            ),
+            "virtual_hand_timing_semantics": (
+                "updated once per policy step; no servo-rate dead reckoning"
+                if args.hand_source == "virtual"
+                else None
+            ),
             "camera_index": int(args.camera),
             "camera_width_requested": int(args.camera_width),
             "camera_height_requested": int(args.camera_height),
@@ -1056,13 +1621,44 @@ def main():
         cached_microrobot_detected = False
         cached_microrobot_t_perf = None
 
+        if servo_timing.mode == "interpolated":
+            initial_servo_pose = np.array([
+                initial_robot_pose[0],
+                initial_robot_pose[1],
+                Z,
+                RX_C,
+                RY_C,
+                RZ_C,
+            ], dtype=np.float64)
+            servo_thread = InterpolatedServoThread(
+                robot_control,
+                initial_servo_pose,
+                servo_timing,
+            )
+            servo_thread.start()
+            logger.record_event(
+                "servo_thread_started",
+                policy_hz=servo_timing.policy_hz,
+                servo_hz=servo_timing.servo_hz,
+                target_timeout_s=servo_timing.target_timeout_s,
+                period_api_available=servo_thread.period_api_available,
+            )
+
         start_perf = time.perf_counter()
+        next_policy_deadline = start_perf
         last_loop_start = None
         last_status_second = -1
+        terminal_step_recorded = False
         step = 0
 
         while True:
             loop_start = time.perf_counter()
+            if servo_thread is not None:
+                servo_thread.raise_if_failed()
+            policy_deadline_overrun_s = max(
+                0.0,
+                loop_start - next_policy_deadline,
+            )
             t_task_s = loop_start - start_perf
             if t_task_s >= args.duration:
                 done_reason = "timeout"
@@ -1103,23 +1699,39 @@ def main():
             robot_boundary_clearance = workspace_clearance_env(position_robot_env)
             if not np.all(np.isfinite(position_robot_env)) or robot_boundary_clearance <= 0.0:
                 done_reason = "safety_robot_out_of_bounds"
-                robot_control.rtde_c.servoStop()
+                legacy_stop_error = None
+                if servo_thread is not None:
+                    servo_thread.request_stop(done_reason)
+                else:
+                    try:
+                        robot_control.servo_stop()
+                    except Exception as exc:
+                        legacy_stop_error = exc
                 logger.record_step({
                     "step": step,
                     "t_wall_s": time.time(),
                     "t_task_s": t_task_s,
                     "control_dt_s": control_dt_s,
                     "control_loop_hz_inst": control_hz,
+                    "policy_dt_s": control_dt_s,
+                    "policy_loop_hz_inst": control_hz,
+                    "policy_deadline_overrun_s": policy_deadline_overrun_s,
+                    "policy_deadline_overrun": policy_deadline_overrun_s > 1e-3,
                     "robot_x_cm": float(position_robot_env[0]),
                     "robot_y_cm": float(position_robot_env[1]),
                     "robot_world_x": float(robot_pose[0]),
                     "robot_world_y": float(robot_pose[1]),
                     "robot_world_z": float(robot_pose[2]),
+                    **build_servo_log_fields(
+                        servo_thread.snapshot() if servo_thread is not None else None,
+                        robot_pose,
+                    ),
                     "safety_stop": True,
                     "safety_reason": done_reason,
                     "task_finished": True,
                     "done_reason": done_reason,
                 })
+                terminal_step_recorded = True
                 logger.record_event(
                     "safety_stop",
                     t_task_s=t_task_s,
@@ -1127,6 +1739,10 @@ def main():
                     robot_position_env=position_robot_env.tolist(),
                     boundary_clearance_cm=robot_boundary_clearance,
                 )
+                if servo_thread is not None:
+                    servo_thread.stop_and_join(done_reason)
+                elif legacy_stop_error is not None:
+                    raise legacy_stop_error
                 break
 
             if args.hand_source == "camera":
@@ -1161,13 +1777,24 @@ def main():
             in_zpd = args.zpd_low <= distance_cm <= args.zpd_high
             if args.stop_on_catch and distance_cm < args.catch_distance:
                 done_reason = "caught"
-                robot_control.rtde_c.servoStop()
+                legacy_stop_error = None
+                if servo_thread is not None:
+                    servo_thread.request_stop(done_reason)
+                else:
+                    try:
+                        robot_control.servo_stop()
+                    except Exception as exc:
+                        legacy_stop_error = exc
                 logger.record_step({
                     "step": step,
                     "t_wall_s": time.time(),
                     "t_task_s": t_task_s,
                     "control_dt_s": control_dt_s,
                     "control_loop_hz_inst": control_hz,
+                    "policy_dt_s": control_dt_s,
+                    "policy_loop_hz_inst": control_hz,
+                    "policy_deadline_overrun_s": policy_deadline_overrun_s,
+                    "policy_deadline_overrun": policy_deadline_overrun_s > 1e-3,
                     "vision_frame_available": vision_frame_available,
                     "vision_frame_id": frame_id,
                     "vision_age_s": vision_age_s,
@@ -1186,11 +1813,16 @@ def main():
                     "robot_world_x": float(robot_pose[0]),
                     "robot_world_y": float(robot_pose[1]),
                     "robot_world_z": float(robot_pose[2]),
+                    **build_servo_log_fields(
+                        servo_thread.snapshot() if servo_thread is not None else None,
+                        robot_pose,
+                    ),
                     "safety_stop": False,
                     "safety_reason": "",
                     "task_finished": True,
                     "done_reason": done_reason,
                 })
+                terminal_step_recorded = True
                 logger.record_event(
                     "caught",
                     t_task_s=t_task_s,
@@ -1198,6 +1830,10 @@ def main():
                     catch_distance_cm=float(args.catch_distance),
                     distance_source="ur_rtde_tcp",
                 )
+                if servo_thread is not None:
+                    servo_thread.stop_and_join(done_reason)
+                elif legacy_stop_error is not None:
+                    raise legacy_stop_error
                 break
 
             hand_move = (
@@ -1319,8 +1955,22 @@ def main():
 
             target_position_world = cali.pixel_to_world(virtual_target_pixel.astype(int))
             target_pose = [target_position_world[0], target_position_world[1], Z, RX_C, RY_C, RZ_C]
-            safe_dt = float(np.clip(control_dt_s or (1.0 / args.control_hz), 0.01, 0.2))
-            robot_control.servo_robot(target_pose, dt=safe_dt)
+            if servo_thread is not None:
+                servo_thread.publish_target(target_pose, policy_step=step)
+            else:
+                safe_dt = float(np.clip(
+                    control_dt_s or servo_timing.policy_period_s,
+                    0.01,
+                    0.2,
+                ))
+                servo_ok = robot_control.servo_robot(
+                    target_pose,
+                    dt=safe_dt,
+                    lookahead_time=servo_timing.lookahead_time_s,
+                    gain=servo_timing.gain,
+                )
+                if servo_ok is False:
+                    raise RuntimeError("servoL returned failure")
             last_action = action.copy()
 
             if args.hand_source == "virtual":
@@ -1356,7 +2006,16 @@ def main():
             task_finished = False
             step_done_reason = ""
 
-            frame_for_log = cached_frame.copy() if cached_frame is not None else None
+            should_render_frame = bool(
+                cached_frame is not None
+                and (
+                    not args.no_display
+                    or args.save_video
+                    or vision_frame_available
+                    or step == 0
+                )
+            )
+            frame_for_log = cached_frame.copy() if should_render_frame else None
             if frame_for_log is not None:
                 cv2.circle(frame_for_log, (int(real_robot_pixel[0]), int(real_robot_pixel[1])), 16, (0, 180, 255), -1)
                 cv2.circle(frame_for_log, (int(virtual_target_pixel[0]), int(virtual_target_pixel[1])), 10, (255, 0, 255), 2)
@@ -1386,12 +2045,21 @@ def main():
                 if not args.no_display:
                     cv2.imshow("Deployment Chase", frame_for_log)
 
+            servo_snapshot = (
+                servo_thread.snapshot()
+                if servo_thread is not None
+                else None
+            )
             logger.record_step({
                 "step": step,
                 "t_wall_s": time.time(),
                 "t_task_s": t_task_s,
                 "control_dt_s": control_dt_s,
                 "control_loop_hz_inst": control_hz,
+                "policy_dt_s": control_dt_s,
+                "policy_loop_hz_inst": control_hz,
+                "policy_deadline_overrun_s": policy_deadline_overrun_s,
+                "policy_deadline_overrun": policy_deadline_overrun_s > 1e-3,
                 "vision_frame_available": vision_frame_available,
                 "vision_frame_id": frame_id,
                 "vision_age_s": vision_age_s,
@@ -1429,6 +2097,7 @@ def main():
                 "robot_world_x": float(robot_pose[0]),
                 "robot_world_y": float(robot_pose[1]),
                 "robot_world_z": float(robot_pose[2]),
+                **build_servo_log_fields(servo_snapshot, robot_pose),
                 "safety_stop": False,
                 "safety_reason": "",
                 "task_finished": task_finished,
@@ -1454,25 +2123,135 @@ def main():
                 break
 
             step += 1
-            elapsed = time.perf_counter() - loop_start
-            sleep_time = (1.0 / args.control_hz) - elapsed
-            if sleep_time > 0:
+            next_policy_deadline += servo_timing.policy_period_s
+            sleep_time = next_policy_deadline - time.perf_counter()
+            if sleep_time > 0.0:
                 time.sleep(sleep_time)
+            elif -sleep_time > servo_timing.policy_period_s:
+                next_policy_deadline = time.perf_counter()
 
         if done_reason == "unknown":
             done_reason = "timeout"
 
+    except ServoLoopFailure as exc:
+        done_reason = (
+            "safety_servo_watchdog"
+            if isinstance(exc, ServoLoopSafetyStop)
+            else "safety_servo_failure"
+        )
+        print(f"[safety] {exc}")
+        if logger is not None:
+            terminal_pose = locals().get("robot_pose")
+            terminal_row = {
+                "step": int(locals().get("step", 0)),
+                "t_wall_s": time.time(),
+                "t_task_s": float(locals().get("t_task_s", 0.0)),
+                "control_dt_s": locals().get("control_dt_s"),
+                "control_loop_hz_inst": locals().get("control_hz"),
+                "policy_dt_s": locals().get("control_dt_s"),
+                "policy_loop_hz_inst": locals().get("control_hz"),
+                "policy_deadline_overrun_s": locals().get(
+                    "policy_deadline_overrun_s",
+                    0.0,
+                ),
+                "policy_deadline_overrun": True,
+                "safety_stop": True,
+                "safety_reason": done_reason,
+                "task_finished": True,
+                "done_reason": done_reason,
+            }
+            terminal_row.update(build_servo_log_fields(
+                servo_thread.snapshot() if servo_thread is not None else None,
+                terminal_pose,
+            ))
+            terminal_robot_env = locals().get("position_robot_env")
+            if terminal_robot_env is not None:
+                terminal_row.update({
+                    "robot_x_cm": float(terminal_robot_env[0]),
+                    "robot_y_cm": float(terminal_robot_env[1]),
+                })
+            terminal_hand_env = locals().get("position_hand_env")
+            if terminal_hand_env is not None:
+                terminal_row.update({
+                    "hand_x_cm": float(terminal_hand_env[0]),
+                    "hand_y_cm": float(terminal_hand_env[1]),
+                })
+            if "distance_cm" in locals():
+                terminal_row["distance_cm"] = float(distance_cm)
+                terminal_row["in_zpd"] = bool(locals().get("in_zpd", False))
+            if (
+                terminal_pose is not None
+                and np.asarray(terminal_pose).shape == (6,)
+                and np.all(np.isfinite(terminal_pose))
+            ):
+                terminal_row.update({
+                    "robot_world_x": float(terminal_pose[0]),
+                    "robot_world_y": float(terminal_pose[1]),
+                    "robot_world_z": float(terminal_pose[2]),
+                })
+            if not locals().get("terminal_step_recorded", False):
+                logger.record_step(terminal_row)
+            logger.record_event(
+                "safety_stop",
+                reason=done_reason,
+                error=str(exc),
+            )
     except KeyboardInterrupt:
         done_reason = "keyboard_interrupt"
         print("[stop] keyboard interrupt")
     except Exception as exc:
-        done_reason = "exception"
+        if done_reason == "unknown":
+            done_reason = "exception"
         print(f"[error] {exc}")
         traceback.print_exc()
         if logger is not None:
             logger.record_event("exception", error=str(exc))
     finally:
         print("[shutdown] stopping safely")
+        servo_cleanup_error = None
+        servo_thread_alive_after_cleanup = False
+        if servo_thread is not None:
+            try:
+                servo_thread.stop_and_join(done_reason or "rollout_shutdown")
+            except Exception as exc:
+                servo_cleanup_error = exc
+                servo_thread_alive_after_cleanup = servo_thread.is_alive()
+                print(f"[shutdown] servo cleanup warning: {exc}")
+                if servo_thread_alive_after_cleanup:
+                    done_reason = "safety_servo_thread_unresponsive"
+                    print(
+                        "[shutdown] CRITICAL: servo thread is still active; "
+                        "skipping concurrent RTDE disconnect"
+                    )
+                if logger is not None:
+                    logger.record_event(
+                        "servo_cleanup_error",
+                        error=str(exc),
+                        thread_alive=servo_thread_alive_after_cleanup,
+                    )
+                    if servo_thread_alive_after_cleanup:
+                        cleanup_pose = locals().get("robot_pose")
+                        cleanup_row = {
+                            "step": int(locals().get("step", 0)) + 1,
+                            "t_wall_s": time.time(),
+                            "t_task_s": float(locals().get("t_task_s", 0.0)),
+                            "safety_stop": True,
+                            "safety_reason": done_reason,
+                            "task_finished": True,
+                            "done_reason": done_reason,
+                        }
+                        cleanup_row.update(build_servo_log_fields(
+                            servo_thread.snapshot(),
+                            cleanup_pose,
+                        ))
+                        logger.record_step(cleanup_row)
+        elif robot_control is not None:
+            try:
+                robot_control.servo_stop()
+            except Exception as exc:
+                servo_cleanup_error = exc
+                print(f"[shutdown] servo stop warning: {exc}")
+
         if logger is not None:
             summary = logger.close(done_reason=done_reason)
             tiz = summary.get("tiz_fixed_horizon_fraction")
@@ -1500,11 +2279,12 @@ def main():
         if vision_thread is not None:
             vision_thread.stop()
             vision_thread.join(timeout=2.0)
-        if robot_control is not None:
+        if robot_control is not None and not servo_thread_alive_after_cleanup:
             try:
-                robot_control.rtde_c.servoStop()
                 time.sleep(0.5)
-                robot_control.disconnect()
+                robot_control.disconnect(
+                    stop=servo_thread is None or servo_cleanup_error is not None
+                )
             except Exception:
                 pass
         if cap is not None:
