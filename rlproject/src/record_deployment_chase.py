@@ -501,8 +501,8 @@ def parse_args():
         choices=["auto", "yolo", "none"],
         default="auto",
         help=(
-            "Microrobot YOLO mode. auto disables YOLO for a virtual Hand "
-            "when display and video are both disabled."
+            "Microrobot YOLO mode. auto disables YOLO for every virtual-Hand "
+            "rollout because control and distance use UR RTDE TCP."
         ),
     )
     parser.add_argument("--out-dir", default=str(REPO_ROOT / "data" / "deployment_rollouts"), help=argparse.SUPPRESS)
@@ -545,12 +545,8 @@ def resolve_microrobot_vision_mode(args):
         )
     if requested_mode != "auto":
         return requested_mode, None
-    if (
-        args.hand_source == "virtual"
-        and args.no_display
-        and not args.save_video
-    ):
-        return "none", "virtual_hand_no_display_no_video"
+    if args.hand_source == "virtual":
+        return "none", "virtual_hand_uses_ur_rtde_tcp"
     return "yolo", None
 
 

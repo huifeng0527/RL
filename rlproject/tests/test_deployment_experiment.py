@@ -187,26 +187,27 @@ class MicrorobotVisionModeTests(unittest.TestCase):
         values.update(overrides)
         return SimpleNamespace(**values)
 
-    def test_auto_disables_yolo_for_headless_virtual_hand(self):
-        mode, reason = rollout.resolve_microrobot_vision_mode(
-            self.make_args()
-        )
-        self.assertEqual(mode, "none")
-        self.assertEqual(reason, "virtual_hand_no_display_no_video")
-
-    def test_auto_keeps_yolo_when_vision_output_or_camera_hand_needs_it(self):
+    def test_auto_disables_yolo_for_every_virtual_hand_mode(self):
         cases = [
+            {},
             {"no_display": False},
             {"save_video": True},
-            {"hand_source": "camera"},
+            {"no_display": False, "save_video": True},
         ]
         for overrides in cases:
             with self.subTest(**overrides):
                 mode, reason = rollout.resolve_microrobot_vision_mode(
                     self.make_args(**overrides)
                 )
-                self.assertEqual(mode, "yolo")
-                self.assertIsNone(reason)
+                self.assertEqual(mode, "none")
+                self.assertEqual(reason, "virtual_hand_uses_ur_rtde_tcp")
+
+    def test_auto_keeps_yolo_for_camera_hand(self):
+        mode, reason = rollout.resolve_microrobot_vision_mode(
+            self.make_args(hand_source="camera")
+        )
+        self.assertEqual(mode, "yolo")
+        self.assertIsNone(reason)
 
     def test_explicit_modes_override_auto(self):
         for requested in ("yolo", "none"):

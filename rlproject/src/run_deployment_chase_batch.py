@@ -111,7 +111,7 @@ def parse_args():
         default="auto",
         help=(
             "Microrobot YOLO mode passed to each rollout. auto disables "
-            "YOLO for headless virtual-Hand runs without saved video."
+            "YOLO for every virtual-Hand run because control uses TCP."
         ),
     )
     parser.add_argument("--batch-root", type=Path, default=DEFAULT_BATCH_ROOT)
@@ -334,8 +334,8 @@ def build_manifest(args, batch_dir):
             "no_display": args.no_display,
             "microrobot_vision_mode_requested": microrobot_vision,
             "microrobot_vision_auto_semantics": (
-                "auto disables YOLO for virtual Hand + no display + "
-                "no saved video"
+                "auto disables YOLO for every virtual-Hand rollout because "
+                "control and distance use UR RTDE TCP"
             ),
             "camera_required_for_tcp_env_mapping": True,
         },
