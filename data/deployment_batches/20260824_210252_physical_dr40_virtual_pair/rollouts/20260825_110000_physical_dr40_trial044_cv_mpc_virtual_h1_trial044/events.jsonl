@@ -1,0 +1,3 @@
+{"t_wall_s": 1787626800.25352, "event": "rollout_created"}
+{"t_wall_s": 1787626830.3110065, "event": "snapshot_saved", "step": 497, "t_task_s": 30.02375419996679, "path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_batches\\20260824_210252_physical_dr40_virtual_pair\\rollouts\\20260825_110000_physical_dr40_trial044_cv_mpc_virtual_h1_trial044\\snapshot_annotated.png"}
+{"t_wall_s": 1787626860.3458838, "event": "rollout_closed", "done_reason": "timeout", "summary_path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_batches\\20260824_210252_physical_dr40_virtual_pair\\rollouts\\20260825_110000_physical_dr40_trial044_cv_mpc_virtual_h1_trial044\\summary.json"}
