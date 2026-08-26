@@ -1,0 +1,8 @@
+{"t_wall_s": 1787744938.4536865, "event": "rollout_created"}
+{"t_wall_s": 1787744938.4815648, "event": "servo_thread_started", "policy_hz": 20.0, "servo_hz": 125.0, "target_timeout_s": 0.15, "period_api_available": true}
+{"t_wall_s": 1787744939.285776, "event": "servo_lag_warning_entered", "t_task_s": 0.8025545999407768, "step": 16, "planned_endpoint_actual_lag_cm": 3.5188381671905518, "planned_endpoint_actual_lag_excess_cm": 1.5188381671905518, "follower_lag_allowance_cm": 2.0, "lag_warning_cm": 1.5, "lag_hard_limit_cm": 3.0}
+{"t_wall_s": 1787744939.3822846, "event": "servo_lag_warning_cleared", "t_task_s": 0.9000015994533896, "step": 18, "planned_endpoint_actual_lag_cm": 3.444958448410034, "planned_endpoint_actual_lag_excess_cm": 1.4449584484100342, "follower_lag_allowance_cm": 2.0, "lag_warning_cm": 1.5, "lag_hard_limit_cm": 3.0}
+{"t_wall_s": 1787744939.5796177, "event": "safety_stop", "reason": "safety_servo_watchdog", "error": "stale_target_0.152s_over_0.150s"}
+{"t_wall_s": 1787744939.5796177, "event": "servo_cleanup_error", "error": "stale_target_0.152s_over_0.150s", "thread_alive": false}
+{"t_wall_s": 1787744939.6014462, "event": "snapshot_saved", "step": 17, "t_task_s": "", "path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_batches\\20260826_184252_physical_dr40_virtual_pair\\rollouts\\20260826_194858_physical_dr40_trial028_league_virtual_h1_trial028\\snapshot_annotated.png"}
+{"t_wall_s": 1787744939.6095815, "event": "rollout_closed", "done_reason": "safety_servo_watchdog", "summary_path": "C:\\Users\\admin\\Desktop\\huifeng\\RL\\data\\deployment_batches\\20260826_184252_physical_dr40_virtual_pair\\rollouts\\20260826_194858_physical_dr40_trial028_league_virtual_h1_trial028\\summary.json"}
