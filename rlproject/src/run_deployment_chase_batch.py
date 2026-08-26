@@ -146,8 +146,8 @@ def parse_args():
         default=DEFAULT_BATCH_SEED,
         help="Seed for alpha sampling and balanced delay randomization.",
     )
-    parser.add_argument("--seconds", type=float, default=60.0)
-    parser.add_argument("--stride", type=float, default=0.6)
+    parser.add_argument("--seconds", type=float, default=20)
+    parser.add_argument("--stride", type=float, default=0.5)
     parser.add_argument("--max-step", type=float, default=1)
     parser.add_argument("--catch-distance", type=float, default=1.5)
     parser.add_argument(

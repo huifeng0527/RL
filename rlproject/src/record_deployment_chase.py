@@ -51,7 +51,7 @@ SERVO_STARTUP_GRACE_S = 2.0
 # measurement, so an isolated rejection recovers inside one policy period; only
 # an unbroken streak means the arm has genuinely stopped following commands.
 SERVO_CONSECUTIVE_REJECT_LIMIT = 5
-RX_C, RY_C, RZ_C,Z= 0.107, 0.049, 4.747,0.113
+RX_C, RY_C, RZ_C,Z= 0.146, 0.039, 5.054,0.113
 DEFAULT_STRIDE = 0.6
 DEFAULT_MAX_SAFE_STRIDE = 1
 WORKSPACE_MARGIN = 0.3
