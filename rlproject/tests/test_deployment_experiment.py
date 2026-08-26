@@ -125,6 +125,34 @@ class ServoInterpolationTests(unittest.TestCase):
         self.assertAlmostEqual(np.linalg.norm(command[:3]), 0.01)
         np.testing.assert_allclose(command[3:], requested[3:])
 
+    def test_overlay_separates_actual_command_and_future_endpoint(self):
+        class FakeCalibration:
+            @staticmethod
+            def world_to_pixel(world):
+                return np.asarray(world, dtype=float) * 100.0
+
+        snapshot = rollout.ServoSnapshot(
+            commanded_pose=np.array([0.20, 0.30, 0.0, 0.0, 0.0, 0.0]),
+        )
+        pixels = rollout.resolve_control_overlay_pixels(
+            actual_robot_pixel=np.array([10.0, 20.0]),
+            policy_endpoint_pixel=np.array([70.0, 80.0]),
+            servo_snapshot=snapshot,
+            cali=FakeCalibration(),
+        )
+        self.assertEqual(pixels["actual"], (10, 20))
+        self.assertEqual(pixels["servo_command"], (20, 30))
+        self.assertEqual(pixels["policy_endpoint"], (70, 80))
+        self.assertEqual(len(set(pixels.values())), 3)
+
+        without_command = rollout.resolve_control_overlay_pixels(
+            np.array([10.0, 20.0]),
+            np.array([70.0, 80.0]),
+            None,
+            FakeCalibration(),
+        )
+        self.assertIsNone(without_command["servo_command"])
+
     def test_default_timing_separates_policy_and_servo_rates(self):
         timing = rollout.normalize_servo_timing(
             policy_hz=20.0,
@@ -135,6 +163,7 @@ class ServoInterpolationTests(unittest.TestCase):
         self.assertEqual(timing.trajectory_mode, rollout.SERVO_TRAJECTORY_MODE)
         self.assertEqual(timing.policy_hz, 20.0)
         self.assertEqual(timing.servo_hz, 125.0)
+        self.assertAlmostEqual(timing.lookahead_time_s, 0.05)
         self.assertAlmostEqual(timing.target_timeout_s, 0.15)
         self.assertGreaterEqual(timing.startup_grace_s, timing.target_timeout_s)
         self.assertLess(timing.lag_warning_cm, timing.lag_hard_limit_cm)
@@ -291,6 +320,31 @@ class ServoInterpolationTests(unittest.TestCase):
             timing.policy_period_s,
             places=9,
         )
+
+    def test_publish_uses_scheduled_policy_timestamp(self):
+        robot = self.FakeRobotControl()
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_hz=125.0,
+            target_timeout_s=1.0,
+        )
+        thread = rollout.InterpolatedServoThread(
+            robot,
+            initial_pose=np.zeros(6, dtype=float),
+            timing=timing,
+            clock=lambda: 99.900,
+        )
+        # The logical policy interval began at 100.000. Passing that timestamp
+        # keeps its endpoint due at 100.050 rather than shifting it to the later
+        # wall-clock publish time.
+        thread.publish_segment(
+            np.array([0.01, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            policy_step=0,
+            timestamp_perf=100.000,
+        )
+        segment = list(thread._segments)[-1]
+        self.assertAlmostEqual(segment.start_perf, 100.000)
+        self.assertAlmostEqual(segment.end_perf, 100.050)
 
     def test_segment_phase_is_clamped_to_its_own_window(self):
         segment = rollout.ServoSegment(
@@ -497,6 +551,97 @@ class ServoInterpolationTests(unittest.TestCase):
         ):
             thread.raise_if_failed()
         self.assertEqual(robot.stop_count, 1)
+
+
+class CvMpcDeploymentTests(unittest.TestCase):
+    @staticmethod
+    def make_state(**overrides):
+        values = {
+            "steps": 0,
+            "robot_position": np.array([4.0, 4.0], dtype=np.float32),
+            "hand_position": np.array([8.0, 8.0], dtype=np.float32),
+            "last_robot_action": np.zeros(2, dtype=np.float32),
+            "stride_robot": 1.0,
+            "margin": 0.5,
+            "env_width": 20.0,
+            "env_height": 20.0,
+            "zpd_min": 3.5,
+            "zpd_max": 5.5,
+            "reward_step": 0.2,
+            "distance_threshold_collision": 1.0,
+        }
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    def test_deployment_planning_state_uses_command_frame_and_command_move(self):
+        command_position, previous_command_move = rollout.resolve_mpc_planning_state(
+            measured_robot_env=np.array([1.0, 2.0]),
+            planned_anchor_env=np.array([4.0, 5.0]),
+            measured_robot_move=np.array([0.1, 0.2]),
+            previous_planned_delta_env=np.array([0.6, 0.0]),
+            anchor_on_planned_frame=True,
+            lag_over_hard_limit=False,
+        )
+        np.testing.assert_allclose(command_position, [4.0, 5.0])
+        np.testing.assert_allclose(previous_command_move, [0.6, 0.0])
+
+        resynced_position, resynced_move = rollout.resolve_mpc_planning_state(
+            measured_robot_env=np.array([1.0, 2.0]),
+            planned_anchor_env=np.array([4.0, 5.0]),
+            measured_robot_move=np.array([0.1, 0.2]),
+            previous_planned_delta_env=np.array([0.6, 0.0]),
+            anchor_on_planned_frame=True,
+            lag_over_hard_limit=True,
+        )
+        np.testing.assert_allclose(resynced_position, [1.0, 2.0])
+        np.testing.assert_allclose(resynced_move, [0.1, 0.2])
+
+    def test_dual_state_mpc_advances_command_and_predicts_actual_follower(self):
+        controller = rollout.ConstantVelocityMPCController(
+            horizon=2,
+            velocity_window=1,
+            action_grid=[1.0],
+        )
+        state = self.make_state(
+            robot_position=np.array([4.0, 4.0], dtype=np.float32),
+            command_robot_position=np.array([4.0, 4.0], dtype=np.float32),
+            actual_robot_position=np.array([0.0, 0.0], dtype=np.float32),
+            command_tracking_alpha=0.5,
+        )
+        action = controller.predict(state)
+        np.testing.assert_allclose(action, [1.0, 1.0])
+        diagnostics = controller.last_plan_diagnostics
+        self.assertEqual(diagnostics["robot_prediction_mode"], "dual_command_actual")
+        np.testing.assert_allclose(
+            diagnostics["predicted_first_command_position"],
+            [5.0, 5.0],
+        )
+        np.testing.assert_allclose(
+            diagnostics["predicted_first_actual_position"],
+            [2.5, 2.5],
+        )
+        self.assertAlmostEqual(diagnostics["command_tracking_alpha"], 0.5)
+
+    def test_single_state_mpc_preserves_original_transition(self):
+        controller = rollout.ConstantVelocityMPCController(
+            horizon=2,
+            velocity_window=1,
+            action_grid=[1.0],
+        )
+        state = self.make_state(
+            robot_position=np.array([4.0, 4.0], dtype=np.float32),
+        )
+        controller.predict(state)
+        diagnostics = controller.last_plan_diagnostics
+        self.assertEqual(diagnostics["robot_prediction_mode"], "single_state")
+        np.testing.assert_allclose(
+            diagnostics["predicted_first_command_position"],
+            [5.0, 5.0],
+        )
+        np.testing.assert_allclose(
+            diagnostics["predicted_first_actual_position"],
+            [5.0, 5.0],
+        )
 
 
 class FixedHorizonTizTests(unittest.TestCase):
@@ -741,6 +886,7 @@ class BatchGenerationTests(unittest.TestCase):
             policy_hz=20.0,
             servo_mode="interpolated",
             servo_hz=125.0,
+            servo_lookahead=0.05,
             servo_target_timeout_s=0.15,
             inter_run_delay=3.0,
             save_video=False,
@@ -753,7 +899,7 @@ class BatchGenerationTests(unittest.TestCase):
             self.make_args(),
             Path("C:/temporary/deployment_batch_test"),
         )
-        self.assertEqual(manifest["schema_version"], 5)
+        self.assertEqual(manifest["schema_version"], 7)
         self.assertEqual(
             manifest["parameters"]["microrobot_vision_mode_requested"],
             "auto",
@@ -783,9 +929,11 @@ class BatchGenerationTests(unittest.TestCase):
             self.assertIn("--control-hz", run["command"])
             self.assertIn("--servo-mode", run["command"])
             self.assertIn("--servo-hz", run["command"])
+            self.assertIn("--servo-lookahead", run["command"])
             self.assertNotIn("--microrobot-vision", run["command"])
             self.assertEqual(run["policy_freq_target_hz"], 20.0)
             self.assertEqual(run["servo_freq_target_hz"], 125.0)
+            self.assertEqual(run["servo_lookahead_time_s"], 0.05)
 
         self.assertEqual(first_controller_counts, Counter({"league": 20, "cv_mpc": 20}))
         for pair_runs in by_pair.values():
@@ -798,6 +946,28 @@ class BatchGenerationTests(unittest.TestCase):
                 "virtual_hand_delay_frames",
             ):
                 self.assertEqual(pair_runs[0][field], pair_runs[1][field])
+
+    def test_schema_six_resume_preserves_legacy_lookahead(self):
+        manifest = batch.build_manifest(
+            self.make_args(),
+            Path("C:/temporary/deployment_batch_test"),
+        )
+        manifest["schema_version"] = 6
+        manifest["parameters"].pop("servo_lookahead_time_s", None)
+        for run in manifest["runs"]:
+            run.pop("servo_lookahead_time_s", None)
+            option_index = run["command"].index("--servo-lookahead")
+            del run["command"][option_index:option_index + 2]
+
+        normalized = batch.normalize_manifest(manifest)
+        self.assertEqual(
+            normalized["parameters"]["servo_lookahead_time_s"],
+            0.10,
+        )
+        for run in normalized["runs"]:
+            self.assertEqual(run["servo_lookahead_time_s"], 0.10)
+            option_index = run["command"].index("--servo-lookahead")
+            self.assertEqual(float(run["command"][option_index + 1]), 0.10)
 
     def test_explicit_microrobot_vision_override_is_passed_to_children(self):
         args = self.make_args()
@@ -936,6 +1106,11 @@ class BatchGenerationTests(unittest.TestCase):
             "servo_mode": run["servo_mode"],
             "servo_freq_target_hz": run["servo_freq_target_hz"],
             "servo_target_timeout_s": run["servo_target_timeout_s"],
+            "servo_lookahead_time_s": run["servo_lookahead_time_s"],
+            "servo_interpolation_mode": run["servo_interpolation_mode"],
+            "servo_trajectory_mode": run["servo_trajectory_mode"],
+            "servo_lag_warning_cm": run["servo_lag_warning_cm"],
+            "servo_lag_hard_limit_cm": run["servo_lag_hard_limit_cm"],
             "order_in_pair": run["order_in_pair"],
             "controller": run["controller"],
         }
@@ -954,6 +1129,10 @@ class BatchGenerationTests(unittest.TestCase):
         wrong_servo = dict(row)
         wrong_servo["servo_freq_target_hz"] = 100.0
         self.assertFalse(batch.result_matches_run(wrong_servo, run))
+
+        wrong_lookahead = dict(row)
+        wrong_lookahead["servo_lookahead_time_s"] = 0.10
+        self.assertFalse(batch.result_matches_run(wrong_lookahead, run))
 
 
 if __name__ == "__main__":

@@ -37,7 +37,7 @@ W_ENV = 15.0
 H_ENV = 10.0
 DEFAULT_CONTROL_FREQ = 20
 DEFAULT_SERVO_FREQ = 125.0
-DEFAULT_SERVO_LOOKAHEAD = 0.1
+DEFAULT_SERVO_LOOKAHEAD = 0.05
 DEFAULT_SERVO_GAIN = 600
 DEFAULT_SERVO_LAG_WARNING_CM = 1.5
 DEFAULT_SERVO_LAG_HARD_LIMIT_CM = 3.0
@@ -1156,6 +1156,35 @@ def build_virtual_hand_log_fields(diagnostics, stride_hand, inference_ms):
     }
 
 
+def build_mpc_log_fields(diagnostics):
+    if diagnostics is None:
+        return {}
+    first_command = np.asarray(
+        diagnostics.get("predicted_first_command_position", [np.nan, np.nan]),
+        dtype=np.float64,
+    )
+    first_actual = np.asarray(
+        diagnostics.get("predicted_first_actual_position", [np.nan, np.nan]),
+        dtype=np.float64,
+    )
+    hand_velocity = np.asarray(
+        diagnostics.get("hand_velocity", [np.nan, np.nan]),
+        dtype=np.float64,
+    )
+    return {
+        "mpc_prediction_mode": diagnostics.get("robot_prediction_mode"),
+        "mpc_tracking_alpha": diagnostics.get("command_tracking_alpha"),
+        "mpc_command_actual_lag_cm": diagnostics.get("command_actual_lag_cm"),
+        "mpc_predicted_first_command_x_cm": float(first_command[0]),
+        "mpc_predicted_first_command_y_cm": float(first_command[1]),
+        "mpc_predicted_first_actual_x_cm": float(first_actual[0]),
+        "mpc_predicted_first_actual_y_cm": float(first_actual[1]),
+        "mpc_predicted_min_hand_distance_cm": diagnostics.get("min_hand_distance"),
+        "mpc_hand_velocity_x_cm_step": float(hand_velocity[0]),
+        "mpc_hand_velocity_y_cm_step": float(hand_velocity[1]),
+    }
+
+
 def sample_virtual_hand_start(robot_position, zpd_low, zpd_high, rng, margin=WORKSPACE_MARGIN):
     robot_position = np.asarray(robot_position, dtype=np.float32)
     initial_distance = 0.5 * (float(zpd_low) + float(zpd_high))
@@ -1369,6 +1398,38 @@ def get_robot_env_position(robot_control, cali, w_px, h_px):
     return pose, real_robot_pixel, position_robot_env
 
 
+def resolve_control_overlay_pixels(
+    actual_robot_pixel,
+    policy_endpoint_pixel,
+    servo_snapshot,
+    cali,
+):
+    """Return same-frame pixels for actual TCP, servo command and endpoint."""
+    actual = np.asarray(actual_robot_pixel, dtype=np.float64).reshape(-1)
+    endpoint = np.asarray(policy_endpoint_pixel, dtype=np.float64).reshape(-1)
+    if actual.size < 2 or not np.all(np.isfinite(actual[:2])):
+        raise ValueError("actual Robot pixel must contain two finite coordinates")
+    if endpoint.size < 2 or not np.all(np.isfinite(endpoint[:2])):
+        raise ValueError("policy endpoint pixel must contain two finite coordinates")
+
+    command_pixel = None
+    if servo_snapshot is not None and servo_snapshot.commanded_pose is not None:
+        commanded_pose = np.asarray(servo_snapshot.commanded_pose, dtype=np.float64)
+        if commanded_pose.shape == (6,) and np.all(np.isfinite(commanded_pose[:2])):
+            projected = np.asarray(
+                cali.world_to_pixel(commanded_pose[:2]),
+                dtype=np.float64,
+            ).reshape(-1)
+            if projected.size >= 2 and np.all(np.isfinite(projected[:2])):
+                command_pixel = tuple(np.rint(projected[:2]).astype(int))
+
+    return {
+        "actual": tuple(np.rint(actual[:2]).astype(int)),
+        "servo_command": command_pixel,
+        "policy_endpoint": tuple(np.rint(endpoint[:2]).astype(int)),
+    }
+
+
 def limit_vector_norm(vector, max_norm):
     vector = np.asarray(vector, dtype=np.float32)
     norm = float(np.linalg.norm(vector))
@@ -1446,6 +1507,7 @@ def format_rollout_configuration(args, virtual_hand_stride, servo_timing=None):
         (
             f"Servo        : mode={servo_timing.mode}  |  "
             f"rate={servo_timing.servo_hz:.1f} Hz  |  "
+            f"lookahead={servo_timing.lookahead_time_s:.3f} s  |  "
             f"watchdog={servo_timing.target_timeout_s:.3f} s"
         ),
         (
@@ -1461,6 +1523,34 @@ def format_rollout_configuration(args, virtual_hand_stride, servo_timing=None):
         "-" * 78,
     ])
     return "\n".join(lines)
+
+
+def resolve_mpc_planning_state(
+    measured_robot_env,
+    planned_anchor_env,
+    measured_robot_move,
+    previous_planned_delta_env,
+    anchor_on_planned_frame,
+    lag_over_hard_limit,
+):
+    """Choose MPC command-frame position and previous command increment."""
+    measured_position = np.asarray(measured_robot_env, dtype=np.float32)
+    planned_position = np.asarray(planned_anchor_env, dtype=np.float32)
+    measured_move = np.asarray(measured_robot_move, dtype=np.float32)
+    use_planned_frame = bool(
+        anchor_on_planned_frame and not lag_over_hard_limit
+    )
+    command_position = (
+        planned_position.copy() if use_planned_frame else measured_position.copy()
+    )
+    if use_planned_frame and previous_planned_delta_env is not None:
+        previous_command_move = np.asarray(
+            previous_planned_delta_env,
+            dtype=np.float32,
+        ).copy()
+    else:
+        previous_command_move = measured_move.copy()
+    return command_position, previous_command_move
 
 
 def resolve_common_target_env(
@@ -1689,9 +1779,31 @@ def main():
             "policy_path": str(model_path) if model_path is not None else None,
             "cv_mpc_config": CV_MPC_CONFIG if args.controller == "cv_mpc" else None,
             "cv_mpc_observation_inputs": (
-                "current absolute Robot/Hand positions, workspace boundaries, "
-                "previous measured Robot move, and completed observed Hand moves "
-                "from the shared 8-channel interaction history"
+                "planned command-frame Robot position, measured actual TCP, "
+                "current Hand position, previous planned Robot command, workspace "
+                "boundaries, and completed observed Hand moves from the shared "
+                "8-channel interaction history"
+                if args.controller == "cv_mpc"
+                else None
+            ),
+            "cv_mpc_robot_prediction_mode": (
+                "dual_command_actual_first_order_follower"
+                if args.controller == "cv_mpc"
+                else None
+            ),
+            "cv_mpc_command_tracking_alpha": (
+                float(
+                    servo_timing.policy_period_s
+                    / (
+                        servo_timing.policy_period_s
+                        + servo_timing.lookahead_time_s
+                    )
+                )
+                if args.controller == "cv_mpc"
+                else None
+            ),
+            "cv_mpc_command_boundary_margin_cm": (
+                float(WORKSPACE_MARGIN + COMMON_SAFETY_GUARD)
                 if args.controller == "cv_mpc"
                 else None
             ),
@@ -1931,10 +2043,20 @@ def main():
         mpc_state = SimpleNamespace(
             steps=0,
             robot_position=np.zeros(2, dtype=np.float32),
+            command_robot_position=np.zeros(2, dtype=np.float32),
+            actual_robot_position=np.zeros(2, dtype=np.float32),
             hand_position=np.zeros(2, dtype=np.float32),
             last_robot_action=np.zeros(2, dtype=np.float32),
+            last_actual_robot_move=np.zeros(2, dtype=np.float32),
+            command_tracking_alpha=float(
+                servo_timing.policy_period_s
+                / (
+                    servo_timing.policy_period_s
+                    + servo_timing.lookahead_time_s
+                )
+            ),
             stride_robot=float(args.stride),
-            margin=0.3,
+            margin=WORKSPACE_MARGIN + COMMON_SAFETY_GUARD,
             env_width=W_ENV,
             env_height=H_ENV,
             zpd_min=float(args.zpd_low),
@@ -2009,6 +2131,19 @@ def main():
             policy_deadline_overrun_s = max(
                 0.0,
                 loop_start - next_policy_deadline,
+            )
+            policy_schedule_resynced = bool(
+                policy_deadline_overrun_s > servo_timing.policy_period_s
+            )
+            if policy_schedule_resynced:
+                # Never backdate a new segment by more than one full policy
+                # period. At that point its endpoint deadline is already gone,
+                # so restart the schedule from the actual loop start and retain
+                # the overrun value as a diagnostic.
+                next_policy_deadline = loop_start
+            policy_step_start_perf = next_policy_deadline
+            policy_endpoint_deadline_perf = (
+                policy_step_start_perf + servo_timing.policy_period_s
             )
             t_task_s = loop_start - start_perf
             if t_task_s >= args.duration:
@@ -2278,6 +2413,7 @@ def main():
                 )
 
             previous_action = last_action.copy()
+            mpc_diagnostics = None
             inference_start = time.perf_counter()
             if args.controller == "league":
                 robot_obs = position_robot_env
@@ -2304,15 +2440,33 @@ def main():
                     raise RuntimeError(f"Built observation has {obs_array.shape[0]} dims, expected {expected_obs_dim}")
                 action, _ = rl_model.predict(obs_array, deterministic=True)
             else:
+                # MPC must integrate candidate actions from the same command
+                # frame used by resolve_common_target_env(). Its reward and
+                # collision model still use a separately predicted actual TCP.
+                (
+                    mpc_command_robot_env,
+                    mpc_previous_command_move,
+                ) = resolve_mpc_planning_state(
+                    position_robot_env,
+                    planned_anchor_env,
+                    robot_move,
+                    prev_planned_delta_env,
+                    anchor_on_planned_frame,
+                    lag_over_hard_limit,
+                )
                 mpc_state.steps = step
-                mpc_state.robot_position = position_robot_env.copy()
+                mpc_state.robot_position = mpc_command_robot_env.copy()
+                mpc_state.command_robot_position = mpc_command_robot_env.copy()
+                mpc_state.actual_robot_position = position_robot_env.copy()
                 mpc_state.hand_position = position_hand_env.copy()
-                mpc_state.last_robot_action = robot_move.copy()
+                mpc_state.last_robot_action = mpc_previous_command_move.copy()
+                mpc_state.last_actual_robot_move = robot_move.copy()
                 action = mpc_controller.predict(
                     mpc_state,
                     interaction_history=interaction_history_buffer,
                     completed_steps=step,
                 )
+                mpc_diagnostics = dict(mpc_controller.last_plan_diagnostics)
             policy_inference_ms = (time.perf_counter() - inference_start) * 1000.0
 
             next_virtual_hand_move = None
@@ -2390,11 +2544,23 @@ def main():
 
             target_position_world = cali.pixel_to_world(virtual_target_pixel.astype(int))
             target_pose = [target_position_world[0], target_position_world[1], Z, RX_C, RY_C, RZ_C]
+            servo_publish_perf = None
+            servo_publish_latency_ms = None
+            servo_endpoint_lateness_s = None
             if servo_thread is not None:
                 if servo_publish_accepted:
+                    servo_publish_perf = time.perf_counter()
+                    servo_publish_latency_ms = 1000.0 * (
+                        servo_publish_perf - policy_step_start_perf
+                    )
+                    servo_endpoint_lateness_s = max(
+                        0.0,
+                        servo_publish_perf - policy_endpoint_deadline_perf,
+                    )
                     _, _, publish_reject_reason = servo_thread.publish_segment(
                         target_pose,
                         policy_step=step,
+                        timestamp_perf=policy_step_start_perf,
                     )
                     if publish_reject_reason:
                         servo_publish_accepted = False
@@ -2432,6 +2598,14 @@ def main():
                             "control_loop_hz_inst": control_hz,
                             "policy_dt_s": control_dt_s,
                             "policy_loop_hz_inst": control_hz,
+                            "policy_deadline_overrun_s": policy_deadline_overrun_s,
+                            "policy_deadline_overrun": policy_deadline_overrun_s > 1e-3,
+                            "policy_schedule_resynced": policy_schedule_resynced,
+                            "policy_step_start_perf": policy_step_start_perf,
+                            "servo_publish_perf": servo_publish_perf,
+                            "servo_publish_latency_ms": servo_publish_latency_ms,
+                            "servo_endpoint_deadline_perf": policy_endpoint_deadline_perf,
+                            "servo_endpoint_lateness_s": servo_endpoint_lateness_s,
                             "hand_x_cm": float(position_hand_env[0]),
                             "hand_y_cm": float(position_hand_env[1]),
                             "robot_x_cm": float(position_robot_env[0]),
@@ -2472,6 +2646,14 @@ def main():
                         servo_thread.stop_and_join(done_reason)
                         break
             else:
+                servo_publish_perf = time.perf_counter()
+                servo_publish_latency_ms = 1000.0 * (
+                    servo_publish_perf - policy_step_start_perf
+                )
+                servo_endpoint_lateness_s = max(
+                    0.0,
+                    servo_publish_perf - policy_endpoint_deadline_perf,
+                )
                 safe_dt = float(np.clip(
                     control_dt_s or servo_timing.policy_period_s,
                     0.01,
@@ -2521,6 +2703,14 @@ def main():
             task_finished = False
             step_done_reason = ""
 
+            # One snapshot drives both the overlay and this step's log row, so
+            # the displayed servo command has exactly the same semantics as the
+            # recorded tracking-error fields.
+            servo_snapshot = (
+                servo_thread.snapshot()
+                if servo_thread is not None
+                else None
+            )
             should_render_frame = bool(
                 cached_frame is not None
                 and (
@@ -2532,8 +2722,81 @@ def main():
             )
             frame_for_log = cached_frame.copy() if should_render_frame else None
             if frame_for_log is not None:
-                cv2.circle(frame_for_log, (int(real_robot_pixel[0]), int(real_robot_pixel[1])), 16, (0, 180, 255), -1)
-                cv2.circle(frame_for_log, (int(virtual_target_pixel[0]), int(virtual_target_pixel[1])), 10, (255, 0, 255), 2)
+                overlay_pixels = resolve_control_overlay_pixels(
+                    real_robot_pixel,
+                    virtual_target_pixel,
+                    servo_snapshot,
+                    cali,
+                )
+                actual_pixel = overlay_pixels["actual"]
+                command_pixel = overlay_pixels["servo_command"]
+                endpoint_pixel = overlay_pixels["policy_endpoint"]
+                if command_pixel is not None:
+                    cv2.line(
+                        frame_for_log,
+                        actual_pixel,
+                        command_pixel,
+                        (60, 255, 60),
+                        2,
+                    )
+                    cv2.line(
+                        frame_for_log,
+                        command_pixel,
+                        endpoint_pixel,
+                        (255, 0, 255),
+                        1,
+                    )
+                cv2.circle(frame_for_log, actual_pixel, 16, (0, 180, 255), -1)
+                if command_pixel is not None:
+                    cv2.circle(frame_for_log, command_pixel, 12, (60, 255, 60), 3)
+                    cv2.drawMarker(
+                        frame_for_log,
+                        command_pixel,
+                        (60, 255, 60),
+                        markerType=cv2.MARKER_CROSS,
+                        markerSize=22,
+                        thickness=2,
+                    )
+                cv2.circle(frame_for_log, endpoint_pixel, 10, (255, 0, 255), 2)
+
+                legend_x = max(20, frame_for_log.shape[1] - 410)
+                legend_rows = (
+                    ("Actual TCP", (0, 180, 255)),
+                    ("Current servo command", (60, 255, 60)),
+                    ("Next policy endpoint", (255, 0, 255)),
+                )
+                for legend_index, (legend_text, legend_color) in enumerate(legend_rows):
+                    legend_y = 35 + 30 * legend_index
+                    cv2.circle(
+                        frame_for_log,
+                        (legend_x, legend_y - 6),
+                        7,
+                        legend_color,
+                        -1 if legend_index == 0 else 2,
+                    )
+                    cv2.putText(
+                        frame_for_log,
+                        legend_text,
+                        (legend_x + 16, legend_y),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.65,
+                        legend_color,
+                        2,
+                    )
+                if command_pixel is not None and servo_snapshot.commanded_pose is not None:
+                    command_error_cm = 100.0 * float(np.linalg.norm(
+                        np.asarray(servo_snapshot.commanded_pose[:2], dtype=np.float64)
+                        - np.asarray(robot_pose[:2], dtype=np.float64)
+                    ))
+                    cv2.putText(
+                        frame_for_log,
+                        f"actual-cmd={command_error_cm:.2f} cm",
+                        (legend_x, 130),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.65,
+                        (60, 255, 60),
+                        2,
+                    )
                 if args.hand_source == "virtual":
                     virtual_hand_pixel = np.array([
                         position_hand_env[0] * w_px / W_ENV,
@@ -2559,12 +2822,6 @@ def main():
                 logger.write_frame(frame_for_log, fps=args.control_hz)
                 if not args.no_display:
                     cv2.imshow("Deployment Chase", frame_for_log)
-
-            servo_snapshot = (
-                servo_thread.snapshot()
-                if servo_thread is not None
-                else None
-            )
             logger.record_step({
                 "step": step,
                 "t_wall_s": time.time(),
@@ -2575,6 +2832,12 @@ def main():
                 "policy_loop_hz_inst": control_hz,
                 "policy_deadline_overrun_s": policy_deadline_overrun_s,
                 "policy_deadline_overrun": policy_deadline_overrun_s > 1e-3,
+                "policy_schedule_resynced": policy_schedule_resynced,
+                "policy_step_start_perf": policy_step_start_perf,
+                "servo_publish_perf": servo_publish_perf,
+                "servo_publish_latency_ms": servo_publish_latency_ms,
+                "servo_endpoint_deadline_perf": policy_endpoint_deadline_perf,
+                "servo_endpoint_lateness_s": servo_endpoint_lateness_s,
                 "vision_frame_available": vision_frame_available,
                 "vision_frame_id": frame_id,
                 "vision_age_s": vision_age_s,
@@ -2597,6 +2860,7 @@ def main():
                     virtual_hand_stride,
                     virtual_hand_policy_inference_ms,
                 ),
+                **build_mpc_log_fields(mpc_diagnostics),
                 "policy_inference_ms": policy_inference_ms,
                 "action_x": float(action[0]),
                 "action_y": float(action[1]),
@@ -2833,12 +3097,23 @@ def main():
                 f"of each planned step  |  "
                 f"publish rejects={summary.get('servo_publish_rejected_count')}"
             )
-            if excess_p95 is not None and float(excess_p95) > servo_timing.lag_warning_cm:
+            publish_latency_p95 = summary.get("servo_publish_latency_ms_p95")
+            endpoint_late_count = summary.get("servo_endpoint_late_count")
+            print(
+                f"Publish timing: "
+                f"p95={f'{float(publish_latency_p95):.1f}' if publish_latency_p95 is not None else 'N/A'} ms  |  "
+                f"late endpoints={endpoint_late_count}"
+            )
+            if (
+                excess_p95 is not None
+                and float(excess_p95) > servo_timing.lag_warning_cm
+                and servo_timing.lookahead_time_s > 0.03
+            ):
                 print(
                     "[hint] The arm trails the committed frame by more than the "
                     f"{servo_timing.follower_lag_allowance_cm:.2f} cm follower "
-                    "allowance on most steps. Re-run with --servo-lookahead 0.05 "
-                    "to tighten the servo follower."
+                    "allowance on most steps. Try --servo-lookahead 0.03 in a "
+                    "short hardware smoke test before changing gain."
                 )
             print(f"Summary file : {logger.rollout_dir / 'summary.json'}")
             print("-" * 78, flush=True)

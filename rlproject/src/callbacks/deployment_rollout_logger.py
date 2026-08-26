@@ -25,6 +25,12 @@ FIELDNAMES = [
     "policy_loop_hz_inst",
     "policy_deadline_overrun_s",
     "policy_deadline_overrun",
+    "policy_schedule_resynced",
+    "policy_step_start_perf",
+    "servo_publish_perf",
+    "servo_publish_latency_ms",
+    "servo_endpoint_deadline_perf",
+    "servo_endpoint_lateness_s",
     "servo_dt_s",
     "servo_loop_hz_inst",
     "servo_target_age_s",
@@ -98,6 +104,16 @@ FIELDNAMES = [
     "virtual_hand_accel_clipped",
     "virtual_hand_workspace_clipped",
     "virtual_hand_policy_inference_ms",
+    "mpc_prediction_mode",
+    "mpc_tracking_alpha",
+    "mpc_command_actual_lag_cm",
+    "mpc_predicted_first_command_x_cm",
+    "mpc_predicted_first_command_y_cm",
+    "mpc_predicted_first_actual_x_cm",
+    "mpc_predicted_first_actual_y_cm",
+    "mpc_predicted_min_hand_distance_cm",
+    "mpc_hand_velocity_x_cm_step",
+    "mpc_hand_velocity_y_cm_step",
     "policy_inference_ms",
     "action_x",
     "action_y",
@@ -145,6 +161,11 @@ NUMERIC_ARRAY_FIELDS = [
     "policy_dt_s",
     "policy_loop_hz_inst",
     "policy_deadline_overrun_s",
+    "policy_step_start_perf",
+    "servo_publish_perf",
+    "servo_publish_latency_ms",
+    "servo_endpoint_deadline_perf",
+    "servo_endpoint_lateness_s",
     "servo_dt_s",
     "servo_loop_hz_inst",
     "servo_target_age_s",
@@ -207,6 +228,15 @@ NUMERIC_ARRAY_FIELDS = [
     "virtual_hand_actual_dy_cm",
     "virtual_hand_actual_norm_cm",
     "virtual_hand_policy_inference_ms",
+    "mpc_tracking_alpha",
+    "mpc_command_actual_lag_cm",
+    "mpc_predicted_first_command_x_cm",
+    "mpc_predicted_first_command_y_cm",
+    "mpc_predicted_first_actual_x_cm",
+    "mpc_predicted_first_actual_y_cm",
+    "mpc_predicted_min_hand_distance_cm",
+    "mpc_hand_velocity_x_cm_step",
+    "mpc_hand_velocity_y_cm_step",
     "policy_inference_ms",
     "action_x",
     "action_y",
@@ -236,6 +266,7 @@ NUMERIC_ARRAY_FIELDS = [
 
 BOOLEAN_ARRAY_FIELDS = [
     "policy_deadline_overrun",
+    "policy_schedule_resynced",
     "servo_watchdog_stopped",
     "servo_command_step_limited",
     "servo_publish_accepted",
@@ -521,6 +552,12 @@ class DeploymentRolloutLogger:
         policy_overrun_s = [
             _as_float(row.get("policy_deadline_overrun_s")) for row in self.rows
         ]
+        servo_publish_latency_ms = [
+            _as_float(row.get("servo_publish_latency_ms")) for row in self.rows
+        ]
+        servo_endpoint_lateness_s = [
+            _as_float(row.get("servo_endpoint_lateness_s")) for row in self.rows
+        ]
         servo_target_age_s = [
             _as_float(row.get("servo_target_age_s")) for row in self.rows
         ]
@@ -558,6 +595,9 @@ class DeploymentRolloutLogger:
         policy_overrun = np.asarray([
             bool(row.get("policy_deadline_overrun")) for row in self.rows
         ], dtype=bool)
+        policy_schedule_resynced = np.asarray([
+            bool(row.get("policy_schedule_resynced")) for row in self.rows
+        ], dtype=bool)
         servo_watchdog = np.asarray([
             bool(row.get("servo_watchdog_stopped")) for row in self.rows
         ], dtype=bool)
@@ -566,6 +606,13 @@ class DeploymentRolloutLogger:
         ], dtype=bool)
         camera_hz = [_as_float(row.get("camera_hz_inst")) for row in self.rows]
         inference_ms = [_as_float(row.get("policy_inference_ms")) for row in self.rows]
+        mpc_command_actual_lag_cm = [
+            _as_float(row.get("mpc_command_actual_lag_cm")) for row in self.rows
+        ]
+        mpc_predicted_min_hand_distance_cm = [
+            _as_float(row.get("mpc_predicted_min_hand_distance_cm"))
+            for row in self.rows
+        ]
         dead_reckoning = np.asarray([bool(row.get("dead_reckoning_used")) for row in self.rows], dtype=bool)
         in_zpd = np.asarray([bool(row.get("in_zpd")) for row in self.rows], dtype=bool)
         safety_stop = np.asarray([bool(row.get("safety_stop")) for row in self.rows], dtype=bool)
@@ -644,6 +691,22 @@ class DeploymentRolloutLogger:
             "policy_deadline_overrun_fraction": (
                 float(np.mean(policy_overrun)) if policy_overrun.size else None
             ),
+            "policy_schedule_resync_count": int(np.sum(policy_schedule_resynced)),
+            "servo_publish_latency_ms_mean": _nanmean(servo_publish_latency_ms),
+            "servo_publish_latency_ms_p95": _nanpercentile(
+                servo_publish_latency_ms,
+                95,
+            ),
+            "servo_endpoint_lateness_s_mean": _nanmean(
+                servo_endpoint_lateness_s
+            ),
+            "servo_endpoint_lateness_s_p95": _nanpercentile(
+                servo_endpoint_lateness_s,
+                95,
+            ),
+            "servo_endpoint_late_count": int(np.sum(
+                np.asarray(servo_endpoint_lateness_s, dtype=float) > 0.0
+            )),
             "servo_loop_rate_hz_mean": _nanmean(servo_hz),
             "servo_loop_rate_hz_median": _nanmedian(servo_hz),
             "servo_target_age_s_mean": _nanmean(servo_target_age_s),
@@ -695,6 +758,16 @@ class DeploymentRolloutLogger:
             "servo_watchdog_stop_count": int(np.sum(servo_watchdog)),
             "policy_inference_latency_ms_mean": _nanmean(inference_ms),
             "policy_inference_latency_ms_p95": _nanpercentile(inference_ms, 95),
+            "mpc_command_actual_lag_cm_mean": _nanmean(
+                mpc_command_actual_lag_cm
+            ),
+            "mpc_command_actual_lag_cm_p95": _nanpercentile(
+                mpc_command_actual_lag_cm,
+                95,
+            ),
+            "mpc_predicted_min_hand_distance_cm_mean": _nanmean(
+                mpc_predicted_min_hand_distance_cm
+            ),
             "virtual_hand_policy_latency_ms_mean": _nanmean(virtual_hand_policy_ms),
             "virtual_hand_policy_latency_ms_p95": _nanpercentile(virtual_hand_policy_ms, 95),
             "virtual_hand_actual_move_cm_mean": _nanmean(virtual_hand_actual_norm),

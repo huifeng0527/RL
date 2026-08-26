@@ -169,10 +169,45 @@ class ConstantVelocityMPCController:
         self,
         env: RehabilitationEnv,
         hand_velocity: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple[
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        float,
+        bool,
+    ]:
         sequence_count = self.num_sequences
-        robot_positions = np.repeat(
-            np.asarray(env.robot_position, dtype=np.float32)[None, :],
+        fallback_robot_position = np.asarray(
+            env.robot_position,
+            dtype=np.float32,
+        )
+        command_robot_position = np.asarray(
+            getattr(env, "command_robot_position", fallback_robot_position),
+            dtype=np.float32,
+        )
+        actual_robot_position = np.asarray(
+            getattr(env, "actual_robot_position", fallback_robot_position),
+            dtype=np.float32,
+        )
+        dual_state = bool(
+            hasattr(env, "command_robot_position")
+            and hasattr(env, "actual_robot_position")
+        )
+        tracking_alpha = float(np.clip(
+            getattr(env, "command_tracking_alpha", 1.0),
+            0.0,
+            1.0,
+        ))
+        command_positions = np.repeat(
+            command_robot_position[None, :],
+            sequence_count,
+            axis=0,
+        )
+        actual_positions = np.repeat(
+            actual_robot_position[None, :],
             sequence_count,
             axis=0,
         )
@@ -193,6 +228,8 @@ class ConstantVelocityMPCController:
         terminal_steps = np.full(sequence_count, self.horizon, dtype=np.int32)
         min_clearances = np.full(sequence_count, np.inf, dtype=np.float32)
         min_distances = np.full(sequence_count, np.inf, dtype=np.float32)
+        first_command_positions = command_positions.copy()
+        first_actual_positions = actual_positions.copy()
 
         stride_robot = float(env.stride_robot)
         z_min = float(env.zpd_min)
@@ -207,11 +244,27 @@ class ConstantVelocityMPCController:
 
             actions = self.first_actions if horizon_index == 0 else self.second_actions
             robot_moves = actions * stride_robot
-            robot_positions = robot_positions + robot_moves
+            command_positions = command_positions + robot_moves
+            if dual_state:
+                actual_positions = actual_positions + tracking_alpha * (
+                    command_positions - actual_positions
+                )
+            else:
+                # Preserve the original single-state transition exactly for
+                # simulation callers that do not expose a separate command frame.
+                actual_positions = command_positions.copy()
+            if horizon_index == 0:
+                first_command_positions = command_positions.copy()
+                first_actual_positions = actual_positions.copy()
             hand_position = np.clip(hand_position + hand_velocity, hand_low, hand_high)
 
-            distances = np.linalg.norm(robot_positions - hand_position[None, :], axis=1).astype(np.float32)
-            clearances = self._boundary_clearance(robot_positions, env)
+            distances = np.linalg.norm(
+                actual_positions - hand_position[None, :],
+                axis=1,
+            ).astype(np.float32)
+            command_clearances = self._boundary_clearance(command_positions, env)
+            actual_clearances = self._boundary_clearance(actual_positions, env)
+            clearances = np.minimum(command_clearances, actual_clearances)
             min_distances[was_active] = np.minimum(min_distances[was_active], distances[was_active])
             min_clearances[was_active] = np.minimum(min_clearances[was_active], clearances[was_active])
 
@@ -250,7 +303,16 @@ class ConstantVelocityMPCController:
             active[newly_terminal] = False
             previous_moves = robot_moves
 
-        return scores, terminal_steps, min_clearances, min_distances
+        return (
+            scores,
+            terminal_steps,
+            min_clearances,
+            min_distances,
+            first_command_positions,
+            first_actual_positions,
+            tracking_alpha,
+            dual_state,
+        )
 
     def predict(
         self,
@@ -279,7 +341,16 @@ class ConstantVelocityMPCController:
             )
             velocity_source = "interaction_history"
 
-        scores, terminal_steps, min_clearances, min_distances = self._score_action_sequences(
+        (
+            scores,
+            terminal_steps,
+            min_clearances,
+            min_distances,
+            first_command_positions,
+            first_actual_positions,
+            tracking_alpha,
+            dual_state,
+        ) = self._score_action_sequences(
             env,
             hand_velocity,
         )
@@ -310,6 +381,26 @@ class ConstantVelocityMPCController:
             "hand_velocity": hand_velocity.astype(float).tolist(),
             "hand_velocity_source": velocity_source,
             "hand_velocity_history_frames": int(velocity_history_frames),
+            "robot_prediction_mode": (
+                "dual_command_actual" if dual_state else "single_state"
+            ),
+            "command_tracking_alpha": float(tracking_alpha),
+            "command_actual_lag_cm": float(np.linalg.norm(
+                np.asarray(
+                    getattr(env, "command_robot_position", env.robot_position),
+                    dtype=np.float32,
+                )
+                - np.asarray(
+                    getattr(env, "actual_robot_position", env.robot_position),
+                    dtype=np.float32,
+                )
+            )),
+            "predicted_first_command_position": first_command_positions[
+                best_index
+            ].astype(float).tolist(),
+            "predicted_first_actual_position": first_actual_positions[
+                best_index
+            ].astype(float).tolist(),
             "num_sequences": self.num_sequences,
             "horizon": self.horizon,
         }
