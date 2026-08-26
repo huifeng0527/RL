@@ -1,6 +1,8 @@
 import csv
 import json
+import queue
 import re
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -35,6 +37,20 @@ FIELDNAMES = [
     "servo_target_world_x",
     "servo_target_world_y",
     "servo_target_world_z",
+    "servo_segment_start_world_x",
+    "servo_segment_start_world_y",
+    "servo_segment_start_world_z",
+    "servo_segment_end_world_x",
+    "servo_segment_end_world_y",
+    "servo_segment_end_world_z",
+    "servo_segment_start_perf",
+    "servo_segment_end_perf",
+    "servo_segment_elapsed_s",
+    "servo_segment_duration_s",
+    "servo_pending_segment_count",
+    "servo_command_step_limited",
+    "servo_command_step_limited_count",
+    "servo_publish_rejected_count",
     "servo_tracking_error_cm",
     "servo_target_error_cm",
     "servo_deadline_overrun_s",
@@ -92,6 +108,22 @@ FIELDNAMES = [
     "virtual_target_y_px",
     "desired_target_x_px",
     "desired_target_y_px",
+    "planned_anchor_x_cm",
+    "planned_anchor_y_cm",
+    "planned_target_x_cm",
+    "planned_target_y_cm",
+    "planned_delta_dx_cm",
+    "planned_delta_dy_cm",
+    "planned_delta_norm_cm",
+    "actual_robot_move_dx_cm",
+    "actual_robot_move_dy_cm",
+    "actual_robot_move_norm_cm",
+    "actual_to_planned_step_projection",
+    "planned_endpoint_actual_lag_cm",
+    "servo_lag_warning_cm",
+    "servo_lag_hard_limit_cm",
+    "servo_publish_accepted",
+    "servo_publish_reject_reason",
     "target_clipped",
     "target_step_limited",
     "robot_world_x",
@@ -123,6 +155,19 @@ NUMERIC_ARRAY_FIELDS = [
     "servo_target_world_x",
     "servo_target_world_y",
     "servo_target_world_z",
+    "servo_segment_start_world_x",
+    "servo_segment_start_world_y",
+    "servo_segment_start_world_z",
+    "servo_segment_end_world_x",
+    "servo_segment_end_world_y",
+    "servo_segment_end_world_z",
+    "servo_segment_start_perf",
+    "servo_segment_end_perf",
+    "servo_segment_elapsed_s",
+    "servo_segment_duration_s",
+    "servo_pending_segment_count",
+    "servo_command_step_limited_count",
+    "servo_publish_rejected_count",
     "servo_tracking_error_cm",
     "servo_target_error_cm",
     "servo_deadline_overrun_s",
@@ -168,12 +213,28 @@ NUMERIC_ARRAY_FIELDS = [
     "virtual_target_y_px",
     "desired_target_x_px",
     "desired_target_y_px",
+    "planned_anchor_x_cm",
+    "planned_anchor_y_cm",
+    "planned_target_x_cm",
+    "planned_target_y_cm",
+    "planned_delta_dx_cm",
+    "planned_delta_dy_cm",
+    "planned_delta_norm_cm",
+    "actual_robot_move_dx_cm",
+    "actual_robot_move_dy_cm",
+    "actual_robot_move_norm_cm",
+    "actual_to_planned_step_projection",
+    "planned_endpoint_actual_lag_cm",
+    "servo_lag_warning_cm",
+    "servo_lag_hard_limit_cm",
 ]
 
 
 BOOLEAN_ARRAY_FIELDS = [
     "policy_deadline_overrun",
     "servo_watchdog_stopped",
+    "servo_command_step_limited",
+    "servo_publish_accepted",
     "vision_frame_available",
     "hand_detected",
     "microrobot_detected",
@@ -294,6 +355,10 @@ class DeploymentRolloutLogger:
         self._last_snapshot_step = None
         self._video_writer = None
         self._video_path = self.rollout_dir / "annotated_video.mp4"
+        self._video_queue = None
+        self._video_thread = None
+        self._video_dropped_frames = 0
+        self._video_written_frames = 0
 
         with (self.rollout_dir / "metadata.json").open("w", encoding="utf-8") as f:
             json.dump(self.metadata, f, indent=2, ensure_ascii=False)
@@ -334,22 +399,75 @@ class DeploymentRolloutLogger:
         self._snapshot_saved = True
         self.record_event("snapshot_saved", step=step, t_task_s=t_task_s, path=str(self.snapshot_path))
 
-    def write_frame(self, frame, fps=20.0):
-        if not self.save_video or frame is None:
+    def ensure_video_writer(self, frame, fps=20.0):
+        """Open the encoder and start its worker thread before the loop runs.
+
+        Creating the mp4v writer costs tens to hundreds of milliseconds, so the
+        control loop must not be the thing that pays for it on its first frame.
+        """
+        if not self.save_video or frame is None or self._video_writer is not None:
             return
         import cv2
 
-        if self._video_writer is None:
-            h, w = frame.shape[:2]
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-            self._video_writer = cv2.VideoWriter(str(self._video_path), fourcc, float(fps), (w, h))
-        self._video_writer.write(frame)
+        h, w = frame.shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(str(self._video_path), fourcc, float(fps), (w, h))
+        if not writer.isOpened():
+            raise RuntimeError(f"Could not open video writer at {self._video_path}")
+        self._video_writer = writer
+        # A short queue: enough to absorb an encoder hiccup, short enough that a
+        # stalled encoder drops frames instead of growing memory without bound.
+        self._video_queue = queue.Queue(maxsize=8)
+        self._video_thread = threading.Thread(
+            target=self._video_worker,
+            daemon=True,
+            name="video-encoder",
+        )
+        self._video_thread.start()
+
+    def _video_worker(self):
+        while True:
+            frame = self._video_queue.get()
+            if frame is None:
+                return
+            try:
+                self._video_writer.write(frame)
+                self._video_written_frames += 1
+            except Exception:
+                return
+
+    def write_frame(self, frame, fps=20.0):
+        """Hand one annotated frame to the encoder thread without blocking.
+
+        The frame is not copied; the caller builds a fresh annotated frame each
+        step and must not mutate this one after handing it over.
+        """
+        if not self.save_video or frame is None:
+            return
+        self.ensure_video_writer(frame, fps=fps)
+        if self._video_queue is None:
+            return
+        try:
+            self._video_queue.put_nowait(frame)
+        except queue.Full:
+            self._video_dropped_frames += 1
 
     def close(self, done_reason="unknown"):
         if self._video_writer is not None:
+            if self._video_queue is not None:
+                self._video_queue.put(None)
+            if self._video_thread is not None:
+                self._video_thread.join(timeout=10.0)
             self._video_writer.release()
             self._video_writer = None
-            self.record_event("video_saved", path=str(self._video_path))
+            self._video_queue = None
+            self._video_thread = None
+            self.record_event(
+                "video_saved",
+                path=str(self._video_path),
+                frames_written=int(self._video_written_frames),
+                frames_dropped=int(self._video_dropped_frames),
+            )
 
         if not self._snapshot_saved and self._last_snapshot_frame is not None:
             self._write_snapshot(self._last_snapshot_frame, step=self._last_snapshot_step)
@@ -414,11 +532,26 @@ class DeploymentRolloutLogger:
         servo_overrun_count = [
             _as_float(row.get("servo_deadline_overrun_count")) for row in self.rows
         ]
+        servo_command_step_limited_count_values = [
+            _as_float(row.get("servo_command_step_limited_count")) for row in self.rows
+        ]
+        servo_publish_rejected_count_values = [
+            _as_float(row.get("servo_publish_rejected_count")) for row in self.rows
+        ]
+        planned_endpoint_actual_lag_cm = [
+            _as_float(row.get("planned_endpoint_actual_lag_cm")) for row in self.rows
+        ]
+        actual_to_planned_step_projection = [
+            _as_float(row.get("actual_to_planned_step_projection")) for row in self.rows
+        ]
         policy_overrun = np.asarray([
             bool(row.get("policy_deadline_overrun")) for row in self.rows
         ], dtype=bool)
         servo_watchdog = np.asarray([
             bool(row.get("servo_watchdog_stopped")) for row in self.rows
+        ], dtype=bool)
+        servo_command_step_limited = np.asarray([
+            bool(row.get("servo_command_step_limited")) for row in self.rows
         ], dtype=bool)
         camera_hz = [_as_float(row.get("camera_hz_inst")) for row in self.rows]
         inference_ms = [_as_float(row.get("policy_inference_ms")) for row in self.rows]
@@ -459,6 +592,24 @@ class DeploymentRolloutLogger:
                 done_reason,
             )
         observed_occupancy = float(np.mean(in_zpd)) if in_zpd.size else None
+        servo_command_step_limited_count = _nanmax(
+            servo_command_step_limited_count_values
+        )
+        if servo_command_step_limited_count is None:
+            servo_command_step_limited_count = (
+                int(np.sum(servo_command_step_limited))
+                if servo_command_step_limited.size
+                else None
+            )
+        else:
+            servo_command_step_limited_count = int(servo_command_step_limited_count)
+        servo_publish_rejected_count = _nanmax(
+            servo_publish_rejected_count_values
+        )
+        if servo_publish_rejected_count is None:
+            servo_publish_rejected_count = 0 if self.rows else None
+        else:
+            servo_publish_rejected_count = int(servo_publish_rejected_count)
 
         return {
             "rollout_id": self.rollout_id,
@@ -499,6 +650,24 @@ class DeploymentRolloutLogger:
             "servo_deadline_overrun_s_mean": _nanmean(servo_overrun_s),
             "servo_deadline_overrun_s_p95": _nanpercentile(servo_overrun_s, 95),
             "servo_deadline_overrun_count": _nanmax(servo_overrun_count),
+            "servo_command_step_limited_count": servo_command_step_limited_count,
+            "servo_publish_rejected_count": servo_publish_rejected_count,
+            "planned_endpoint_actual_lag_cm_mean": _nanmean(
+                planned_endpoint_actual_lag_cm
+            ),
+            "planned_endpoint_actual_lag_cm_p95": _nanpercentile(
+                planned_endpoint_actual_lag_cm,
+                95,
+            ),
+            "planned_endpoint_actual_lag_cm_max": _nanmax(
+                planned_endpoint_actual_lag_cm
+            ),
+            "actual_to_planned_step_projection_mean": _nanmean(
+                actual_to_planned_step_projection
+            ),
+            "actual_to_planned_step_projection_p50": _nanmedian(
+                actual_to_planned_step_projection
+            ),
             "servo_watchdog_stop_count": int(np.sum(servo_watchdog)),
             "policy_inference_latency_ms_mean": _nanmean(inference_ms),
             "policy_inference_latency_ms_p95": _nanpercentile(inference_ms, 95),
@@ -541,4 +710,6 @@ class DeploymentRolloutLogger:
             "done_reason": done_reason,
             "snapshot_path": str(self.snapshot_path) if self.snapshot_path.exists() else None,
             "video_path": str(self._video_path) if self._video_path.exists() else None,
+            "video_frames_written": int(self._video_written_frames),
+            "video_frames_dropped": int(self._video_dropped_frames),
         }

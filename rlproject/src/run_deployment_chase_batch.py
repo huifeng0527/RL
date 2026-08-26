@@ -28,6 +28,11 @@ DEFAULT_TRIALS = 40
 DEFAULT_BATCH_SEED = 20260820
 DEFAULT_POLICY_HZ = 20.0
 DEFAULT_SERVO_HZ = 125.0
+DEFAULT_SERVO_LAG_WARNING_CM = 1.5
+DEFAULT_SERVO_LAG_HARD_LIMIT_CM = 3.0
+SERVO_TRAJECTORY_MODE = "committed_timestamped_segments_v1"
+LEGACY_ENDPOINT_OVERWRITE_MODE = "legacy_endpoint_overwrite"
+LEGACY_DIRECT_TRAJECTORY_MODE = "legacy_direct"
 HAND_STRIDE_RANGE_CM = (0.1, 0.3)
 VIRTUAL_HAND_ALPHA_RANGE = (0.5, 0.9)
 VIRTUAL_HAND_DELAY_VALUES = (0, 1, 2, 3)
@@ -41,7 +46,9 @@ RUN_FIELDS = [
     "run_id", "pair_id", "trial_index", "internal_seed", "hand_stride_cm",
     "virtual_hand_smoothing_alpha", "virtual_hand_delay_frames",
     "policy_freq_target_hz", "servo_mode", "servo_freq_target_hz",
-    "servo_target_timeout_s", "order_in_pair", "controller", "status",
+    "servo_target_timeout_s", "servo_interpolation_mode",
+    "servo_trajectory_mode", "servo_lag_warning_cm",
+    "servo_lag_hard_limit_cm", "order_in_pair", "controller", "status",
     "rollout_dir", "done_reason",
     "caught", "duration_s", "duration_target_s", "num_control_steps",
     "zpd_time_s", "tiz_fixed_horizon_fraction",
@@ -53,7 +60,11 @@ RUN_FIELDS = [
     "control_loop_rate_hz_mean", "policy_loop_rate_hz_mean",
     "servo_loop_rate_hz_mean", "servo_target_age_s_mean",
     "servo_tracking_error_cm_mean", "servo_tracking_error_cm_p95",
-    "servo_target_error_cm_mean", "servo_deadline_overrun_count",
+    "servo_target_error_cm_mean", "planned_endpoint_actual_lag_cm_mean",
+    "planned_endpoint_actual_lag_cm_p95", "planned_endpoint_actual_lag_cm_max",
+    "actual_to_planned_step_projection_mean",
+    "actual_to_planned_step_projection_p50", "servo_command_step_limited_count",
+    "servo_publish_rejected_count", "servo_deadline_overrun_count",
     "servo_watchdog_stop_count", "policy_deadline_overrun_count",
     "camera_update_rate_hz_mean", "policy_inference_latency_ms_mean",
     "policy_inference_latency_ms_p95",
@@ -76,7 +87,11 @@ SUMMARY_METRICS = [
     "target_step_limited_fraction", "control_loop_rate_hz_mean",
     "policy_loop_rate_hz_mean", "servo_loop_rate_hz_mean",
     "servo_target_age_s_mean", "servo_tracking_error_cm_mean",
-    "servo_target_error_cm_mean", "servo_deadline_overrun_count",
+    "servo_target_error_cm_mean", "planned_endpoint_actual_lag_cm_mean",
+    "planned_endpoint_actual_lag_cm_p95", "planned_endpoint_actual_lag_cm_max",
+    "actual_to_planned_step_projection_mean",
+    "actual_to_planned_step_projection_p50", "servo_command_step_limited_count",
+    "servo_publish_rejected_count", "servo_deadline_overrun_count",
     "servo_watchdog_stop_count", "policy_deadline_overrun_count",
     "camera_update_rate_hz_mean", "policy_inference_latency_ms_mean",
     "microrobot_detection_fraction", "microrobot_tcp_error_cm_mean",
@@ -130,6 +145,16 @@ def parse_args():
     )
     parser.add_argument("--servo-hz", type=float, default=DEFAULT_SERVO_HZ)
     parser.add_argument("--servo-target-timeout-s", type=float, default=None)
+    parser.add_argument(
+        "--servo-lag-warning-cm",
+        type=float,
+        default=DEFAULT_SERVO_LAG_WARNING_CM,
+    )
+    parser.add_argument(
+        "--servo-lag-hard-limit-cm",
+        type=float,
+        default=DEFAULT_SERVO_LAG_HARD_LIMIT_CM,
+    )
     parser.add_argument("--inter-run-delay", type=float, default=3.0)
     parser.add_argument("--save-video", action="store_true")
     parser.add_argument("--no-display", action="store_true")
@@ -169,6 +194,14 @@ def to_bool(value):
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes"}
+
+
+def trajectory_mode_for_servo_mode(servo_mode):
+    return (
+        SERVO_TRAJECTORY_MODE
+        if str(servo_mode) == "interpolated"
+        else LEGACY_DIRECT_TRAJECTORY_MODE
+    )
 
 
 def read_json(path):
@@ -257,6 +290,16 @@ def normalize_batch_timing(args):
     requested_servo_hz = float(
         getattr(args, "servo_hz", DEFAULT_SERVO_HZ)
     )
+    lag_warning_cm = float(getattr(
+        args,
+        "servo_lag_warning_cm",
+        DEFAULT_SERVO_LAG_WARNING_CM,
+    ))
+    lag_hard_limit_cm = float(getattr(
+        args,
+        "servo_lag_hard_limit_cm",
+        DEFAULT_SERVO_LAG_HARD_LIMIT_CM,
+    ))
     if policy_hz <= 0.0:
         raise ValueError("--policy-hz must be positive")
     if requested_servo_hz <= 0.0:
@@ -270,11 +313,22 @@ def normalize_batch_timing(args):
     timeout = max(3.0 / policy_hz, 0.15) if timeout is None else float(timeout)
     if timeout <= 0.0:
         raise ValueError("--servo-target-timeout-s must be positive")
+    if lag_warning_cm <= 0.0:
+        raise ValueError("--servo-lag-warning-cm must be positive")
+    if lag_hard_limit_cm <= lag_warning_cm:
+        raise ValueError(
+            "--servo-lag-hard-limit-cm must exceed --servo-lag-warning-cm"
+        )
+    trajectory_mode = trajectory_mode_for_servo_mode(servo_mode)
     return {
         "policy_hz": policy_hz,
         "servo_mode": servo_mode,
         "servo_hz": servo_hz,
         "servo_target_timeout_s": timeout,
+        "servo_interpolation_mode": trajectory_mode,
+        "servo_trajectory_mode": trajectory_mode,
+        "servo_lag_warning_cm": lag_warning_cm,
+        "servo_lag_hard_limit_cm": lag_hard_limit_cm,
     }
 
 
@@ -306,6 +360,10 @@ def build_manifest(args, batch_dir):
                 "--servo-hz", f"{timing['servo_hz']:.12g}",
                 "--servo-target-timeout-s",
                 f"{timing['servo_target_timeout_s']:.12g}",
+                "--servo-lag-warning-cm",
+                f"{timing['servo_lag_warning_cm']:.12g}",
+                "--servo-lag-hard-limit-cm",
+                f"{timing['servo_lag_hard_limit_cm']:.12g}",
                 "--stride", str(args.stride),
                 "--hand-stride", f"{configuration['hand_stride_cm']:.9g}",
                 "--hand-alpha", f"{configuration['virtual_hand_smoothing_alpha']:.12g}",
@@ -343,7 +401,12 @@ def build_manifest(args, batch_dir):
                 "servo_mode": timing["servo_mode"],
                 "servo_freq_target_hz": timing["servo_hz"],
                 "servo_target_timeout_s": timing["servo_target_timeout_s"],
+                "servo_interpolation_mode": timing["servo_interpolation_mode"],
+                "servo_trajectory_mode": timing["servo_trajectory_mode"],
+                "servo_lag_warning_cm": timing["servo_lag_warning_cm"],
+                "servo_lag_hard_limit_cm": timing["servo_lag_hard_limit_cm"],
                 "timing_settings_required": True,
+                "trajectory_settings_required": True,
                 "order_in_pair": order,
                 "controller": controller,
                 "subject": subject,
@@ -356,7 +419,7 @@ def build_manifest(args, batch_dir):
         for configuration in configurations
     )
     return {
-        "schema_version": 5,
+        "schema_version": 6,
         "batch_id": batch_dir.name,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "batch_dir": str(batch_dir),
@@ -396,11 +459,10 @@ def build_manifest(args, batch_dir):
             "servo_mode": timing["servo_mode"],
             "servo_freq_target_hz": timing["servo_hz"],
             "servo_target_timeout_s": timing["servo_target_timeout_s"],
-            "servo_interpolation_mode": (
-                "linear_hold"
-                if timing["servo_mode"] == "interpolated"
-                else "legacy_direct"
-            ),
+            "servo_interpolation_mode": timing["servo_interpolation_mode"],
+            "servo_trajectory_mode": timing["servo_trajectory_mode"],
+            "servo_lag_warning_cm": timing["servo_lag_warning_cm"],
+            "servo_lag_hard_limit_cm": timing["servo_lag_hard_limit_cm"],
             "policy_servo_frequency_semantics": (
                 "virtual Hand and Robot controller update once per policy step; "
                 "interpolated servo commands execute between policy targets"
@@ -432,40 +494,87 @@ def normalize_manifest(manifest):
         "policy_freq_target_hz",
         parameters.get("control_freq_target_hz", DEFAULT_POLICY_HZ),
     ))
-    legacy = schema_version < 5
+    legacy_timing = schema_version < 5
+    legacy_trajectory = schema_version < 6
     servo_mode = str(parameters.get(
         "servo_mode",
-        "legacy" if legacy else "interpolated",
+        "legacy" if legacy_timing else "interpolated",
     ))
     servo_hz = float(parameters.get(
         "servo_freq_target_hz",
-        policy_hz if legacy else DEFAULT_SERVO_HZ,
+        policy_hz if legacy_timing else DEFAULT_SERVO_HZ,
     ))
     timeout = parameters.get("servo_target_timeout_s")
     timeout = max(3.0 / policy_hz, 0.15) if timeout is None else float(timeout)
+    lag_warning_cm = float(parameters.get(
+        "servo_lag_warning_cm",
+        DEFAULT_SERVO_LAG_WARNING_CM,
+    ))
+    lag_hard_limit_cm = float(parameters.get(
+        "servo_lag_hard_limit_cm",
+        DEFAULT_SERVO_LAG_HARD_LIMIT_CM,
+    ))
+    if legacy_trajectory:
+        interpolation_mode = LEGACY_ENDPOINT_OVERWRITE_MODE
+        trajectory_mode = LEGACY_ENDPOINT_OVERWRITE_MODE
+        parameters["legacy_endpoint_overwrite"] = True
+    else:
+        trajectory_mode = str(parameters.get(
+            "servo_trajectory_mode",
+            trajectory_mode_for_servo_mode(servo_mode),
+        ))
+        interpolation_mode = str(parameters.get(
+            "servo_interpolation_mode",
+            trajectory_mode,
+        ))
 
     parameters.setdefault("control_freq_target_hz", policy_hz)
     parameters.setdefault("policy_freq_target_hz", policy_hz)
     parameters.setdefault("servo_mode", servo_mode)
     parameters.setdefault("servo_freq_target_hz", servo_hz)
     parameters.setdefault("servo_target_timeout_s", timeout)
-    parameters.setdefault(
-        "servo_interpolation_mode",
-        "legacy_direct" if legacy else "linear_hold",
-    )
+    parameters["servo_interpolation_mode"] = interpolation_mode
+    parameters["servo_trajectory_mode"] = trajectory_mode
+    parameters.setdefault("servo_lag_warning_cm", lag_warning_cm)
+    parameters.setdefault("servo_lag_hard_limit_cm", lag_hard_limit_cm)
 
     for run in normalized.get("runs", []):
         run.setdefault("policy_freq_target_hz", policy_hz)
         run.setdefault("servo_mode", servo_mode)
         run.setdefault("servo_freq_target_hz", servo_hz)
         run.setdefault("servo_target_timeout_s", timeout)
-        run.setdefault("timing_settings_required", not legacy)
-        if legacy:
-            command = list(run.get("command", []))
-            if "--control-hz" not in command and "--policy-hz" not in command:
-                command.extend(["--control-hz", f"{policy_hz:.12g}"])
-            if "--servo-mode" not in command:
-                command.extend(["--servo-mode", "legacy"])
+        run.setdefault("servo_lag_warning_cm", lag_warning_cm)
+        run.setdefault("servo_lag_hard_limit_cm", lag_hard_limit_cm)
+        run.setdefault("timing_settings_required", not legacy_timing)
+        if legacy_trajectory:
+            run["servo_interpolation_mode"] = LEGACY_ENDPOINT_OVERWRITE_MODE
+            run["servo_trajectory_mode"] = LEGACY_ENDPOINT_OVERWRITE_MODE
+            run["legacy_endpoint_overwrite"] = True
+            run["trajectory_settings_required"] = False
+        else:
+            run.setdefault("servo_interpolation_mode", interpolation_mode)
+            run.setdefault("servo_trajectory_mode", trajectory_mode)
+            run.setdefault(
+                "trajectory_settings_required",
+                bool(run.get("timing_settings_required", False)),
+            )
+        command = list(run.get("command", []))
+        if command:
+            if legacy_timing:
+                if "--control-hz" not in command and "--policy-hz" not in command:
+                    command.extend(["--control-hz", f"{policy_hz:.12g}"])
+                if "--servo-mode" not in command:
+                    command.extend(["--servo-mode", "legacy"])
+            if "--servo-lag-warning-cm" not in command:
+                command.extend([
+                    "--servo-lag-warning-cm",
+                    f"{float(run['servo_lag_warning_cm']):.12g}",
+                ])
+            if "--servo-lag-hard-limit-cm" not in command:
+                command.extend([
+                    "--servo-lag-hard-limit-cm",
+                    f"{float(run['servo_lag_hard_limit_cm']):.12g}",
+                ])
             run["command"] = command
     return normalized
 
@@ -526,7 +635,7 @@ def metadata_matches(metadata, run):
     )
     if not base_matches or not run.get("timing_settings_required", False):
         return base_matches
-    return (
+    timing_matches = (
         abs(
             float(metadata.get("policy_freq_target_hz", -1.0))
             - float(run["policy_freq_target_hz"])
@@ -539,6 +648,22 @@ def metadata_matches(metadata, run):
         and abs(
             float(metadata.get("servo_target_timeout_s", -1.0))
             - float(run["servo_target_timeout_s"])
+        ) < 1e-6
+    )
+    if not timing_matches or not run.get("trajectory_settings_required", False):
+        return timing_matches
+    return (
+        metadata.get("servo_interpolation_mode")
+        == run.get("servo_interpolation_mode")
+        and metadata.get("servo_trajectory_mode")
+        == run.get("servo_trajectory_mode")
+        and abs(
+            float(metadata.get("servo_lag_warning_cm", -1.0))
+            - float(run["servo_lag_warning_cm"])
+        ) < 1e-6
+        and abs(
+            float(metadata.get("servo_lag_hard_limit_cm", -1.0))
+            - float(run["servo_lag_hard_limit_cm"])
         ) < 1e-6
     )
 
@@ -564,7 +689,7 @@ def result_matches_run(row, run):
         )
         if not base_matches or not run.get("timing_settings_required", False):
             return base_matches
-        return (
+        timing_matches = (
             abs(
                 float(row.get("policy_freq_target_hz"))
                 - float(run["policy_freq_target_hz"])
@@ -577,6 +702,22 @@ def result_matches_run(row, run):
             and abs(
                 float(row.get("servo_target_timeout_s"))
                 - float(run["servo_target_timeout_s"])
+            ) < 1e-6
+        )
+        if not timing_matches or not run.get("trajectory_settings_required", False):
+            return timing_matches
+        return (
+            row.get("servo_interpolation_mode")
+            == run.get("servo_interpolation_mode")
+            and row.get("servo_trajectory_mode")
+            == run.get("servo_trajectory_mode")
+            and abs(
+                float(row.get("servo_lag_warning_cm"))
+                - float(run["servo_lag_warning_cm"])
+            ) < 1e-6
+            and abs(
+                float(row.get("servo_lag_hard_limit_cm"))
+                - float(run["servo_lag_hard_limit_cm"])
             ) < 1e-6
         )
     except (TypeError, ValueError):
@@ -703,6 +844,22 @@ def extract_metrics(run, rollout_dir):
             "servo_target_timeout_s",
             run.get("servo_target_timeout_s"),
         )),
+        "servo_interpolation_mode": metadata.get(
+            "servo_interpolation_mode",
+            run.get("servo_interpolation_mode"),
+        ),
+        "servo_trajectory_mode": metadata.get(
+            "servo_trajectory_mode",
+            run.get("servo_trajectory_mode"),
+        ),
+        "servo_lag_warning_cm": to_float(metadata.get(
+            "servo_lag_warning_cm",
+            run.get("servo_lag_warning_cm"),
+        )),
+        "servo_lag_hard_limit_cm": to_float(metadata.get(
+            "servo_lag_hard_limit_cm",
+            run.get("servo_lag_hard_limit_cm"),
+        )),
         "order_in_pair": run["order_in_pair"],
         "controller": run["controller"],
         "status": "completed",
@@ -741,6 +898,27 @@ def extract_metrics(run, rollout_dir):
         )),
         "servo_target_error_cm_mean": to_float(summary.get(
             "servo_target_error_cm_mean"
+        )),
+        "planned_endpoint_actual_lag_cm_mean": to_float(summary.get(
+            "planned_endpoint_actual_lag_cm_mean"
+        )),
+        "planned_endpoint_actual_lag_cm_p95": to_float(summary.get(
+            "planned_endpoint_actual_lag_cm_p95"
+        )),
+        "planned_endpoint_actual_lag_cm_max": to_float(summary.get(
+            "planned_endpoint_actual_lag_cm_max"
+        )),
+        "actual_to_planned_step_projection_mean": to_float(summary.get(
+            "actual_to_planned_step_projection_mean"
+        )),
+        "actual_to_planned_step_projection_p50": to_float(summary.get(
+            "actual_to_planned_step_projection_p50"
+        )),
+        "servo_command_step_limited_count": to_float(summary.get(
+            "servo_command_step_limited_count"
+        )),
+        "servo_publish_rejected_count": to_float(summary.get(
+            "servo_publish_rejected_count"
         )),
         "servo_deadline_overrun_count": to_float(summary.get(
             "servo_deadline_overrun_count"
@@ -818,6 +996,10 @@ def incomplete_result(run, status, rollout_dir=None, done_reason=None):
         "servo_mode": run.get("servo_mode"),
         "servo_freq_target_hz": run.get("servo_freq_target_hz"),
         "servo_target_timeout_s": run.get("servo_target_timeout_s"),
+        "servo_interpolation_mode": run.get("servo_interpolation_mode"),
+        "servo_trajectory_mode": run.get("servo_trajectory_mode"),
+        "servo_lag_warning_cm": run.get("servo_lag_warning_cm"),
+        "servo_lag_hard_limit_cm": run.get("servo_lag_hard_limit_cm"),
         "duration_target_s": run.get("duration_target_s"),
         "order_in_pair": run["order_in_pair"],
         "controller": run["controller"],
@@ -837,6 +1019,10 @@ def backfill_result_timing(row, run):
         "servo_mode",
         "servo_freq_target_hz",
         "servo_target_timeout_s",
+        "servo_interpolation_mode",
+        "servo_trajectory_mode",
+        "servo_lag_warning_cm",
+        "servo_lag_hard_limit_cm",
     ):
         if row.get(field) in (None, ""):
             row[field] = run.get(field)
@@ -879,6 +1065,17 @@ def recover_results(manifest, existing_rows):
                             row.get("servo_mode") == run.get("servo_mode")
                             and to_float(row.get("policy_freq_target_hz")) is not None
                             and to_float(row.get("servo_freq_target_hz")) is not None
+                            and (
+                                not run.get("trajectory_settings_required", False)
+                                or (
+                                    row.get("servo_interpolation_mode")
+                                    == run.get("servo_interpolation_mode")
+                                    and row.get("servo_trajectory_mode")
+                                    == run.get("servo_trajectory_mode")
+                                    and to_float(row.get("servo_lag_warning_cm")) is not None
+                                    and to_float(row.get("servo_lag_hard_limit_cm")) is not None
+                                )
+                            )
                         )
                     )
                 )
@@ -927,6 +1124,18 @@ def write_aggregates(batch_dir, manifest, rows):
             "servo_mode": group[0].get("servo_mode") if group else None,
             "servo_freq_target_hz": (
                 to_float(group[0].get("servo_freq_target_hz")) if group else None
+            ),
+            "servo_interpolation_mode": (
+                group[0].get("servo_interpolation_mode") if group else None
+            ),
+            "servo_trajectory_mode": (
+                group[0].get("servo_trajectory_mode") if group else None
+            ),
+            "servo_lag_warning_cm": (
+                to_float(group[0].get("servo_lag_warning_cm")) if group else None
+            ),
+            "servo_lag_hard_limit_cm": (
+                to_float(group[0].get("servo_lag_hard_limit_cm")) if group else None
             ),
             "trial_indices": json.dumps([
                 int(float(row["trial_index"])) for row in group
@@ -1023,6 +1232,11 @@ def format_run_banner(run, run_number, total_runs, manifest):
             f"servo={float(run.get('servo_freq_target_hz', run.get('policy_freq_target_hz', DEFAULT_POLICY_HZ))):.1f} Hz  |  "
             f"mode={run.get('servo_mode', 'legacy')}"
         ),
+        (
+            f"Trajectory   : {run.get('servo_trajectory_mode', LEGACY_ENDPOINT_OVERWRITE_MODE)}  |  "
+            f"lag warn/stop={float(run.get('servo_lag_warning_cm', DEFAULT_SERVO_LAG_WARNING_CM)):.2f}/"
+            f"{float(run.get('servo_lag_hard_limit_cm', DEFAULT_SERVO_LAG_HARD_LIMIT_CM)):.2f} cm"
+        ),
         f"Hand stride : {float(run['hand_stride_cm']):.3f} cm/action",
         (
             f"Hand DR     : alpha={float(run.get('virtual_hand_smoothing_alpha', 1.0)):.3f}  |  "
@@ -1060,6 +1274,11 @@ def print_plan(manifest, completed_ids, list_runs=False):
         f"Timing       : policy={float(parameters.get('policy_freq_target_hz', DEFAULT_POLICY_HZ)):.1f} Hz  |  "
         f"servo={float(parameters.get('servo_freq_target_hz', parameters.get('policy_freq_target_hz', DEFAULT_POLICY_HZ))):.1f} Hz  |  "
         f"mode={parameters.get('servo_mode', 'legacy')}"
+    )
+    print(
+        f"Trajectory   : {parameters.get('servo_trajectory_mode', LEGACY_ENDPOINT_OVERWRITE_MODE)}  |  "
+        f"lag warn/stop={float(parameters.get('servo_lag_warning_cm', DEFAULT_SERVO_LAG_WARNING_CM)):.2f}/"
+        f"{float(parameters.get('servo_lag_hard_limit_cm', DEFAULT_SERVO_LAG_HARD_LIMIT_CM)):.2f} cm"
     )
     hand_range = parameters["hand_stride_sample_range_cm"]
     print(

@@ -7,7 +7,7 @@ import threading
 import time
 import traceback
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -39,6 +39,14 @@ DEFAULT_CONTROL_FREQ = 20
 DEFAULT_SERVO_FREQ = 125.0
 DEFAULT_SERVO_LOOKAHEAD = 0.1
 DEFAULT_SERVO_GAIN = 600
+DEFAULT_SERVO_LAG_WARNING_CM = 1.5
+DEFAULT_SERVO_LAG_HARD_LIMIT_CM = 3.0
+SERVO_TRAJECTORY_MODE = "committed_timestamped_segments_v1"
+LEGACY_TRAJECTORY_MODE = "legacy_direct"
+SERVO_SPEED_HEADROOM = 1.6
+SERVO_MAX_PENDING_SEGMENTS = 3
+SERVO_STARTUP_GRACE_S = 2.0
+SERVO_LAG_REJECT_LIMIT = 10
 RX_C, RY_C, RZ_C,Z= 0.107, 0.049, 4.747,0.113
 DEFAULT_STRIDE = 0.6
 DEFAULT_MAX_SAFE_STRIDE = 1
@@ -101,23 +109,49 @@ class VisionResult:
 @dataclass(frozen=True)
 class ServoTimingConfig:
     mode: str
+    trajectory_mode: str
     policy_hz: float
     servo_hz: float
     policy_period_s: float
     servo_period_s: float
     target_timeout_s: float
+    startup_grace_s: float
     max_speed_cm_s: float
+    speed_headroom: float
     max_translation_per_tick_m: float
     lookahead_time_s: float
     gain: int
+    lag_warning_cm: float
+    lag_hard_limit_cm: float
 
 
 @dataclass
-class ServoTarget:
-    pose: np.ndarray
+class ServoSegment:
+    """One committed piece of the commanded trajectory.
+
+    A segment fixes both endpoints and both timestamps at publish time, so the
+    commanded path is a deterministic piecewise-linear function of time that can
+    be reconstructed exactly from the log. The start pose is the previously
+    committed end pose, never the servo loop's instantaneous command pose, which
+    is what keeps the commanded frame advancing by a full policy step per period.
+    """
+
+    start_pose: np.ndarray
+    end_pose: np.ndarray
+    start_perf: float
+    end_perf: float
     policy_step: int
     sequence: int
-    published_at_perf: float
+
+    @property
+    def duration_s(self):
+        return max(0.0, float(self.end_perf) - float(self.start_perf))
+
+    def phase_at(self, t_perf):
+        duration = self.duration_s
+        if duration <= 1e-9:
+            return 1.0 if float(t_perf) >= float(self.start_perf) else 0.0
+        return float(np.clip((float(t_perf) - float(self.start_perf)) / duration, 0.0, 1.0))
 
 
 @dataclass
@@ -130,11 +164,43 @@ class ServoSnapshot:
     policy_step: int = -1
     commanded_pose: np.ndarray | None = None
     target_pose: np.ndarray | None = None
+    segment_start_pose: np.ndarray | None = None
+    segment_end_pose: np.ndarray | None = None
+    segment_start_perf: float | None = None
+    segment_end_perf: float | None = None
+    segment_elapsed_s: float | None = None
+    segment_duration_s: float | None = None
+    pending_segment_count: int = 0
+    command_step_limited: bool = False
+    command_step_limited_count: int = 0
+    publish_rejected_count: int = 0
     deadline_overrun_s: float = 0.0
     deadline_overrun_count: int = 0
     watchdog_stopped: bool = False
     stop_reason: str = ""
     period_api_available: bool = False
+
+
+def copy_servo_snapshot(snapshot):
+    return replace(
+        snapshot,
+        commanded_pose=(
+            None if snapshot.commanded_pose is None else snapshot.commanded_pose.copy()
+        ),
+        target_pose=(
+            None if snapshot.target_pose is None else snapshot.target_pose.copy()
+        ),
+        segment_start_pose=(
+            None
+            if snapshot.segment_start_pose is None
+            else snapshot.segment_start_pose.copy()
+        ),
+        segment_end_pose=(
+            None
+            if snapshot.segment_end_pose is None
+            else snapshot.segment_end_pose.copy()
+        ),
+    )
 
 
 class ServoLoopFailure(RuntimeError):
@@ -327,12 +393,18 @@ def normalize_servo_timing(
     max_step_cm=DEFAULT_MAX_SAFE_STRIDE,
     lookahead_time_s=DEFAULT_SERVO_LOOKAHEAD,
     gain=DEFAULT_SERVO_GAIN,
+    lag_warning_cm=DEFAULT_SERVO_LAG_WARNING_CM,
+    lag_hard_limit_cm=DEFAULT_SERVO_LAG_HARD_LIMIT_CM,
+    speed_headroom=SERVO_SPEED_HEADROOM,
 ):
     policy_hz = float(policy_hz)
     servo_hz = float(servo_hz)
     max_step_cm = float(max_step_cm)
     lookahead_time_s = float(lookahead_time_s)
     gain = int(gain)
+    lag_warning_cm = float(lag_warning_cm)
+    lag_hard_limit_cm = float(lag_hard_limit_cm)
+    speed_headroom = float(speed_headroom)
     if servo_mode not in {"interpolated", "legacy"}:
         raise ValueError("servo mode must be 'interpolated' or 'legacy'")
     if policy_hz <= 0.0:
@@ -347,6 +419,14 @@ def normalize_servo_timing(
         raise ValueError("servo lookahead must be in [0.03, 0.2] seconds")
     if not 100 <= gain <= 2000:
         raise ValueError("servo gain must be in [100, 2000]")
+    if lag_warning_cm <= 0.0:
+        raise ValueError("servo lag warning threshold must be positive")
+    if lag_hard_limit_cm <= lag_warning_cm:
+        raise ValueError(
+            "servo lag hard limit must exceed the servo lag warning threshold"
+        )
+    if speed_headroom < 1.0:
+        raise ValueError("servo speed headroom cannot be below 1.0")
 
     timeout = (
         max(3.0 / policy_hz, 0.15)
@@ -355,8 +435,12 @@ def normalize_servo_timing(
     )
     if timeout <= 0.0:
         raise ValueError("servo target timeout must be positive")
+    # The per-tick translation cap is a glitch guard, not the operating speed, so
+    # it carries headroom over one saturated policy step. Without it a saturated
+    # diagonal action needs exactly the cap and any jitter rate-limits the very
+    # step the interpolation is supposed to land on time.
     speed_cm_s = (
-        max_step_cm * policy_hz
+        max_step_cm * policy_hz * speed_headroom
         if max_speed_cm_s is None
         else float(max_speed_cm_s)
     )
@@ -367,15 +451,24 @@ def normalize_servo_timing(
     servo_period_s = 1.0 / effective_servo_hz
     return ServoTimingConfig(
         mode=servo_mode,
+        trajectory_mode=(
+            SERVO_TRAJECTORY_MODE
+            if servo_mode == "interpolated"
+            else LEGACY_TRAJECTORY_MODE
+        ),
         policy_hz=policy_hz,
         servo_hz=effective_servo_hz,
         policy_period_s=1.0 / policy_hz,
         servo_period_s=servo_period_s,
         target_timeout_s=timeout,
+        startup_grace_s=max(SERVO_STARTUP_GRACE_S, timeout),
         max_speed_cm_s=speed_cm_s,
+        speed_headroom=speed_headroom,
         max_translation_per_tick_m=(speed_cm_s / 100.0) * servo_period_s,
         lookahead_time_s=lookahead_time_s,
         gain=gain,
+        lag_warning_cm=lag_warning_cm,
+        lag_hard_limit_cm=lag_hard_limit_cm,
     )
 
 
@@ -422,6 +515,13 @@ def wait_until_high_resolution(
 
 
 class InterpolatedServoThread(threading.Thread):
+    """Runs the commanded trajectory at servo rate from committed segments.
+
+    The policy loop publishes one segment per step; this loop resamples the
+    committed piecewise-linear path at ``servo_hz`` so the arm is given the whole
+    policy period to cover exactly one policy step.
+    """
+
     def __init__(
         self,
         robot_control,
@@ -441,17 +541,31 @@ class InterpolatedServoThread(threading.Thread):
         self._sleeper = sleeper
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
-        self._target = ServoTarget(
-            pose=initial_pose.copy(),
-            policy_step=-1,
-            sequence=0,
-            published_at_perf=now,
-        )
+        self._started_at_perf = now
+        self._last_publish_perf = now
+        self._armed = False
+        self._publish_rejected_count = 0
+        self._segments = deque([
+            ServoSegment(
+                start_pose=initial_pose.copy(),
+                end_pose=initial_pose.copy(),
+                start_perf=now,
+                end_perf=now,
+                policy_step=-1,
+                sequence=0,
+            )
+        ])
         self._snapshot = ServoSnapshot(
             command_sequence=0,
             policy_step=-1,
             commanded_pose=initial_pose.copy(),
             target_pose=initial_pose.copy(),
+            segment_start_pose=initial_pose.copy(),
+            segment_end_pose=initial_pose.copy(),
+            segment_start_perf=now,
+            segment_end_perf=now,
+            segment_duration_s=0.0,
+            pending_segment_count=1,
             period_api_available=bool(
                 getattr(robot_control, "control_frequency_configured", False)
                 and hasattr(robot_control.rtde_c, "initPeriod")
@@ -465,46 +579,83 @@ class InterpolatedServoThread(threading.Thread):
     def period_api_available(self):
         return self._snapshot.period_api_available
 
-    def publish_target(self, target_pose, policy_step, timestamp_perf=None):
+    @property
+    def publish_rejected_count(self):
+        with self._lock:
+            return int(self._publish_rejected_count)
+
+    def committed_end_pose(self):
+        with self._lock:
+            return self._segments[-1].end_pose.copy()
+
+    def publish_segment(self, end_pose, policy_step, timestamp_perf=None):
+        """Commit the next trajectory segment and return (sequence, pending, reason).
+
+        ``reason`` is empty when the segment was accepted. The segment starts at
+        the previously committed end pose and, in time, no earlier than the
+        previous segment ends, which keeps the committed path continuous and
+        strictly ordered regardless of policy-loop jitter.
+        """
         self.raise_if_failed()
-        pose = _as_finite_pose(target_pose, "servo target")
+        pose = _as_finite_pose(end_pose, "servo segment end pose")
         timestamp = self._clock() if timestamp_perf is None else float(timestamp_perf)
         with self._lock:
-            sequence = self._target.sequence + 1
-            self._target = ServoTarget(
-                pose=pose.copy(),
+            if len(self._segments) >= SERVO_MAX_PENDING_SEGMENTS:
+                self._publish_rejected_count += 1
+                return (
+                    self._segments[-1].sequence,
+                    len(self._segments),
+                    "queue_saturated",
+                )
+            previous = self._segments[-1]
+            start_perf = max(timestamp, previous.end_perf)
+            segment = ServoSegment(
+                start_pose=previous.end_pose.copy(),
+                end_pose=pose.copy(),
+                start_perf=start_perf,
+                end_perf=start_perf + self.timing.policy_period_s,
                 policy_step=int(policy_step),
-                sequence=sequence,
-                published_at_perf=timestamp,
+                sequence=previous.sequence + 1,
             )
-        return sequence
+            self._segments.append(segment)
+            self._last_publish_perf = timestamp
+            self._armed = True
+            return segment.sequence, len(self._segments), ""
+
+    def note_publish_rejected(self):
+        with self._lock:
+            self._publish_rejected_count += 1
+            return int(self._publish_rejected_count)
+
+    def resync_committed_frame(self, pose):
+        """Collapse the committed trajectory onto ``pose`` and hold there.
+
+        Used when the commanded frame has run far ahead of the measured arm. Every
+        queued segment is dropped and the committed path restarts from the given
+        pose, so the planned frame the policy integrates on and the committed
+        frame the servo loop executes agree again instead of drifting apart.
+        """
+        self.raise_if_failed()
+        resync_pose = _as_finite_pose(pose, "servo resync pose")
+        now = self._clock()
+        with self._lock:
+            sequence = self._segments[-1].sequence + 1
+            self._segments.clear()
+            self._segments.append(
+                ServoSegment(
+                    start_pose=resync_pose.copy(),
+                    end_pose=resync_pose.copy(),
+                    start_perf=now,
+                    end_perf=now,
+                    policy_step=-1,
+                    sequence=sequence,
+                )
+            )
+            return sequence
 
     def snapshot(self):
         with self._lock:
-            snapshot = self._snapshot
-            return ServoSnapshot(
-                servo_dt_s=snapshot.servo_dt_s,
-                servo_loop_hz_inst=snapshot.servo_loop_hz_inst,
-                target_age_s=snapshot.target_age_s,
-                interpolation_phase=snapshot.interpolation_phase,
-                command_sequence=snapshot.command_sequence,
-                policy_step=snapshot.policy_step,
-                commanded_pose=(
-                    None
-                    if snapshot.commanded_pose is None
-                    else snapshot.commanded_pose.copy()
-                ),
-                target_pose=(
-                    None
-                    if snapshot.target_pose is None
-                    else snapshot.target_pose.copy()
-                ),
-                deadline_overrun_s=snapshot.deadline_overrun_s,
-                deadline_overrun_count=snapshot.deadline_overrun_count,
-                watchdog_stopped=snapshot.watchdog_stopped,
-                stop_reason=snapshot.stop_reason,
-                period_api_available=snapshot.period_api_available,
-            )
+            return copy_servo_snapshot(self._snapshot)
 
     def request_stop(self, reason="requested_stop"):
         with self._lock:
@@ -546,18 +697,55 @@ class InterpolatedServoThread(threading.Thread):
                 if not self._snapshot.stop_reason:
                     self._snapshot.stop_reason = "servo_stop_failed"
 
+    def _active_segment(self, now):
+        """Drop fully elapsed segments and return (active segment, pending, age, armed).
+
+        The head is kept even once elapsed so that a starved loop holds the last
+        committed end pose instead of losing the trajectory.
+        """
+        with self._lock:
+            while len(self._segments) > 1 and self._segments[0].end_perf <= now:
+                self._segments.popleft()
+            return (
+                self._segments[0],
+                len(self._segments),
+                max(0.0, now - self._last_publish_perf),
+                self._armed,
+            )
+
+    def _stale_stop_reason(self, now, target_age_s, armed):
+        if armed:
+            if target_age_s > self.timing.target_timeout_s:
+                return (
+                    f"stale_target_{target_age_s:.3f}s_"
+                    f"over_{self.timing.target_timeout_s:.3f}s"
+                )
+            return ""
+        startup_age_s = now - self._started_at_perf
+        if startup_age_s > self.timing.startup_grace_s:
+            return (
+                f"no_initial_target_{startup_age_s:.3f}s_"
+                f"over_{self.timing.startup_grace_s:.3f}s"
+            )
+        return ""
+
     def run(self):
-        command_pose = self._target.pose.copy()
-        segment_start_pose = command_pose.copy()
-        segment_start_perf = self._target.published_at_perf
-        active_sequence = self._target.sequence
+        command_pose = self._segments[0].end_pose.copy()
         last_cycle_start = None
         next_deadline = self._clock()
         deadline_overrun_count = 0
+        command_step_limited_count = 0
         period_api = self.period_api_available
 
         try:
             while not self._stop_event.is_set():
+                # initPeriod has to bracket the whole cycle: waitPeriod only
+                # compensates for work done after the token was taken.
+                period_token = (
+                    self.robot_control.rtde_c.initPeriod()
+                    if period_api
+                    else None
+                )
                 cycle_start = self._clock()
                 servo_dt_s = (
                     None
@@ -565,56 +753,43 @@ class InterpolatedServoThread(threading.Thread):
                     else cycle_start - last_cycle_start
                 )
                 last_cycle_start = cycle_start
-                deadline_overrun_s = max(0.0, cycle_start - next_deadline)
+                if period_api:
+                    deadline_overrun_s = (
+                        0.0
+                        if servo_dt_s is None
+                        else max(0.0, servo_dt_s - self.timing.servo_period_s)
+                    )
+                else:
+                    deadline_overrun_s = max(0.0, cycle_start - next_deadline)
                 if deadline_overrun_s > 1e-3:
                     deadline_overrun_count += 1
 
-                with self._lock:
-                    target = ServoTarget(
-                        pose=self._target.pose.copy(),
-                        policy_step=self._target.policy_step,
-                        sequence=self._target.sequence,
-                        published_at_perf=self._target.published_at_perf,
-                    )
-                target_age_s = max(0.0, cycle_start - target.published_at_perf)
-                if target_age_s > self.timing.target_timeout_s:
-                    reason = (
-                        f"stale_target_{target_age_s:.3f}s_"
-                        f"over_{self.timing.target_timeout_s:.3f}s"
-                    )
+                segment, pending_count, target_age_s, armed = self._active_segment(
+                    cycle_start
+                )
+                stop_reason = self._stale_stop_reason(cycle_start, target_age_s, armed)
+                if stop_reason:
                     self._set_failure(
-                        ServoLoopSafetyStop(reason),
-                        reason,
+                        ServoLoopSafetyStop(stop_reason),
+                        stop_reason,
                         watchdog=True,
                     )
                     break
 
-                if target.sequence != active_sequence:
-                    segment_start_pose = command_pose.copy()
-                    segment_start_perf = target.published_at_perf
-                    active_sequence = target.sequence
-                phase = np.clip(
-                    (cycle_start - segment_start_perf)
-                    / self.timing.policy_period_s,
-                    0.0,
-                    1.0,
-                )
+                phase = segment.phase_at(cycle_start)
                 requested_pose = linear_interpolate_pose(
-                    segment_start_pose,
-                    target.pose,
+                    segment.start_pose,
+                    segment.end_pose,
                     phase,
                 )
-                command_pose, _ = limit_pose_translation_step(
+                command_pose, command_step_limited = limit_pose_translation_step(
                     command_pose,
                     requested_pose,
                     self.timing.max_translation_per_tick_m,
                 )
+                if command_step_limited:
+                    command_step_limited_count += 1
 
-                period_token = (
-                    self.robot_control.rtde_c.initPeriod()
-                    if period_api
-                    else None
-                )
                 servo_ok = self.robot_control.servo_robot(
                     command_pose.tolist(),
                     dt=self.timing.servo_period_s,
@@ -623,8 +798,6 @@ class InterpolatedServoThread(threading.Thread):
                 )
                 if servo_ok is False:
                     raise RuntimeError("servoL returned failure")
-                if period_api:
-                    self.robot_control.rtde_c.waitPeriod(period_token)
 
                 with self._lock:
                     self._snapshot = ServoSnapshot(
@@ -636,10 +809,20 @@ class InterpolatedServoThread(threading.Thread):
                         ),
                         target_age_s=target_age_s,
                         interpolation_phase=float(phase),
-                        command_sequence=target.sequence,
-                        policy_step=target.policy_step,
+                        command_sequence=segment.sequence,
+                        policy_step=segment.policy_step,
                         commanded_pose=command_pose.copy(),
-                        target_pose=target.pose.copy(),
+                        target_pose=segment.end_pose.copy(),
+                        segment_start_pose=segment.start_pose.copy(),
+                        segment_end_pose=segment.end_pose.copy(),
+                        segment_start_perf=segment.start_perf,
+                        segment_end_perf=segment.end_perf,
+                        segment_elapsed_s=max(0.0, cycle_start - segment.start_perf),
+                        segment_duration_s=segment.duration_s,
+                        pending_segment_count=pending_count,
+                        command_step_limited=bool(command_step_limited),
+                        command_step_limited_count=command_step_limited_count,
+                        publish_rejected_count=self._publish_rejected_count,
                         deadline_overrun_s=deadline_overrun_s,
                         deadline_overrun_count=deadline_overrun_count,
                         watchdog_stopped=False,
@@ -647,8 +830,10 @@ class InterpolatedServoThread(threading.Thread):
                         period_api_available=period_api,
                     )
 
-                next_deadline += self.timing.servo_period_s
-                if not period_api:
+                if period_api:
+                    self.robot_control.rtde_c.waitPeriod(period_token)
+                else:
+                    next_deadline += self.timing.servo_period_s
                     if self._clock() > next_deadline:
                         next_deadline = self._clock() + self.timing.servo_period_s
                     wait_until_high_resolution(
@@ -677,6 +862,8 @@ def build_servo_log_fields(snapshot, actual_robot_pose=None):
     )
     commanded = snapshot.commanded_pose
     target = snapshot.target_pose
+    segment_start = snapshot.segment_start_pose
+    segment_end = snapshot.segment_end_pose
     tracking_error_cm = (
         None
         if commanded is None or actual_pose is None
@@ -700,6 +887,32 @@ def build_servo_log_fields(snapshot, actual_robot_pose=None):
         "servo_target_world_x": None if target is None else float(target[0]),
         "servo_target_world_y": None if target is None else float(target[1]),
         "servo_target_world_z": None if target is None else float(target[2]),
+        "servo_segment_start_world_x": (
+            None if segment_start is None else float(segment_start[0])
+        ),
+        "servo_segment_start_world_y": (
+            None if segment_start is None else float(segment_start[1])
+        ),
+        "servo_segment_start_world_z": (
+            None if segment_start is None else float(segment_start[2])
+        ),
+        "servo_segment_end_world_x": (
+            None if segment_end is None else float(segment_end[0])
+        ),
+        "servo_segment_end_world_y": (
+            None if segment_end is None else float(segment_end[1])
+        ),
+        "servo_segment_end_world_z": (
+            None if segment_end is None else float(segment_end[2])
+        ),
+        "servo_segment_start_perf": snapshot.segment_start_perf,
+        "servo_segment_end_perf": snapshot.segment_end_perf,
+        "servo_segment_elapsed_s": snapshot.segment_elapsed_s,
+        "servo_segment_duration_s": snapshot.segment_duration_s,
+        "servo_pending_segment_count": snapshot.pending_segment_count,
+        "servo_command_step_limited": snapshot.command_step_limited,
+        "servo_command_step_limited_count": snapshot.command_step_limited_count,
+        "servo_publish_rejected_count": snapshot.publish_rejected_count,
         "servo_tracking_error_cm": tracking_error_cm,
         "servo_target_error_cm": target_error_cm,
         "servo_deadline_overrun_s": snapshot.deadline_overrun_s,
@@ -996,6 +1209,18 @@ def parse_args():
         default=DEFAULT_SERVO_GAIN,
         help=argparse.SUPPRESS,
     )
+    parser.add_argument(
+        "--servo-lag-warning-cm",
+        type=float,
+        default=DEFAULT_SERVO_LAG_WARNING_CM,
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--servo-lag-hard-limit-cm",
+        type=float,
+        default=DEFAULT_SERVO_LAG_HARD_LIMIT_CM,
+        help=argparse.SUPPRESS,
+    )
     parser.add_argument("--stride", type=float, default=DEFAULT_STRIDE, help=argparse.SUPPRESS)
     parser.add_argument("--max-step", type=float, default=DEFAULT_MAX_SAFE_STRIDE, help=argparse.SUPPRESS)
     parser.add_argument("--robot-ip", default="192.168.1.2", help=argparse.SUPPRESS)
@@ -1142,6 +1367,16 @@ def format_rollout_configuration(args, virtual_hand_stride, servo_timing=None):
                 DEFAULT_SERVO_LOOKAHEAD,
             ),
             gain=getattr(args, "servo_gain", DEFAULT_SERVO_GAIN),
+            lag_warning_cm=getattr(
+                args,
+                "servo_lag_warning_cm",
+                DEFAULT_SERVO_LAG_WARNING_CM,
+            ),
+            lag_hard_limit_cm=getattr(
+                args,
+                "servo_lag_hard_limit_cm",
+                DEFAULT_SERVO_LAG_HARD_LIMIT_CM,
+            ),
         )
     lines = [
         "-" * 78,
@@ -1174,6 +1409,11 @@ def format_rollout_configuration(args, virtual_hand_stride, servo_timing=None):
             f"rate={servo_timing.servo_hz:.1f} Hz  |  "
             f"watchdog={servo_timing.target_timeout_s:.3f} s"
         ),
+        (
+            f"Trajectory   : {servo_timing.trajectory_mode}  |  "
+            f"lag warn={servo_timing.lag_warning_cm:.2f} cm  |  "
+            f"lag stop={servo_timing.lag_hard_limit_cm:.2f} cm"
+        ),
         f"Seed         : {int(args.seed)}",
         "-" * 78,
     ])
@@ -1182,16 +1422,23 @@ def format_rollout_configuration(args, virtual_hand_stride, servo_timing=None):
 
 def resolve_common_target_env(
     action,
-    measured_robot_env,
+    anchor_robot_env,
     stride,
     max_step,
     margin=WORKSPACE_MARGIN,
     safety_guard=COMMON_SAFETY_GUARD,
 ):
+    """Turn one policy action into an absolute env-space target.
+
+    ``anchor_robot_env`` is the planned (commanded) frame, not the measured TCP.
+    Anchoring on the measurement would subtract the servo follower's steady-state
+    lag from every step, so the commanded frame would advance by less than one
+    stride per policy period and the arm would never reach the intended speed.
+    """
     action = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
     raw_delta_env = action * float(stride)
     limited_delta_env, target_step_limited = limit_vector_norm(raw_delta_env, max_step)
-    desired_target_env = np.asarray(measured_robot_env, dtype=np.float32) + limited_delta_env
+    desired_target_env = np.asarray(anchor_robot_env, dtype=np.float32) + limited_delta_env
     low = np.array([margin + safety_guard, margin + safety_guard], dtype=np.float32)
     high = np.array([
         W_ENV - margin - safety_guard,
@@ -1223,6 +1470,8 @@ def main():
         max_step_cm=args.max_step,
         lookahead_time_s=args.servo_lookahead,
         gain=args.servo_gain,
+        lag_warning_cm=args.servo_lag_warning_cm,
+        lag_hard_limit_cm=args.servo_lag_hard_limit_cm,
     )
 
     virtual_hand_rng = np.random.default_rng(args.seed)
@@ -1326,6 +1575,32 @@ def main():
             print(
                 f"[model] Hand observation: {VIRTUAL_HAND_OBS_DIM} dims "
                 f"(motion, length={VIRTUAL_HAND_HISTORY_LENGTH})"
+            )
+
+        # The first torch forward pass pays lazy initialization and can cost well
+        # over 100 ms. Spending it here instead of inside step 0 keeps the first
+        # policy period from overrunning while the servo watchdog is already armed.
+        warmup_start = time.perf_counter()
+        if rl_model is not None:
+            for _ in range(3):
+                rl_model.predict(
+                    np.zeros(expected_obs_dim, dtype=np.float32),
+                    deterministic=True,
+                )
+        if hand_model is not None:
+            for _ in range(3):
+                hand_model.predict(
+                    np.zeros(VIRTUAL_HAND_OBS_DIM, dtype=np.float32),
+                    deterministic=True,
+                )
+            # Re-seed after the warm-up so the sampled rollout depends only on
+            # --seed, not on how many warm-up passes ran.
+            if hasattr(hand_model, "set_random_seed"):
+                hand_model.set_random_seed(args.seed)
+        if rl_model is not None or hand_model is not None:
+            print(
+                f"[model] policy warm-up: "
+                f"{(time.perf_counter() - warmup_start) * 1000.0:.1f} ms"
             )
 
         cap = cv2.VideoCapture(args.camera)
@@ -1478,16 +1753,20 @@ def main():
             "servo_mode": servo_timing.mode,
             "servo_freq_target_hz": servo_timing.servo_hz,
             "servo_dt_target_s": servo_timing.servo_period_s,
-            "servo_interpolation_mode": (
-                "linear_hold" if servo_timing.mode == "interpolated" else "legacy_direct"
-            ),
+            "servo_interpolation_mode": servo_timing.trajectory_mode,
+            "servo_trajectory_mode": servo_timing.trajectory_mode,
             "servo_target_timeout_s": servo_timing.target_timeout_s,
+            "servo_startup_grace_s": servo_timing.startup_grace_s,
             "servo_max_speed_cm_s": servo_timing.max_speed_cm_s,
+            "servo_speed_headroom": servo_timing.speed_headroom,
             "servo_max_translation_per_tick_m": (
                 servo_timing.max_translation_per_tick_m
             ),
             "servo_lookahead_time_s": servo_timing.lookahead_time_s,
             "servo_gain": servo_timing.gain,
+            "servo_lag_warning_cm": servo_timing.lag_warning_cm,
+            "servo_lag_hard_limit_cm": servo_timing.lag_hard_limit_cm,
+            "servo_max_pending_segments": SERVO_MAX_PENDING_SEGMENTS,
             "servo_period_api_available": bool(
                 getattr(robot_control, "control_frequency_configured", False)
                 and hasattr(robot_control.rtde_c, "initPeriod")
@@ -1513,7 +1792,14 @@ def main():
             "workspace_height_cm": H_ENV,
             "workspace_margin_cm": WORKSPACE_MARGIN,
             "common_safety_guard_cm": COMMON_SAFETY_GUARD,
-            "target_anchored_to_measured_pose": True,
+            "target_anchored_to_measured_pose": (
+                False if servo_timing.mode == "interpolated" else True
+            ),
+            "target_anchor_frame": (
+                "planned_command_frame"
+                if servo_timing.mode == "interpolated"
+                else "measured_tcp"
+            ),
             "duration_target_s": float(args.duration),
             "policy_obs_dim": int(expected_obs_dim) if args.controller == "league" else None,
             "history_mode": history_mode if args.controller == "league" else None,
@@ -1621,6 +1907,15 @@ def main():
         cached_microrobot_detected = False
         cached_microrobot_t_perf = None
 
+        # Open the encoder and the preview window now. Both cost far more on their
+        # first call than a policy period allows, and step 0 runs with the servo
+        # watchdog already counting.
+        if args.save_video:
+            logger.ensure_video_writer(workspace_frame, fps=args.control_hz)
+        if not args.no_display:
+            cv2.imshow("Deployment Chase", workspace_frame)
+            cv2.waitKey(1)
+
         if servo_timing.mode == "interpolated":
             initial_servo_pose = np.array([
                 initial_robot_pose[0],
@@ -1643,6 +1938,18 @@ def main():
                 target_timeout_s=servo_timing.target_timeout_s,
                 period_api_available=servo_thread.period_api_available,
             )
+
+        # The planned anchor is the commanded frame the policy integrates on. It
+        # starts where the safe transition left the arm and then advances by
+        # exactly one policy step per accepted publish, so a saturated action
+        # produces a full stride of commanded motion per policy period. The
+        # measured TCP is still used for observations, safety and the lag guard
+        # below, which is what keeps the two frames from drifting apart silently.
+        anchor_on_planned_frame = servo_timing.mode == "interpolated"
+        planned_anchor_env = initial_robot_env.copy()
+        prev_planned_delta_env = None
+        servo_publish_rejected_total = 0
+        lag_warning_active = False
 
         start_perf = time.perf_counter()
         next_policy_deadline = start_perf
@@ -1697,6 +2004,37 @@ def main():
 
             robot_pose, real_robot_pixel, position_robot_env = get_robot_env_position(robot_control, cali, w_px, h_px)
             robot_boundary_clearance = workspace_clearance_env(position_robot_env)
+            if not anchor_on_planned_frame:
+                planned_anchor_env = position_robot_env.copy()
+            # Lag between where the previous segment promised the arm would be by
+            # now and where it actually is. Computed before any branch so the
+            # out-of-bounds and caught rows carry it too.
+            planned_endpoint_actual_lag_cm = float(
+                np.linalg.norm(planned_anchor_env - position_robot_env)
+            )
+            lag_fields = {
+                "planned_endpoint_actual_lag_cm": planned_endpoint_actual_lag_cm,
+                "servo_lag_warning_cm": servo_timing.lag_warning_cm,
+                "servo_lag_hard_limit_cm": servo_timing.lag_hard_limit_cm,
+            }
+            lag_over_hard_limit = bool(
+                anchor_on_planned_frame
+                and planned_endpoint_actual_lag_cm > servo_timing.lag_hard_limit_cm
+            )
+            lag_over_warning = bool(
+                anchor_on_planned_frame
+                and planned_endpoint_actual_lag_cm > servo_timing.lag_warning_cm
+            )
+            if lag_over_warning != lag_warning_active:
+                lag_warning_active = lag_over_warning
+                logger.record_event(
+                    "servo_lag_warning_entered" if lag_over_warning else "servo_lag_warning_cleared",
+                    t_task_s=t_task_s,
+                    step=step,
+                    planned_endpoint_actual_lag_cm=planned_endpoint_actual_lag_cm,
+                    lag_warning_cm=servo_timing.lag_warning_cm,
+                    lag_hard_limit_cm=servo_timing.lag_hard_limit_cm,
+                )
             if not np.all(np.isfinite(position_robot_env)) or robot_boundary_clearance <= 0.0:
                 done_reason = "safety_robot_out_of_bounds"
                 legacy_stop_error = None
@@ -1726,6 +2064,7 @@ def main():
                         servo_thread.snapshot() if servo_thread is not None else None,
                         robot_pose,
                     ),
+                    **lag_fields,
                     "safety_stop": True,
                     "safety_reason": done_reason,
                     "task_finished": True,
@@ -1817,6 +2156,7 @@ def main():
                         servo_thread.snapshot() if servo_thread is not None else None,
                         robot_pose,
                     ),
+                    **lag_fields,
                     "safety_stop": False,
                     "safety_reason": "",
                     "task_finished": True,
@@ -1936,14 +2276,50 @@ def main():
                 )
 
             action = np.clip(np.asarray(action, dtype=np.float32), -1.0, 1.0)
+            actual_to_planned_step_projection = None
+            if prev_planned_delta_env is not None:
+                prev_planned_norm_sq = float(
+                    np.dot(prev_planned_delta_env, prev_planned_delta_env)
+                )
+                if prev_planned_norm_sq > 1e-8:
+                    # Fraction of the previously committed step the arm actually
+                    # covered. ~1.0 means the interpolated segment landed on time;
+                    # a persistent value well below 1 means the commanded frame is
+                    # outrunning the servo follower.
+                    actual_to_planned_step_projection = float(
+                        np.dot(robot_move, prev_planned_delta_env) / prev_planned_norm_sq
+                    )
+
+            servo_publish_accepted = True
+            servo_publish_reject_reason = ""
+            if lag_over_hard_limit:
+                # The commanded frame has run away from the arm. Do not extend the
+                # committed path; collapse both frames onto the measurement so the
+                # next step is planned from reality, which drops the lag below the
+                # limit within one policy period.
+                servo_publish_accepted = False
+                servo_publish_reject_reason = "lag_over_hard_limit"
+                planned_anchor_env = position_robot_env.copy()
+                if servo_thread is not None:
+                    servo_thread.resync_committed_frame([
+                        robot_pose[0],
+                        robot_pose[1],
+                        Z,
+                        RX_C,
+                        RY_C,
+                        RZ_C,
+                    ])
+
+            anchor_used_env = planned_anchor_env.copy()
             virtual_target_env, desired_target_env, target_clipped, target_step_limited = (
                 resolve_common_target_env(
                     action,
-                    position_robot_env,
+                    anchor_used_env,
                     args.stride,
                     args.max_step,
                 )
             )
+            planned_delta_env = (virtual_target_env - anchor_used_env).astype(np.float32)
             virtual_target_pixel = np.array([
                 virtual_target_env[0] * w_px / W_ENV,
                 virtual_target_env[1] * h_px / H_ENV,
@@ -1956,7 +2332,73 @@ def main():
             target_position_world = cali.pixel_to_world(virtual_target_pixel.astype(int))
             target_pose = [target_position_world[0], target_position_world[1], Z, RX_C, RY_C, RZ_C]
             if servo_thread is not None:
-                servo_thread.publish_target(target_pose, policy_step=step)
+                if servo_publish_accepted:
+                    _, _, publish_reject_reason = servo_thread.publish_segment(
+                        target_pose,
+                        policy_step=step,
+                    )
+                    if publish_reject_reason:
+                        servo_publish_accepted = False
+                        servo_publish_reject_reason = publish_reject_reason
+                else:
+                    servo_thread.note_publish_rejected()
+                if servo_publish_accepted:
+                    planned_anchor_env = virtual_target_env.copy()
+                    prev_planned_delta_env = planned_delta_env.copy()
+                else:
+                    servo_publish_rejected_total += 1
+                    prev_planned_delta_env = None
+                    logger.record_event(
+                        "servo_publish_rejected",
+                        t_task_s=t_task_s,
+                        step=step,
+                        reason=servo_publish_reject_reason,
+                        planned_endpoint_actual_lag_cm=planned_endpoint_actual_lag_cm,
+                        rejected_total=servo_publish_rejected_total,
+                    )
+                    if servo_publish_rejected_total > SERVO_LAG_REJECT_LIMIT:
+                        done_reason = "safety_servo_tracking_lag"
+                        servo_thread.request_stop(done_reason)
+                        logger.record_step({
+                            "step": step,
+                            "t_wall_s": time.time(),
+                            "t_task_s": t_task_s,
+                            "control_dt_s": control_dt_s,
+                            "control_loop_hz_inst": control_hz,
+                            "policy_dt_s": control_dt_s,
+                            "policy_loop_hz_inst": control_hz,
+                            "hand_x_cm": float(position_hand_env[0]),
+                            "hand_y_cm": float(position_hand_env[1]),
+                            "robot_x_cm": float(position_robot_env[0]),
+                            "robot_y_cm": float(position_robot_env[1]),
+                            "distance_cm": distance_cm,
+                            "in_zpd": in_zpd,
+                            "robot_world_x": float(robot_pose[0]),
+                            "robot_world_y": float(robot_pose[1]),
+                            "robot_world_z": float(robot_pose[2]),
+                            **build_servo_log_fields(
+                                servo_thread.snapshot(),
+                                robot_pose,
+                            ),
+                            **lag_fields,
+                            "servo_publish_accepted": False,
+                            "servo_publish_reject_reason": servo_publish_reject_reason,
+                            "safety_stop": True,
+                            "safety_reason": done_reason,
+                            "task_finished": True,
+                            "done_reason": done_reason,
+                        })
+                        terminal_step_recorded = True
+                        logger.record_event(
+                            "safety_stop",
+                            t_task_s=t_task_s,
+                            reason=done_reason,
+                            planned_endpoint_actual_lag_cm=planned_endpoint_actual_lag_cm,
+                            lag_hard_limit_cm=servo_timing.lag_hard_limit_cm,
+                            rejected_total=servo_publish_rejected_total,
+                        )
+                        servo_thread.stop_and_join(done_reason)
+                        break
             else:
                 safe_dt = float(np.clip(
                     control_dt_s or servo_timing.policy_period_s,
@@ -1971,6 +2413,7 @@ def main():
                 )
                 if servo_ok is False:
                     raise RuntimeError("servoL returned failure")
+                prev_planned_delta_env = planned_delta_env.copy()
             last_action = action.copy()
 
             if args.hand_source == "virtual":
@@ -2094,10 +2537,24 @@ def main():
                 "desired_target_y_px": float(desired_virtual_target[1]),
                 "target_clipped": target_clipped,
                 "target_step_limited": target_step_limited,
+                "planned_anchor_x_cm": float(anchor_used_env[0]),
+                "planned_anchor_y_cm": float(anchor_used_env[1]),
+                "planned_target_x_cm": float(virtual_target_env[0]),
+                "planned_target_y_cm": float(virtual_target_env[1]),
+                "planned_delta_dx_cm": float(planned_delta_env[0]),
+                "planned_delta_dy_cm": float(planned_delta_env[1]),
+                "planned_delta_norm_cm": float(np.linalg.norm(planned_delta_env)),
+                "actual_robot_move_dx_cm": float(robot_move[0]),
+                "actual_robot_move_dy_cm": float(robot_move[1]),
+                "actual_robot_move_norm_cm": float(np.linalg.norm(robot_move)),
+                "actual_to_planned_step_projection": actual_to_planned_step_projection,
+                "servo_publish_accepted": servo_publish_accepted,
+                "servo_publish_reject_reason": servo_publish_reject_reason,
                 "robot_world_x": float(robot_pose[0]),
                 "robot_world_y": float(robot_pose[1]),
                 "robot_world_z": float(robot_pose[2]),
                 **build_servo_log_fields(servo_snapshot, robot_pose),
+                **lag_fields,
                 "safety_stop": False,
                 "safety_reason": "",
                 "task_finished": task_finished,
@@ -2124,11 +2581,13 @@ def main():
 
             step += 1
             next_policy_deadline += servo_timing.policy_period_s
-            sleep_time = next_policy_deadline - time.perf_counter()
-            if sleep_time > 0.0:
-                time.sleep(sleep_time)
-            elif -sleep_time > servo_timing.policy_period_s:
+            # time.sleep alone has ~1-15 ms granularity on Windows, which is a
+            # large fraction of a 50 ms policy period; the spin tail keeps the
+            # publish cadence tight enough that segments stay one period apart.
+            if time.perf_counter() - next_policy_deadline > servo_timing.policy_period_s:
                 next_policy_deadline = time.perf_counter()
+            else:
+                wait_until_high_resolution(next_policy_deadline)
 
         if done_reason == "unknown":
             done_reason = "timeout"
@@ -2164,6 +2623,9 @@ def main():
                 servo_thread.snapshot() if servo_thread is not None else None,
                 terminal_pose,
             ))
+            terminal_lag_fields = locals().get("lag_fields")
+            if terminal_lag_fields:
+                terminal_row.update(terminal_lag_fields)
             terminal_robot_env = locals().get("position_robot_env")
             if terminal_robot_env is not None:
                 terminal_row.update({
@@ -2274,6 +2736,27 @@ def main():
                 f"Observed ZPD : "
                 f"{f'{100.0 * float(observed_zpd):.1f}%' if observed_zpd is not None else 'N/A'}"
             )
+            lag_mean = summary.get("planned_endpoint_actual_lag_cm_mean")
+            lag_p95 = summary.get("planned_endpoint_actual_lag_cm_p95")
+            lag_max = summary.get("planned_endpoint_actual_lag_cm_max")
+            projection_mean = summary.get("actual_to_planned_step_projection_mean")
+            print(
+                f"Servo lag    : "
+                f"mean={f'{float(lag_mean):.2f}' if lag_mean is not None else 'N/A'} cm  |  "
+                f"p95={f'{float(lag_p95):.2f}' if lag_p95 is not None else 'N/A'} cm  |  "
+                f"max={f'{float(lag_max):.2f}' if lag_max is not None else 'N/A'} cm"
+            )
+            print(
+                f"Step tracking: "
+                f"covered={f'{float(projection_mean):.2f}' if projection_mean is not None else 'N/A'} "
+                f"of each planned step  |  "
+                f"publish rejects={summary.get('servo_publish_rejected_count')}"
+            )
+            if lag_mean is not None and float(lag_mean) > 1.0:
+                print(
+                    "[hint] Mean planned-vs-actual lag exceeds 1 cm. Re-run with "
+                    "--servo-lookahead 0.05 to tighten the servo follower."
+                )
             print(f"Summary file : {logger.rollout_dir / 'summary.json'}")
             print("-" * 78, flush=True)
         if vision_thread is not None:

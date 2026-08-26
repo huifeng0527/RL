@@ -132,10 +132,44 @@ class ServoInterpolationTests(unittest.TestCase):
             max_step_cm=1.0,
         )
         self.assertEqual(timing.mode, "interpolated")
+        self.assertEqual(timing.trajectory_mode, rollout.SERVO_TRAJECTORY_MODE)
         self.assertEqual(timing.policy_hz, 20.0)
         self.assertEqual(timing.servo_hz, 125.0)
         self.assertAlmostEqual(timing.target_timeout_s, 0.15)
-        self.assertAlmostEqual(timing.max_translation_per_tick_m, 0.0016)
+        self.assertGreaterEqual(timing.startup_grace_s, timing.target_timeout_s)
+        self.assertLess(timing.lag_warning_cm, timing.lag_hard_limit_cm)
+        # One saturated policy step needs max_step_cm per policy period; the
+        # per-tick cap carries headroom above that so it never rate-limits the
+        # step the interpolation is supposed to land on time.
+        saturated_step_per_tick_m = (
+            (1.0 / 100.0) * timing.servo_period_s / timing.policy_period_s
+        )
+        self.assertAlmostEqual(
+            timing.max_translation_per_tick_m,
+            saturated_step_per_tick_m * timing.speed_headroom,
+        )
+        self.assertGreater(
+            timing.max_translation_per_tick_m,
+            saturated_step_per_tick_m,
+        )
+
+    def test_legacy_mode_reports_legacy_trajectory(self):
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_mode="legacy",
+            servo_hz=125.0,
+        )
+        self.assertEqual(timing.trajectory_mode, rollout.LEGACY_TRAJECTORY_MODE)
+        self.assertEqual(timing.servo_hz, 20.0)
+
+    def test_timing_rejects_inverted_lag_thresholds(self):
+        with self.assertRaises(ValueError):
+            rollout.normalize_servo_timing(
+                policy_hz=20.0,
+                servo_hz=125.0,
+                lag_warning_cm=3.0,
+                lag_hard_limit_cm=1.5,
+            )
 
     def test_interpolated_mode_rejects_slower_servo_rate(self):
         with self.assertRaises(ValueError):
@@ -143,6 +177,91 @@ class ServoInterpolationTests(unittest.TestCase):
                 policy_hz=20.0,
                 servo_hz=10.0,
             )
+
+    def test_segment_starts_at_previous_committed_endpoint(self):
+        # The defect this guards against: anchoring each segment on the servo
+        # loop's instantaneous command pose (which lags the target) makes the
+        # commanded frame advance less than one policy step per period, so the
+        # arm never reaches the intended speed no matter how fast the servo runs.
+        robot = self.FakeRobotControl()
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_hz=200.0,
+            target_timeout_s=1.0,
+            max_step_cm=1.0,
+        )
+        thread = rollout.InterpolatedServoThread(
+            robot,
+            initial_pose=np.zeros(6, dtype=float),
+            timing=timing,
+        )
+        first = np.array([0.01, 0.0, 0.0, 0.0, 0.0, 0.0])
+        second = np.array([0.02, 0.0, 0.0, 0.0, 0.0, 0.0])
+        sequence_one, pending_one, reason_one = thread.publish_segment(
+            first,
+            policy_step=0,
+        )
+        self.assertEqual(reason_one, "")
+        self.assertEqual(sequence_one, 1)
+        self.assertEqual(pending_one, 2)
+        np.testing.assert_allclose(thread.committed_end_pose(), first)
+
+        # Published before the servo loop ever ran, so no command pose exists yet;
+        # the second segment must still start exactly where the first ended.
+        sequence_two, _, reason_two = thread.publish_segment(second, policy_step=1)
+        self.assertEqual(reason_two, "")
+        self.assertEqual(sequence_two, 2)
+        np.testing.assert_allclose(thread.committed_end_pose(), second)
+        segments = list(thread._segments)
+        np.testing.assert_allclose(segments[-1].start_pose, first)
+        np.testing.assert_allclose(segments[-2].end_pose, segments[-1].start_pose)
+        self.assertGreaterEqual(segments[-1].start_perf, segments[-2].end_perf)
+        self.assertAlmostEqual(
+            segments[-1].duration_s,
+            timing.policy_period_s,
+            places=9,
+        )
+
+    def test_segment_phase_is_clamped_to_its_own_window(self):
+        segment = rollout.ServoSegment(
+            start_pose=np.zeros(6, dtype=float),
+            end_pose=np.ones(6, dtype=float),
+            start_perf=10.0,
+            end_perf=10.05,
+            policy_step=0,
+            sequence=1,
+        )
+        self.assertEqual(segment.phase_at(9.9), 0.0)
+        self.assertAlmostEqual(segment.phase_at(10.025), 0.5)
+        self.assertEqual(segment.phase_at(10.2), 1.0)
+
+    def test_publish_rejects_when_segment_queue_saturates(self):
+        robot = self.FakeRobotControl()
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_hz=200.0,
+            target_timeout_s=1.0,
+            max_step_cm=1.0,
+        )
+        thread = rollout.InterpolatedServoThread(
+            robot,
+            initial_pose=np.zeros(6, dtype=float),
+            timing=timing,
+        )
+        reasons = []
+        for index in range(rollout.SERVO_MAX_PENDING_SEGMENTS + 2):
+            _, _, reason = thread.publish_segment(
+                np.array([0.001 * (index + 1), 0.0, 0.0, 0.0, 0.0, 0.0]),
+                policy_step=index,
+            )
+            reasons.append(reason)
+        self.assertEqual(reasons[0], "")
+        self.assertIn("queue_saturated", reasons)
+        self.assertEqual(
+            len(thread._segments),
+            rollout.SERVO_MAX_PENDING_SEGMENTS,
+        )
+        self.assertGreater(thread.publish_rejected_count, 0)
 
     def test_servo_thread_publishes_fixed_dt_and_stops(self):
         robot = self.FakeRobotControl()
@@ -158,7 +277,7 @@ class ServoInterpolationTests(unittest.TestCase):
             timing=timing,
         )
         thread.start()
-        thread.publish_target(
+        thread.publish_segment(
             np.array([0.01, 0.0, 0.0, 0.0, 0.0, 0.0]),
             policy_step=0,
         )
@@ -171,6 +290,40 @@ class ServoInterpolationTests(unittest.TestCase):
         ))
         self.assertEqual(robot.stop_count, 1)
         self.assertEqual(thread.snapshot().stop_reason, "test_complete")
+
+    def test_commanded_frame_covers_a_full_step_per_policy_period(self):
+        robot = self.FakeRobotControl()
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_hz=200.0,
+            target_timeout_s=1.0,
+            max_step_cm=1.0,
+        )
+        thread = rollout.InterpolatedServoThread(
+            robot,
+            initial_pose=np.zeros(6, dtype=float),
+            timing=timing,
+        )
+        thread.start()
+        step_m = 0.005
+        try:
+            for policy_step in range(3):
+                thread.publish_segment(
+                    np.array([
+                        step_m * (policy_step + 1),
+                        0.0, 0.0, 0.0, 0.0, 0.0,
+                    ]),
+                    policy_step=policy_step,
+                )
+                time.sleep(timing.policy_period_s)
+            # Let the last committed segment finish before sampling the command.
+            time.sleep(timing.policy_period_s)
+        finally:
+            thread.stop_and_join("test_complete")
+        # Three committed steps of step_m each; the commanded frame must have
+        # travelled essentially all of it, not a lagged fraction.
+        commanded_x = robot.servo_calls[-1]["target_pose"][0]
+        self.assertGreater(commanded_x, 2.5 * step_m)
 
     def test_servo_watchdog_stops_on_stale_target(self):
         robot = self.FakeRobotControl()
@@ -186,7 +339,13 @@ class ServoInterpolationTests(unittest.TestCase):
             timing=timing,
         )
         thread.start()
-        thread.join(timeout=0.2)
+        # The watchdog only arms once the policy loop has committed something,
+        # so a stale-target stop requires a publish first.
+        thread.publish_segment(
+            np.array([0.01, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            policy_step=0,
+        )
+        thread.join(timeout=1.0)
         self.assertFalse(thread.is_alive())
         with self.assertRaises(rollout.ServoLoopSafetyStop):
             thread.raise_if_failed()
@@ -194,6 +353,58 @@ class ServoInterpolationTests(unittest.TestCase):
         self.assertTrue(snapshot.watchdog_stopped)
         self.assertIn("stale_target", snapshot.stop_reason)
         self.assertEqual(robot.stop_count, 1)
+
+    def test_servo_watchdog_grants_startup_grace_before_first_publish(self):
+        # Cold-start costs (first torch forward pass, video writer creation) can
+        # exceed the steady-state target timeout. Killing the run before step 0
+        # ever published would make those costs look like a hardware fault.
+        robot = self.FakeRobotControl()
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_hz=200.0,
+            target_timeout_s=0.02,
+            max_step_cm=1.0,
+        )
+        self.assertGreater(timing.startup_grace_s, 0.2)
+        thread = rollout.InterpolatedServoThread(
+            robot,
+            initial_pose=np.zeros(6, dtype=float),
+            timing=timing,
+        )
+        thread.start()
+        time.sleep(0.15)
+        still_running = thread.is_alive()
+        thread.stop_and_join("test_complete")
+        self.assertTrue(still_running)
+        self.assertFalse(thread.snapshot().watchdog_stopped)
+
+    def test_resync_collapses_committed_frame_onto_measured_pose(self):
+        robot = self.FakeRobotControl()
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_hz=200.0,
+            target_timeout_s=1.0,
+            max_step_cm=1.0,
+        )
+        thread = rollout.InterpolatedServoThread(
+            robot,
+            initial_pose=np.zeros(6, dtype=float),
+            timing=timing,
+        )
+        runaway = np.array([0.05, 0.0, 0.0, 0.0, 0.0, 0.0])
+        thread.publish_segment(runaway, policy_step=0)
+        thread.publish_segment(runaway * 2.0, policy_step=1)
+        measured = np.array([0.001, 0.0, 0.0, 0.0, 0.0, 0.0])
+        thread.resync_committed_frame(measured)
+        self.assertEqual(len(thread._segments), 1)
+        np.testing.assert_allclose(thread.committed_end_pose(), measured)
+        # The next committed step must start from the resynced pose, not from the
+        # abandoned runaway endpoint.
+        thread.publish_segment(
+            np.array([0.002, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            policy_step=2,
+        )
+        np.testing.assert_allclose(list(thread._segments)[-1].start_pose, measured)
 
     def test_servo_returning_false_propagates_failure(self):
         robot = self.FakeRobotControl(servo_return=False)
