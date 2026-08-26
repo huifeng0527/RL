@@ -62,6 +62,9 @@ RUN_FIELDS = [
     "servo_tracking_error_cm_mean", "servo_tracking_error_cm_p95",
     "servo_target_error_cm_mean", "planned_endpoint_actual_lag_cm_mean",
     "planned_endpoint_actual_lag_cm_p95", "planned_endpoint_actual_lag_cm_max",
+    "planned_endpoint_actual_lag_excess_cm_p95",
+    "planned_endpoint_actual_lag_excess_cm_max",
+    "servo_follower_lag_allowance_cm",
     "actual_to_planned_step_projection_mean",
     "actual_to_planned_step_projection_p50", "servo_command_step_limited_count",
     "servo_publish_rejected_count", "servo_deadline_overrun_count",
@@ -89,6 +92,9 @@ SUMMARY_METRICS = [
     "servo_target_age_s_mean", "servo_tracking_error_cm_mean",
     "servo_target_error_cm_mean", "planned_endpoint_actual_lag_cm_mean",
     "planned_endpoint_actual_lag_cm_p95", "planned_endpoint_actual_lag_cm_max",
+    "planned_endpoint_actual_lag_excess_cm_p95",
+    "planned_endpoint_actual_lag_excess_cm_max",
+    "servo_follower_lag_allowance_cm",
     "actual_to_planned_step_projection_mean",
     "actual_to_planned_step_projection_p50", "servo_command_step_limited_count",
     "servo_publish_rejected_count", "servo_deadline_overrun_count",
@@ -907,6 +913,15 @@ def extract_metrics(run, rollout_dir):
         )),
         "planned_endpoint_actual_lag_cm_max": to_float(summary.get(
             "planned_endpoint_actual_lag_cm_max"
+        )),
+        "planned_endpoint_actual_lag_excess_cm_p95": to_float(summary.get(
+            "planned_endpoint_actual_lag_excess_cm_p95"
+        )),
+        "planned_endpoint_actual_lag_excess_cm_max": to_float(summary.get(
+            "planned_endpoint_actual_lag_excess_cm_max"
+        )),
+        "servo_follower_lag_allowance_cm": to_float(summary.get(
+            "servo_follower_lag_allowance_cm"
         )),
         "actual_to_planned_step_projection_mean": to_float(summary.get(
             "actual_to_planned_step_projection_mean"

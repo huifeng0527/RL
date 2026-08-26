@@ -171,6 +171,76 @@ class ServoInterpolationTests(unittest.TestCase):
                 lag_hard_limit_cm=1.5,
             )
 
+    def test_follower_lag_allowance_covers_one_period_plus_lookahead(self):
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_hz=125.0,
+            max_step_cm=1.0,
+            lookahead_time_s=0.1,
+        )
+        # A saturated step travels max_step_cm per policy period, and the arm
+        # only reaches that endpoint one period later plus the lookahead phase
+        # lag, so a healthy full-speed step already trails by 3 cm.
+        self.assertAlmostEqual(timing.follower_lag_allowance_cm, 3.0)
+        tighter = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_hz=125.0,
+            max_step_cm=1.0,
+            lookahead_time_s=0.05,
+        )
+        self.assertAlmostEqual(tighter.follower_lag_allowance_cm, 2.0)
+
+    def test_lag_guard_ignores_the_structural_follower_lag(self):
+        # The defect this guards against: comparing the raw planned-vs-actual
+        # gap against the thresholds flags every sustained full-speed chase,
+        # because the follower's own phase lag already fills the whole budget.
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_hz=125.0,
+            max_step_cm=1.0,
+            lookahead_time_s=0.1,
+            lag_warning_cm=1.5,
+            lag_hard_limit_cm=3.0,
+        )
+        excess, over_warning, over_hard = rollout.evaluate_lag_guard(
+            timing.follower_lag_allowance_cm,
+            timing,
+        )
+        self.assertAlmostEqual(excess, 0.0)
+        self.assertFalse(over_warning)
+        self.assertFalse(over_hard)
+
+        excess, over_warning, over_hard = rollout.evaluate_lag_guard(
+            timing.follower_lag_allowance_cm + 2.0,
+            timing,
+        )
+        self.assertAlmostEqual(excess, 2.0)
+        self.assertTrue(over_warning)
+        self.assertFalse(over_hard)
+
+        excess, over_warning, over_hard = rollout.evaluate_lag_guard(
+            timing.follower_lag_allowance_cm + 4.0,
+            timing,
+        )
+        self.assertTrue(over_warning)
+        self.assertTrue(over_hard)
+
+    def test_lag_guard_is_inactive_when_the_anchor_tracks_the_measurement(self):
+        timing = rollout.normalize_servo_timing(
+            policy_hz=20.0,
+            servo_mode="legacy",
+            servo_hz=20.0,
+            max_step_cm=1.0,
+        )
+        excess, over_warning, over_hard = rollout.evaluate_lag_guard(
+            50.0,
+            timing,
+            anchored_on_planned_frame=False,
+        )
+        self.assertGreater(excess, 0.0)
+        self.assertFalse(over_warning)
+        self.assertFalse(over_hard)
+
     def test_interpolated_mode_rejects_slower_servo_rate(self):
         with self.assertRaises(ValueError):
             rollout.normalize_servo_timing(

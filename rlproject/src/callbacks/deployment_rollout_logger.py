@@ -120,6 +120,8 @@ FIELDNAMES = [
     "actual_robot_move_norm_cm",
     "actual_to_planned_step_projection",
     "planned_endpoint_actual_lag_cm",
+    "planned_endpoint_actual_lag_excess_cm",
+    "servo_follower_lag_allowance_cm",
     "servo_lag_warning_cm",
     "servo_lag_hard_limit_cm",
     "servo_publish_accepted",
@@ -225,6 +227,8 @@ NUMERIC_ARRAY_FIELDS = [
     "actual_robot_move_norm_cm",
     "actual_to_planned_step_projection",
     "planned_endpoint_actual_lag_cm",
+    "planned_endpoint_actual_lag_excess_cm",
+    "servo_follower_lag_allowance_cm",
     "servo_lag_warning_cm",
     "servo_lag_hard_limit_cm",
 ]
@@ -541,6 +545,13 @@ class DeploymentRolloutLogger:
         planned_endpoint_actual_lag_cm = [
             _as_float(row.get("planned_endpoint_actual_lag_cm")) for row in self.rows
         ]
+        planned_endpoint_actual_lag_excess_cm = [
+            _as_float(row.get("planned_endpoint_actual_lag_excess_cm"))
+            for row in self.rows
+        ]
+        servo_follower_lag_allowance_cm = [
+            _as_float(row.get("servo_follower_lag_allowance_cm")) for row in self.rows
+        ]
         actual_to_planned_step_projection = [
             _as_float(row.get("actual_to_planned_step_projection")) for row in self.rows
         ]
@@ -661,6 +672,19 @@ class DeploymentRolloutLogger:
             ),
             "planned_endpoint_actual_lag_cm_max": _nanmax(
                 planned_endpoint_actual_lag_cm
+            ),
+            "planned_endpoint_actual_lag_excess_cm_mean": _nanmean(
+                planned_endpoint_actual_lag_excess_cm
+            ),
+            "planned_endpoint_actual_lag_excess_cm_p95": _nanpercentile(
+                planned_endpoint_actual_lag_excess_cm,
+                95,
+            ),
+            "planned_endpoint_actual_lag_excess_cm_max": _nanmax(
+                planned_endpoint_actual_lag_excess_cm
+            ),
+            "servo_follower_lag_allowance_cm": _nanmax(
+                servo_follower_lag_allowance_cm
             ),
             "actual_to_planned_step_projection_mean": _nanmean(
                 actual_to_planned_step_projection

@@ -46,7 +46,11 @@ LEGACY_TRAJECTORY_MODE = "legacy_direct"
 SERVO_SPEED_HEADROOM = 1.6
 SERVO_MAX_PENDING_SEGMENTS = 3
 SERVO_STARTUP_GRACE_S = 2.0
-SERVO_LAG_REJECT_LIMIT = 10
+# Consecutive rejected publishes tolerated before the rollout aborts. Every
+# rejection collapses both the planned and the committed frame onto the
+# measurement, so an isolated rejection recovers inside one policy period; only
+# an unbroken streak means the arm has genuinely stopped following commands.
+SERVO_CONSECUTIVE_REJECT_LIMIT = 5
 RX_C, RY_C, RZ_C,Z= 0.107, 0.049, 4.747,0.113
 DEFAULT_STRIDE = 0.6
 DEFAULT_MAX_SAFE_STRIDE = 1
@@ -121,6 +125,7 @@ class ServoTimingConfig:
     max_translation_per_tick_m: float
     lookahead_time_s: float
     gain: int
+    follower_lag_allowance_cm: float
     lag_warning_cm: float
     lag_hard_limit_cm: float
 
@@ -449,6 +454,16 @@ def normalize_servo_timing(
 
     effective_servo_hz = policy_hz if servo_mode == "legacy" else servo_hz
     servo_period_s = 1.0 / effective_servo_hz
+    policy_period_s = 1.0 / policy_hz
+    # ``servoL`` is a follower, so a correctly tracked full-speed step still
+    # trails the commanded endpoint. The arm reaches the endpoint one policy
+    # period after it was committed, and the lookahead filter adds its own phase
+    # lag on top, so the structural gap at a saturated step is
+    # speed * (lookahead + policy period). This is the operating point, not an
+    # error, and the lag thresholds are measured as excess above it.
+    follower_lag_allowance_cm = (
+        max_step_cm * policy_hz * (lookahead_time_s + policy_period_s)
+    )
     return ServoTimingConfig(
         mode=servo_mode,
         trajectory_mode=(
@@ -458,7 +473,7 @@ def normalize_servo_timing(
         ),
         policy_hz=policy_hz,
         servo_hz=effective_servo_hz,
-        policy_period_s=1.0 / policy_hz,
+        policy_period_s=policy_period_s,
         servo_period_s=servo_period_s,
         target_timeout_s=timeout,
         startup_grace_s=max(SERVO_STARTUP_GRACE_S, timeout),
@@ -467,8 +482,32 @@ def normalize_servo_timing(
         max_translation_per_tick_m=(speed_cm_s / 100.0) * servo_period_s,
         lookahead_time_s=lookahead_time_s,
         gain=gain,
+        follower_lag_allowance_cm=follower_lag_allowance_cm,
         lag_warning_cm=lag_warning_cm,
         lag_hard_limit_cm=lag_hard_limit_cm,
+    )
+
+
+def evaluate_lag_guard(lag_cm, timing, anchored_on_planned_frame=True):
+    """Split the planned-vs-actual gap into the follower's share and the excess.
+
+    ``servoL`` reaches a committed endpoint one policy period after it was
+    published and its lookahead filter adds a further phase lag, so a healthy
+    full-speed step always shows a gap of roughly
+    ``timing.follower_lag_allowance_cm``. Only what exceeds that allowance means
+    the commanded frame is outrunning the arm, so the warning and stop
+    thresholds are applied to the excess. Returns
+    ``(excess_cm, over_warning, over_hard_limit)``; both flags are ``False``
+    when the anchor tracks the measurement, because then the gap is zero by
+    construction.
+    """
+    excess_cm = max(0.0, float(lag_cm) - timing.follower_lag_allowance_cm)
+    if not anchored_on_planned_frame:
+        return excess_cm, False, False
+    return (
+        excess_cm,
+        excess_cm > timing.lag_warning_cm,
+        excess_cm > timing.lag_hard_limit_cm,
     )
 
 
@@ -1411,8 +1450,12 @@ def format_rollout_configuration(args, virtual_hand_stride, servo_timing=None):
         ),
         (
             f"Trajectory   : {servo_timing.trajectory_mode}  |  "
-            f"lag warn={servo_timing.lag_warning_cm:.2f} cm  |  "
-            f"lag stop={servo_timing.lag_hard_limit_cm:.2f} cm"
+            f"follower lag={servo_timing.follower_lag_allowance_cm:.2f} cm allowed"
+        ),
+        (
+            f"Lag guard    : excess warn={servo_timing.lag_warning_cm:.2f} cm  |  "
+            f"excess stop={servo_timing.lag_hard_limit_cm:.2f} cm  |  "
+            f"streak={SERVO_CONSECUTIVE_REJECT_LIMIT} steps"
         ),
         f"Seed         : {int(args.seed)}",
         "-" * 78,
@@ -1949,6 +1992,7 @@ def main():
         planned_anchor_env = initial_robot_env.copy()
         prev_planned_delta_env = None
         servo_publish_rejected_total = 0
+        servo_publish_rejected_streak = 0
         lag_warning_active = False
 
         start_perf = time.perf_counter()
@@ -2012,19 +2056,30 @@ def main():
             planned_endpoint_actual_lag_cm = float(
                 np.linalg.norm(planned_anchor_env - position_robot_env)
             )
+            # A follower that tracks perfectly still trails the committed
+            # endpoint by the structural allowance, so only the excess above it
+            # counts against the guard. Comparing the raw lag would flag every
+            # full-speed step as a tracking failure.
+            (
+                planned_endpoint_actual_lag_excess_cm,
+                lag_over_warning,
+                lag_over_hard_limit,
+            ) = evaluate_lag_guard(
+                planned_endpoint_actual_lag_cm,
+                servo_timing,
+                anchor_on_planned_frame,
+            )
             lag_fields = {
                 "planned_endpoint_actual_lag_cm": planned_endpoint_actual_lag_cm,
+                "planned_endpoint_actual_lag_excess_cm": (
+                    planned_endpoint_actual_lag_excess_cm
+                ),
+                "servo_follower_lag_allowance_cm": (
+                    servo_timing.follower_lag_allowance_cm
+                ),
                 "servo_lag_warning_cm": servo_timing.lag_warning_cm,
                 "servo_lag_hard_limit_cm": servo_timing.lag_hard_limit_cm,
             }
-            lag_over_hard_limit = bool(
-                anchor_on_planned_frame
-                and planned_endpoint_actual_lag_cm > servo_timing.lag_hard_limit_cm
-            )
-            lag_over_warning = bool(
-                anchor_on_planned_frame
-                and planned_endpoint_actual_lag_cm > servo_timing.lag_warning_cm
-            )
             if lag_over_warning != lag_warning_active:
                 lag_warning_active = lag_over_warning
                 logger.record_event(
@@ -2032,6 +2087,10 @@ def main():
                     t_task_s=t_task_s,
                     step=step,
                     planned_endpoint_actual_lag_cm=planned_endpoint_actual_lag_cm,
+                    planned_endpoint_actual_lag_excess_cm=(
+                        planned_endpoint_actual_lag_excess_cm
+                    ),
+                    follower_lag_allowance_cm=servo_timing.follower_lag_allowance_cm,
                     lag_warning_cm=servo_timing.lag_warning_cm,
                     lag_hard_limit_cm=servo_timing.lag_hard_limit_cm,
                 )
@@ -2345,8 +2404,10 @@ def main():
                 if servo_publish_accepted:
                     planned_anchor_env = virtual_target_env.copy()
                     prev_planned_delta_env = planned_delta_env.copy()
+                    servo_publish_rejected_streak = 0
                 else:
                     servo_publish_rejected_total += 1
+                    servo_publish_rejected_streak += 1
                     prev_planned_delta_env = None
                     logger.record_event(
                         "servo_publish_rejected",
@@ -2354,9 +2415,13 @@ def main():
                         step=step,
                         reason=servo_publish_reject_reason,
                         planned_endpoint_actual_lag_cm=planned_endpoint_actual_lag_cm,
+                        planned_endpoint_actual_lag_excess_cm=(
+                            planned_endpoint_actual_lag_excess_cm
+                        ),
+                        rejected_streak=servo_publish_rejected_streak,
                         rejected_total=servo_publish_rejected_total,
                     )
-                    if servo_publish_rejected_total > SERVO_LAG_REJECT_LIMIT:
+                    if servo_publish_rejected_streak > SERVO_CONSECUTIVE_REJECT_LIMIT:
                         done_reason = "safety_servo_tracking_lag"
                         servo_thread.request_stop(done_reason)
                         logger.record_step({
@@ -2394,7 +2459,14 @@ def main():
                             t_task_s=t_task_s,
                             reason=done_reason,
                             planned_endpoint_actual_lag_cm=planned_endpoint_actual_lag_cm,
+                            planned_endpoint_actual_lag_excess_cm=(
+                                planned_endpoint_actual_lag_excess_cm
+                            ),
+                            follower_lag_allowance_cm=(
+                                servo_timing.follower_lag_allowance_cm
+                            ),
                             lag_hard_limit_cm=servo_timing.lag_hard_limit_cm,
+                            rejected_streak=servo_publish_rejected_streak,
                             rejected_total=servo_publish_rejected_total,
                         )
                         servo_thread.stop_and_join(done_reason)
@@ -2739,6 +2811,9 @@ def main():
             lag_mean = summary.get("planned_endpoint_actual_lag_cm_mean")
             lag_p95 = summary.get("planned_endpoint_actual_lag_cm_p95")
             lag_max = summary.get("planned_endpoint_actual_lag_cm_max")
+            excess_p95 = summary.get("planned_endpoint_actual_lag_excess_cm_p95")
+            excess_max = summary.get("planned_endpoint_actual_lag_excess_cm_max")
+            allowance_cm = summary.get("servo_follower_lag_allowance_cm")
             projection_mean = summary.get("actual_to_planned_step_projection_mean")
             print(
                 f"Servo lag    : "
@@ -2747,15 +2822,23 @@ def main():
                 f"max={f'{float(lag_max):.2f}' if lag_max is not None else 'N/A'} cm"
             )
             print(
+                f"Lag excess   : "
+                f"p95={f'{float(excess_p95):.2f}' if excess_p95 is not None else 'N/A'} cm  |  "
+                f"max={f'{float(excess_max):.2f}' if excess_max is not None else 'N/A'} cm  |  "
+                f"allowance={f'{float(allowance_cm):.2f}' if allowance_cm is not None else 'N/A'} cm"
+            )
+            print(
                 f"Step tracking: "
                 f"covered={f'{float(projection_mean):.2f}' if projection_mean is not None else 'N/A'} "
                 f"of each planned step  |  "
                 f"publish rejects={summary.get('servo_publish_rejected_count')}"
             )
-            if lag_mean is not None and float(lag_mean) > 1.0:
+            if excess_p95 is not None and float(excess_p95) > servo_timing.lag_warning_cm:
                 print(
-                    "[hint] Mean planned-vs-actual lag exceeds 1 cm. Re-run with "
-                    "--servo-lookahead 0.05 to tighten the servo follower."
+                    "[hint] The arm trails the committed frame by more than the "
+                    f"{servo_timing.follower_lag_allowance_cm:.2f} cm follower "
+                    "allowance on most steps. Re-run with --servo-lookahead 0.05 "
+                    "to tighten the servo follower."
                 )
             print(f"Summary file : {logger.rollout_dir / 'summary.json'}")
             print("-" * 78, flush=True)
